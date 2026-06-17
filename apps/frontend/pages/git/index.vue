@@ -311,7 +311,7 @@ const onRepoCreated = async (repo: GitRepo) => {
               :repoId="diffRepoId"
               :headRef="diffHeadRef"
             />
-            <GitFileView v-else :file="detail.data" />
+            <GitFileView v-else :file="detail.data" :repo-id="repoId" :git-ref="branch" />
           </div>
         </template>
         <div v-else class="git__detail-state">
