@@ -5,7 +5,16 @@ import { highlightCode } from '~/utils/highlight';
 
 const props = defineProps<{
   file: GitFileContent;
+  repoId?: number;
+  gitRef?: string;
 }>();
+
+const isImage = computed(() => /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/i.test(props.file.path));
+const rawUrl = computed(() =>
+  props.repoId
+    ? `/api/git/${props.repoId}/raw?ref=${encodeURIComponent(props.gitRef ?? "")}&path=${encodeURIComponent(props.file.path)}`
+    : "",
+);
 
 const lineCount = computed(() => (props.file.content ?? '').split('\n').length);
 const highlighted = computed(() => highlightCode(props.file.content ?? '', props.file.path));
@@ -20,7 +29,10 @@ const humanSize = computed(() => {
 
 <template>
   <div class="git-file">
-    <div v-if="file.binary" class="git-file__notice">
+    <div v-if="file.binary && isImage && rawUrl" class="git-file__image">
+      <img :src="rawUrl" :alt="file.path" />
+    </div>
+    <div v-else-if="file.binary" class="git-file__notice">
       Бинарный файл ({{ humanSize }}) — предпросмотр недоступен
     </div>
     <div v-else-if="file.truncated" class="git-file__notice">
@@ -44,6 +56,17 @@ const humanSize = computed(() => {
     padding: 16px;
     color: var(--light-text-backgroung-primary-50);
     @extend %text-s-regular;
+  }
+
+  &__image {
+    padding: 16px;
+    overflow: auto;
+
+    img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+    }
   }
 
   &__code {
