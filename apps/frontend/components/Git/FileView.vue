@@ -5,7 +5,7 @@ import { highlightCode } from '~/utils/highlight';
 
 const props = defineProps<{
   file: GitFileContent;
-  repoId?: number;
+  repoId?: number | null;
   gitRef?: string;
 }>();
 
