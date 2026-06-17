@@ -10,6 +10,7 @@ const props = defineProps<{
 }>();
 
 const isImage = computed(() => /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/i.test(props.file.path));
+const isPdf = computed(() => /\.pdf$/i.test(props.file.path));
 const rawUrl = computed(() =>
   props.repoId
     ? `/api/git/${props.repoId}/raw?ref=${encodeURIComponent(props.gitRef ?? "")}&path=${encodeURIComponent(props.file.path)}`
@@ -32,6 +33,7 @@ const humanSize = computed(() => {
     <div v-if="file.binary && isImage && rawUrl" class="git-file__image">
       <img :src="rawUrl" :alt="file.path" />
     </div>
+    <iframe v-else-if="file.binary && isPdf && rawUrl" :src="rawUrl" class="git-file__pdf" />
     <div v-else-if="file.binary" class="git-file__notice">
       Бинарный файл ({{ humanSize }}) — предпросмотр недоступен
     </div>
@@ -67,6 +69,13 @@ const humanSize = computed(() => {
       height: auto;
       border-radius: 8px;
     }
+  }
+
+  &__pdf {
+    width: 100%;
+    height: 100%;
+    min-height: 70vh;
+    border: 0;
   }
 
   &__code {
