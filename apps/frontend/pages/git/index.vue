@@ -190,6 +190,36 @@ const onRepoCreated = async (repo: GitRepo) => {
   }
   setQuery({ repo: repo.id, branch: branch.value || undefined, commit: undefined, file: undefined });
 };
+
+// --- авто-обновление раздела при новых коммитах (polling каждые 10с) ---
+const POLL_MS = 10000;
+const knownSha = ref<string | null>(null);
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+const currentSha = () => branches.value.find((b) => b.name === branch.value)?.sha ?? null;
+
+async function checkGitUpdates() {
+  if (!repoId.value || !branch.value) return;
+  if (typeof document !== "undefined" && document.hidden) return;
+  try {
+    await gitStore.fetchBranches(repoId.value);
+    const cur = currentSha();
+    if (knownSha.value && cur && cur !== knownSha.value) {
+      await gitStore.loadInitial(repoId.value, branch.value, qStr(route.query.commit), qStr(route.query.file));
+    }
+    if (cur) knownSha.value = cur;
+  } catch {
+    /* тихо игнорируем сетевые сбои опроса */
+  }
+}
+
+watch([repoId, branch], () => { knownSha.value = currentSha(); });
+
+onMounted(() => {
+  knownSha.value = currentSha();
+  pollTimer = setInterval(checkGitUpdates, POLL_MS);
+});
+onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
 </script>
 
 <template>
