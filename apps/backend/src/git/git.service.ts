@@ -426,6 +426,7 @@ export class GitService {
       ico: 'image/x-icon',
       bmp: 'image/bmp',
       avif: 'image/avif',
+      pdf: 'application/pdf',
     };
     return map[ext] ?? 'application/octet-stream';
   }
