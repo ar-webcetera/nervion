@@ -1,0 +1,57 @@
+@use "@/assets/styles/variables" as *;
+
+[data-tooltip=""] {
+  &:before,
+  &:after {
+    display: none !important;
+  }
+  
+}
+
+[data-tooltip] {
+  position: relative;
+  color: var(--white-100);
+
+  &:before,
+  &:after {
+    display: none;
+    position: absolute;
+    z-index: 40;
+    
+  }
+
+  &:after {
+    content: attr(data-tooltip);
+    white-space: nowrap;
+    padding: 8px 12px;
+    border-radius: 8px;
+    left: 100%;
+    margin-left: 16px;
+    height: fit-content;
+    background: var(--dark-text-background-primary);
+  
+  }
+
+  @keyframes toolAnimate {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  &:hover {
+    &:before,
+    &:after {
+      display: block;
+      animation-duration: 0.25s;
+      animation-name: toolAnimate;
+
+      @media (max-width: $screen-tablet) {
+        display: none;
+      }  
+    }
+  }
+
+}

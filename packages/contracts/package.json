@@ -1,0 +1,26 @@
+{
+  "name": "@tracker/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "pnpm exec tsc -p tsconfig.types.json && pnpm exec tsc -p tsconfig.esm.json && pnpm exec tsc -p tsconfig.cjs.json",
+    "dev": "pnpm exec tsc -w -p tsconfig.esm.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

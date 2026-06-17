@@ -1,0 +1,16 @@
+export enum TiptapNodeType {
+  Doc = 'doc',
+  Paragraph = 'paragraph',
+  Text = 'text',
+  HardBreak = 'hardBreak',
+  Heading = 'heading',
+  BulletList = 'bulletList',
+  OrderedList = 'orderedList',
+  ListItem = 'listItem',
+  Blockquote = 'blockquote',
+  CodeBlock = 'codeBlock',
+  Image = 'image',
+  Mention = 'mention',
+  AudioMessage = 'audioMessage',
+  Emoji = 'emoji',
+}

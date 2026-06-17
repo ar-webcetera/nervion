@@ -1,0 +1,81 @@
+# compiled output
+/dist
+/node_modules
+/build
+packages/contracts/dist/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+generated/
+# OS
+.DS_Store
+
+# Tests
+/coverage
+/.nyc_output
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.turbo
+# dotenv environment variable files
+.env
+.env.production
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+/frontend/.nuxt
+/frontend/.output
+/apps/*/.nuxt
+/apps/*/.output
+/apps/*/--host
+/backend/ecosystem.config.cjs
+/frontend/ecosystem.config.cjs
+/reports
+
+**/.vitepress/cache
+**/node_modules
+# temp directory
+.temp
+.tmp
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+**/.vitepress/cache
+**/.vitepress/dist
+apps/backend/dist-migration/
+
+# Local Codex workspace
+.codex
+
+# отдельная репа десктоп-трекера, не часть монорепо
+apps/desktop-tracker/
+
+# вендорный prebuilt mediasoup-воркера (кладётся оператором вне git)
+apps/backend/vendor/mediasoup-worker

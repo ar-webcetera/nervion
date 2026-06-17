@@ -1,0 +1,73 @@
+# Локальный / self-hosted запуск Нервиона одной командой:
+#
+#   cp apps/backend/.env.example apps/backend/.env     # заполнить JWT_SECRET (обязательно), при желании S3/почту/AI
+#   docker compose up --build
+#
+# Поднимается полный комплект: PostgreSQL + backend (API) + frontend (веб-приложение).
+# Открыть: http://localhost:3000 (frontend), API на http://localhost:3026.
+#
+# Примечания:
+#  - Миграции БД накатываются автоматически при старте backend.
+#  - Голосовые комнаты/звонки (WebRTC, mediasoup) требуют проброса UDP-диапазона и
+#    публичного IP (MEDIASOUP_ANNOUNCED_IP) — в bridge-сети не работают. Для звонков
+#    запускайте backend в host-network или пробрасывайте UDP-порты. См. docs/development.md.
+#  - Почта/AI включаются заполнением соответствующих переменных в apps/backend/.env.
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nervion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nervion}
+      POSTGRES_DB: ${POSTGRES_DB:-nervion}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-nervion}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: unless-stopped
+    env_file: apps/backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 3026
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-nervion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nervion}
+      POSTGRES_DB: ${POSTGRES_DB:-nervion}
+    ports:
+      - "3026:3026"
+    volumes:
+      - git_repos:/var/git   # self-hosted git-репозитории проектов
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3012
+      # URL, по которому браузер обращается к API
+      NUXT_PUBLIC_API_URL: ${NUXT_PUBLIC_API_URL:-http://localhost:3026}
+    ports:
+      - "3000:3012"
+    depends_on:
+      - backend
+
+volumes:
+  pg_data:
+  git_repos:

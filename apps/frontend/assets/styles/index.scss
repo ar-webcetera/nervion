@@ -1,0 +1,158 @@
+@use 'shared' as *;
+@use 'fonts' as *;
+@use 'reset' as *;
+@use 'typography' as *;
+@use 'components/tooltip' as *;
+@use '@vuepic/vue-datepicker/dist/main.css' as *;
+
+html,
+body,
+#__nuxt {
+  height: 100dvh;
+}
+
+// Мягкое брендовое свечение сверху — убирает «плоскую черноту», добавляет глубину и связь с фиолетом бренда.
+// Фиксированный слой за контентом (pointer-events:none), не мешает кликам/скроллу.
+body {
+  position: relative;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 60% at 50% -10%, var(--app-glow), transparent 60%);
+}
+
+.divider {
+  height: 1px;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html {
+  color: var(--white-100);
+  background-color: var(--app-backdrop);
+  font-family: 'Inter', sans-serif;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 140%;
+  font-size: 16px;
+
+  @media (max-width: $screen-desktop-s) {
+    font-size: calc(-0.001rem + 1.34vw);
+  }
+}
+
+.loader {
+  width: 50px;
+  height: 50px;
+  --b: 8px;
+  border-radius: 50%;
+  background: var(--primary-100);
+  -webkit-mask:
+    repeating-conic-gradient(#0000 0deg, #000 1deg 70deg, #0000 71deg 90deg),
+    radial-gradient(farthest-side, #0000 calc(100% - var(--b) - 1px), #000 calc(100% - var(--b)));
+  -webkit-mask-composite: destination-in;
+  mask-composite: intersect;
+  animation: l5 1s infinite;
+
+  &_small {
+    z-index: 101;
+    width: 16px;
+    height: 16px;
+    --b: 2px;
+  }
+}
+
+h1 {
+  @extend %display-l-bold;
+  margin: 40px 0 20px;
+}
+
+h2 {
+  @extend %display-m-bold;
+  margin: 32px 0 16px;
+}
+
+h3 {
+  @extend %display-s-bold;
+  margin: 24px 0 12px;
+}
+
+h4 {
+  @extend %display-xs-bold;
+  margin: 20px 0 10px;
+}
+
+@keyframes infinite-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes l5 {
+  to {
+    transform: rotate(0.5turn);
+  }
+}
+
+button {
+  border-radius: 8px;
+  background: var(--primary);
+  @include text-s-regular;
+  @include flex(center);
+  gap: 4px;
+  padding: 8px 10px;
+  white-space: nowrap;
+  color: var(--light-text-backgroung-primary);
+  transition: all 0.2s ease;
+    border: 1px solid transparent;
+
+  &:hover {
+    background: var(--primary-hover);
+  }
+
+  &:disabled {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    background: var(--light-text-backgroung-primary-5);
+    color: var(--light-text-backgroung-primary-25);
+  }
+}
+
+.button {
+  &_secondary {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    background: none;
+    gap: 8px;
+    border: 1px solid var(--primary);
+  }
+
+  &_default {
+    background: var(--light-text-backgroung-primary-5);
+  }
+}
+
+// нативный <select>: тёмная схема — стрелка и опции светлые (иначе на тёмной теме стрелка чёрная и не видна)
+select {
+  color-scheme: dark;
+}
+
+// iOS зумит страницу при фокусе на инпут с font-size < 16px — на сенсорных устройствах база 16px у инпутов
+// (компоненты со своим явным размером добиваются точечно тем же @media в их scoped-стиле, без !important)
+@media (hover: none) and (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}

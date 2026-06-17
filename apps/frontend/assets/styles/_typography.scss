@@ -1,0 +1,407 @@
+%p12-semi {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+%p12-regular {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+%p12-bold {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 140%; /* 16.8px */
+}
+
+%p12-medium {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 140%;
+}
+
+%p12-light {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 300;
+  line-height: 16px;
+}
+
+%p14-bold {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+%p14-medium {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+%p16-bold {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+%p18-bold {
+  font-size: 18px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 120%;
+}
+
+%h1 {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 120%;
+}
+
+// new placeholders
+
+/* =========================
+   DISPLAY
+   Font-family: Inter
+   ========================= */
+
+/* XXL — 72 / 86 */
+%display-xxl-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 72px;
+  font-weight: 300;
+  line-height: 86px;
+}
+
+%display-xxl-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 72px;
+  font-weight: 400;
+  line-height: 86px;
+}
+
+%display-xxl-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 72px;
+  font-weight: 500;
+  line-height: 86px;
+}
+
+%display-xxl-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 72px;
+  font-weight: 700;
+  line-height: 86px;
+}
+
+/* XL — 60 / 72 */
+%display-xl-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 60px;
+  font-weight: 300;
+  line-height: 72px;
+}
+
+%display-xl-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 60px;
+  font-weight: 400;
+  line-height: 72px;
+}
+
+%display-xl-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 60px;
+  font-weight: 500;
+  line-height: 72px;
+}
+
+%display-xl-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 60px;
+  font-weight: 700;
+  line-height: 72px;
+}
+
+/* L — 48 / 58 */
+%display-l-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 48px;
+  font-weight: 300;
+  line-height: 58px;
+}
+
+%display-l-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 48px;
+  font-weight: 400;
+  line-height: 58px;
+}
+
+%display-l-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 48px;
+  font-weight: 500;
+  line-height: 58px;
+}
+
+%display-l-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 48px;
+  font-weight: 700;
+  line-height: 58px;
+}
+
+/* M — 36 / 48 */
+%display-m-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 48px;
+}
+
+%display-m-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 36px;
+  font-weight: 400;
+  line-height: 48px;
+}
+
+%display-m-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 36px;
+  font-weight: 500;
+  line-height: 48px;
+}
+
+%display-m-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 48px;
+}
+
+/* S — 30 / 42 */
+%display-s-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 30px;
+  font-weight: 300;
+  line-height: 42px;
+}
+
+%display-s-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 30px;
+  font-weight: 400;
+  line-height: 42px;
+}
+
+%display-s-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 42px;
+}
+
+%display-s-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 42px;
+}
+
+/* XS — 24 / 32 */
+%display-xs-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 24px;
+  font-weight: 300;
+  line-height: 32px;
+}
+
+%display-xs-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 24px;
+  font-weight: 400;
+  line-height: 32px;
+}
+
+%display-xs-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 32px;
+}
+
+@mixin display-xs-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 32px;
+}
+
+%display-xs-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 32px;
+}
+
+/* =========================
+   TEXT
+   Font-family: Inter
+   ========================= */
+
+/* XL — 20 / 28 */
+%text-xl-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 28px;
+}
+
+%text-xl-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 28px;
+}
+
+%text-xl-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 28px;
+}
+
+%text-xl-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 28px;
+}
+
+/* L — 18 / 24 */
+%text-l-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 300;
+  line-height: 24px;
+}
+
+%text-l-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+%text-l-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+%text-l-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+/* M — 16 / 22 */
+%text-m-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 300;
+  line-height: 22px;
+}
+
+%text-m-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 22px;
+}
+
+%text-m-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+%text-m-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 22px;
+}
+
+/* S — 14 / 20 */
+%text-s-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 300;
+  line-height: 20px;
+}
+
+%text-s-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+@mixin text-s-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+%text-s-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+%text-s-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+/* XS — 12 / 16 */
+%text-xs-light {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 300;
+  line-height: 16px;
+}
+
+%text-xs-regular {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}
+
+%text-xs-medium {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
+%text-xs-bold {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 16px;
+}

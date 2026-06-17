@@ -1,0 +1,41 @@
+@use "sass:map";
+
+@mixin flex($args...) {
+  display: flex;
+
+  $map: (
+          r: (flex-direction: row),
+          c: (flex-direction: column),
+          nowrap: (flex-wrap: nowrap),
+          wrap: (flex-wrap: wrap),
+          rn: (flex-flow: row nowrap),
+          rw: (flex-flow: row wrap),
+          cn: (flex-flow: column nowrap),
+          cw: (flex-flow: column wrap),
+          wr: (flex-wrap: wrap-reverse),
+          a-start: (align-items: flex-start),
+          a-center: (align-items: center),
+          a-end: (align-items: end),
+          start: (align-items: flex-start, justify-content: flex-start),
+          end: (align-items: flex-end, justify-content: flex-end),
+          center: (align-items: center, justify-content: center),
+          baseline: (align-items: baseline),
+          stretch: (align-items: stretch),
+          j-start: (justify-content: flex-start),
+          j-end: (justify-content: flex-end),
+          j-center: (justify-content: center),
+          between: (justify-content: space-between),
+          around: (justify-content: space-around),
+          evenly: (justify-content: space-evenly)
+  );
+
+  @each $arg in $args {
+    @if map.has-key($map, $arg) {
+      $value: map.get($map, $arg);
+
+      @each $sub-key, $sub-value in $value {
+        #{$sub-key}: #{$sub-value};
+      }
+    }
+  }
+}

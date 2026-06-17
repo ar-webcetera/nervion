@@ -1,0 +1,25 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Нервион">
+  <defs>
+    <linearGradient id="ng" x1="128" y1="36" x2="128" y2="220" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5b46d6"/>
+      <stop offset="0.55" stop-color="#6f57f3"/>
+      <stop offset="1" stop-color="#9483f8"/>
+    </linearGradient>
+  </defs>
+  <g stroke="url(#ng)" stroke-width="13" stroke-linecap="round">
+    <line x1="128" y1="132" x2="128" y2="46"/>
+    <line x1="128" y1="132" x2="46"  y2="105"/>
+    <line x1="128" y1="132" x2="78"  y2="202"/>
+    <line x1="128" y1="132" x2="178" y2="202"/>
+    <line x1="128" y1="132" x2="210" y2="105"/>
+  </g>
+  <g fill="url(#ng)">
+    <circle cx="128" cy="132" r="34"/>
+    <circle cx="128" cy="46"  r="16"/>
+    <circle cx="46"  cy="105" r="15"/>
+    <circle cx="78"  cy="202" r="15"/>
+    <circle cx="178" cy="202" r="15"/>
+    <circle cx="210" cy="105" r="15"/>
+  </g>
+  <circle cx="128" cy="132" r="11" fill="#14101e"/>
+</svg>

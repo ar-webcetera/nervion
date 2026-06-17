@@ -1,0 +1,32 @@
+{
+  "name": "nervion",
+  "private": true,
+  "scripts": {
+    "build": "dotenv -e .env pnpm exec turbo run build",
+    "dev": "dotenv -e .env pnpm exec turbo run dev",
+    "dev:frontend": "pnpm turbo run dev --filter=frontend",
+    "dev:backend": "pnpm turbo run dev --filter=backend",
+    "dev:main": "pnpm turbo run dev --filter=frontend --filter=backend",
+    "build:backend": "pnpm turbo run build --filter=backend",
+    "build:frontend": "pnpm turbo run build --filter=frontend",
+    "test:backend": "pnpm --filter backend test:ci",
+    "lint:backend": "pnpm --filter backend lint",
+    "lint:frontend": "pnpm --filter frontend lint",
+    "typecheck:backend": "pnpm --filter backend typecheck",
+    "typecheck:frontend": "pnpm --filter frontend typecheck",
+    "verify:push": "pnpm lint:backend && pnpm typecheck:backend && pnpm test:backend && pnpm build:backend",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^8.0.0",
+    "husky": "^9.1.7",
+    "prettier": "^3.7.4",
+    "turbo": "^2.5.3"
+  },
+  "packageManager": "pnpm@8.15.6",
+  "pnpm": {
+    "neverBuiltDependencies": ["mediasoup"]
+  }
+}

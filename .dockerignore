@@ -1,0 +1,12 @@
+**/node_modules
+**/.output
+**/.nuxt
+**/dist
+**/.turbo
+**/.git
+**/*.log
+.env
+.env.*
+!.env.example
+**/coverage
+**/.DS_Store
