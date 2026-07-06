@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { execFile } from 'child_process';
 import { Repo } from './entities/repo.entity';
 import { CreateRepoDto } from './dto/create-repo.dto';
+import { GitRepoListItem, toGitRepoListItem } from './git-clone-url.util';
 
 /** Хеш пустого дерева git — база для диффа первого коммита (у него нет родителя). */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
@@ -87,15 +88,17 @@ export class GitService {
 
   // ---------------------------------------------------------------- репозитории
 
-  listRepos(projectId?: number): Promise<Repo[]> {
-    return this.reposRepo.find({
-      where: projectId ? { projectId } : {},
-      order: { name: 'ASC' },
-    });
+  listRepos(projectId?: number): Promise<GitRepoListItem[]> {
+    return this.reposRepo
+      .find({
+        where: projectId ? { projectId } : {},
+        order: { name: 'ASC' },
+      })
+      .then((repos) => repos.map(toGitRepoListItem));
   }
 
   /** Подключить существующий git-каталог (bare-репа или .../.git) как репозиторий трекера. */
-  async createRepo(dto: CreateRepoDto): Promise<Repo> {
+  async createRepo(dto: CreateRepoDto): Promise<GitRepoListItem> {
     const gitdir = dto.gitdir.trim();
     if (!gitdir.startsWith('/')) {
       throw new BadRequestException('Путь должен быть абсолютным');
@@ -134,7 +137,8 @@ export class GitService {
     });
 
     try {
-      return await this.reposRepo.save(repo);
+      const saved = await this.reposRepo.save(repo);
+      return toGitRepoListItem(saved);
     } catch (e) {
       const code =
         (e as { code?: string; driverError?: { code?: string } })?.code ??
@@ -163,7 +167,7 @@ export class GitService {
     commit?: string,
     file?: string,
   ): Promise<{
-    repos: Repo[];
+    repos: GitRepoListItem[];
     repoId: number | null;
     branch: string;
     branches: BranchInfo[];

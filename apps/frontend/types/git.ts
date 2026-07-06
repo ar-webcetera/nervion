@@ -3,6 +3,7 @@ export interface GitRepo {
   projectId: number | null;
   name: string;
   defaultBranch: string;
+  cloneUrl: string | null;
 }
 
 export interface GitBranch {

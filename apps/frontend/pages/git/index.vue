@@ -80,6 +80,40 @@ const mode = computed<'commits' | 'files'>({
 const repoOptions = computed<SelectOption[]>(() => repos.value.map((r) => ({ label: r.name, value: r.id })));
 const branchOptions = computed<SelectOption[]>(() => branches.value.map((b) => ({ label: b.name, value: b.name })));
 
+const selectedRepo = computed(() => (repoId.value != null ? repos.value.find((r) => r.id === repoId.value) ?? null : null));
+
+const cloneCommand = computed(() => {
+  if (!selectedRepo.value?.cloneUrl) return null;
+  return `git clone ${selectedRepo.value.cloneUrl}`;
+});
+
+const cloneCopied = ref(false);
+let cloneCopiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+const copyCloneCommand = async () => {
+  const command = cloneCommand.value;
+  if (!command) {
+    $toast.error('URL клонирования не настроен (GIT_CLONE_BASE_URL)');
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(command);
+    cloneCopied.value = true;
+    $toast.success('Команда скопирована');
+    if (cloneCopiedTimer) clearTimeout(cloneCopiedTimer);
+    cloneCopiedTimer = setTimeout(() => {
+      cloneCopied.value = false;
+    }, 2000);
+  } catch {
+    $toast.error('Не удалось скопировать команду');
+  }
+};
+
+onBeforeUnmount(() => {
+  if (cloneCopiedTimer) clearTimeout(cloneCopiedTimer);
+});
+
 // Строки дерева строим из корневого store.tree.
 watch(
   tree,
@@ -256,6 +290,19 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
 
     <hr class="git__divider" />
 
+    <div v-if="selectedRepo" class="git__clone">
+      <code class="git__clone-cmd">{{ cloneCommand ?? 'git clone — URL не настроен (GIT_CLONE_BASE_URL)' }}</code>
+      <button
+        class="git__clone-copy"
+        :class="{ git__clone-copy_copied: cloneCopied }"
+        :disabled="!cloneCommand"
+        :title="cloneCommand ? 'Скопировать команду' : 'Настройте GIT_CLONE_BASE_URL на сервере'"
+        @click="copyCloneCommand"
+      >
+        {{ cloneCopied ? 'Скопировано' : 'Копировать' }}
+      </button>
+    </div>
+
     <div class="git__body">
       <div class="git__list">
         <div class="git__tabs">
@@ -421,6 +468,57 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
     border: none;
     background: var(--light-text-backgroung-primary-10);
     margin: 0;
+  }
+
+  &__clone {
+    @include flex(rn, a-center);
+    gap: 10px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 10px;
+    background: var(--light-text-backgroung-primary-5);
+    min-width: 0;
+    @media (max-width: $screen-tablet) {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+
+  &__clone-cmd {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    @extend %p12-regular;
+    color: var(--light-text-backgroung-primary);
+  }
+
+  &__clone-copy {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+    background: var(--dark-text-background-primary);
+    color: var(--light-text-backgroung-primary);
+    cursor: pointer;
+    @extend %text-s-medium;
+
+    &:hover:not(:disabled) {
+      border-color: var(--primary-50);
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    &_copied {
+      border-color: var(--green);
+      color: var(--green);
+    }
   }
 
   &__empty {
