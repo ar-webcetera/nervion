@@ -1,4 +1,12 @@
-import { HttpException, HttpStatus, Injectable, NotFoundException, ServiceUnavailableException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditActionType, AuditEntityType } from '@tracker/contracts';
 import * as crypto from 'crypto';
