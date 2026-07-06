@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Res, Req, Get, Patch, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Res, Req, Get, Patch, UseGuards, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Response } from 'express';
 import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -30,6 +30,27 @@ export class AuthController {
   @ApiResponse({ status: 404, description: 'Демо-вход выключен' })
   demoLogin(@Res() res: Response, @Req() req: RequestWithCookies) {
     return this.authService.demoLogin(res, req.hostname);
+  }
+
+  @Get('/yandex')
+  @ApiOperation({ summary: 'Старт OAuth-входа через Яндекс ID' })
+  @ApiResponse({ status: 302, description: 'Редирект на oauth.yandex.ru' })
+  @ApiResponse({ status: 503, description: 'OAuth не настроен' })
+  yandexStart(@Res() res: Response, @Req() req: RequestWithCookies) {
+    return this.authService.startYandexOAuth(res, req);
+  }
+
+  @Get('/yandex/callback')
+  @ApiOperation({ summary: 'Callback OAuth Яндекс ID' })
+  @ApiResponse({ status: 302, description: 'Редирект в приложение или на /login с ошибкой' })
+  yandexCallback(
+    @Req() req: RequestWithCookies,
+    @Res() res: Response,
+    @Query('code') code?: string,
+    @Query('state') state?: string,
+    @Query('error') error?: string,
+  ) {
+    return this.authService.handleYandexCallback(req, res, { code, state, error });
   }
 
   @UseGuards(AuthGuard)

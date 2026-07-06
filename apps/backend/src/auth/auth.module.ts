@@ -12,6 +12,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Users } from '../users/entities/users.entity';
 import { getAuthTokenTtlSeconds } from './utils/auth-session';
 import { JwtSecretService } from './utils/jwt-secret.service';
+import { YandexOauthService } from './yandex-oauth.service';
 
 @Global()
 @Module({
@@ -33,7 +34,7 @@ import { JwtSecretService } from './utils/jwt-secret.service';
     AuditLogsModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthService, JwtSecretService, AuthGuard, RolesGuard],
+  providers: [AuthService, JwtAuthService, JwtSecretService, YandexOauthService, AuthGuard, RolesGuard],
   exports: [AuthService, JwtAuthService, JwtModule, AuthGuard, RolesGuard],
 })
 export class AuthModule {}
