@@ -14,3 +14,4 @@
 - Вход через Яндекс ID (`GET /api/auth/yandex`, callback `/api/auth/yandex/callback`); привязка к существующему пользователю по email; привязка/отвязка в профиле (`?link=1`, `POST /api/auth/yandex/unlink`).
 - Транскрибация и OpenRouter API идут в обход HTTP-прокси (`fetchDirect`, `NO_PROXY`), чтобы не ловить 403 от tinyproxy.
 - При создании задачи можно выбрать статус и дедлайн тем же виджетом, что и в карточке задачи; дедлайн сохраняется при создании.
+- `pnpm push:deploy` — одна команда для проверок и push в `master` + `preprod`; `verify:push` дополнен сборкой frontend.

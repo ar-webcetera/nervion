@@ -14,7 +14,8 @@
     "lint:frontend": "pnpm --filter frontend lint",
     "typecheck:backend": "pnpm --filter backend typecheck",
     "typecheck:frontend": "pnpm --filter frontend typecheck",
-    "verify:push": "pnpm lint:backend && pnpm typecheck:backend && pnpm test:backend && pnpm build:backend",
+    "verify:push": "pnpm lint:backend && pnpm typecheck:backend && pnpm test:backend && pnpm build:backend && pnpm build:frontend",
+    "push:deploy": "pnpm verify:push && git push --no-verify origin master && git push --no-verify origin master:preprod",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "prepare": "husky"
