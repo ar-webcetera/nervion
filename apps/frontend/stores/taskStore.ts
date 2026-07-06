@@ -407,6 +407,7 @@ export const useTaskStore = defineStore('task', () => {
     if (taskInfo.responsible_id) body.responsible_id = taskInfo.responsible_id;
     if (taskInfo.status) body.status = taskInfo.status;
     if (taskInfo.taskType) body.taskType = taskInfo.taskType;
+    if (taskInfo.planned_date) body.planned_date = taskInfo.planned_date;
     const task = await $fetch<Task>(`/api/tasks/`, {
       method: 'POST',
       credentials: 'include',

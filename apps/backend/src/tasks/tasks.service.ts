@@ -584,6 +584,7 @@ export class TasksService {
       data.participants = [responsible];
     }
     if (parent_task) data.parent_task = parent_task;
+    if (createTaskDto.planned_date) data.planned_date = createTaskDto.planned_date;
     const task = this.tasksRepository.create(data);
     const createdTask = await this.tasksRepository.save(task);
     const createdTaskForLog = await this.tasksRepository.findOne({

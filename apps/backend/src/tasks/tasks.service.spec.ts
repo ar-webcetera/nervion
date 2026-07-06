@@ -192,6 +192,23 @@ describe('TasksService', () => {
       );
     });
 
+    it('должен сохранять planned_date при создании задачи', async () => {
+      const createTaskDto = Object.assign(new CreateTaskDto(), {
+        title: 'Тестовая задача',
+        planned_date: '2026-07-15',
+      });
+
+      mockTasksRepository.findOne.mockResolvedValue({ priority: 1 });
+
+      await service.createTask(createTaskDto);
+
+      expect(mockTasksRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          planned_date: '2026-07-15',
+        }),
+      );
+    });
+
     it('должен добавлять ответственного в participants при создании задачи', async () => {
       const responsible = { id: 5 } as Users;
       const createTaskDto = Object.assign(new CreateTaskDto(), {
