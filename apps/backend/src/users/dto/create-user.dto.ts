@@ -21,7 +21,7 @@ export class CreateUserDto {
   @IsString({ message: 'Фамилия должна быть строкой' })
   @ApiProperty({
     description: 'Фамилия юзара',
-    example: "Иванов",
+    example: 'Иванов',
   })
   last_name: string;
 

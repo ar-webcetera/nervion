@@ -36,7 +36,7 @@ export class SmtpServerService {
   ) {}
 
   private get domain(): string {
-    return (this.configService.get<string>('MAILBOX_DOMAIN') || "example.com").toLowerCase();
+    return (this.configService.get<string>('MAILBOX_DOMAIN') || 'example.com').toLowerCase();
   }
 
   listen(): void {
