@@ -50,7 +50,7 @@ export class PostboxService {
   }
 
   generateMessageId(): string {
-    const domain = this.configService.get<string>('MAILBOX_DOMAIN') || "example.com";
+    const domain = this.configService.get<string>('MAILBOX_DOMAIN') || 'example.com';
 
     return `${randomUUID()}@${domain}`;
   }
