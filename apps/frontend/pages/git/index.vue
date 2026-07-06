@@ -294,7 +294,7 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
       <code class="git__clone-cmd">{{ cloneCommand ?? 'git clone — URL не настроен (GIT_CLONE_BASE_URL)' }}</code>
       <button
         class="git__clone-copy"
-        :class="{ git__clone-copy_copied: cloneCopied }"
+        :class="{ 'git__clone-copy_copied': cloneCopied }"
         :disabled="!cloneCommand"
         :title="cloneCommand ? 'Скопировать команду' : 'Настройте GIT_CLONE_BASE_URL на сервере'"
         @click="copyCloneCommand"
