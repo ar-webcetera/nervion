@@ -37,6 +37,7 @@ export interface User {
   email: string;
   telegram_user_id?: number;
   photo_url?: string;
+  yandex_linked?: boolean;
   hidden_menu_items?: string[];
   deleted_at?: string | null;
 }

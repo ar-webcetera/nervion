@@ -26,6 +26,7 @@ const changelogStore = useChangelogStore();
 
 const route = useRoute();
 const router = useRouter();
+const { $toast } = useNuxtApp();
 const syncUnreadInFlight = ref(false);
 let lastSyncAt = 0;
 let syncIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -608,7 +609,22 @@ watch(
   { immediate: true },
 );
 
-onMounted(() => {
+onMounted(async () => {
+  const yandexNotice = route.query.yandex_notice;
+  const yandexError = typeof route.query.yandex_error === 'string' ? route.query.yandex_error : '';
+  if (yandexNotice === 'linked') {
+    await userStore.fetchMe().catch(console.error);
+    $toast.success('Яндекс ID привязан');
+  } else if (yandexError) {
+    $toast.error(yandexError);
+  }
+  if (yandexNotice || yandexError) {
+    const nextQuery = { ...route.query };
+    delete nextQuery.yandex_notice;
+    delete nextQuery.yandex_error;
+    void router.replace({ query: nextQuery });
+  }
+
   initSocket();
   if (userStore.user) {
     changelogStore.fetchUnseen().catch(console.error);

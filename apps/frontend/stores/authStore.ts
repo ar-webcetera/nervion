@@ -51,5 +51,16 @@ export const useAuthStore = defineStore('auth', () => {
     userStore.user = null;
   };
 
-  return { loginByEmail, logout };
+  const unlinkYandex = async () => {
+    await $fetch<{ yandex_linked: false }>(`/api/auth/yandex/unlink`, {
+      baseURL: config.public.API_URL,
+      method: 'POST',
+      credentials: 'include',
+    });
+    if (userStore.user) {
+      userStore.user = { ...userStore.user, yandex_linked: false };
+    }
+  };
+
+  return { loginByEmail, logout, unlinkYandex };
 });

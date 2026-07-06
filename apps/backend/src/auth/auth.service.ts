@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, NotFoundException, ServiceUnavailableException, BadRequestException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditActionType, AuditEntityType } from '@tracker/contracts';
 import * as crypto from 'crypto';
@@ -15,7 +15,7 @@ import { AuthenticatedUser } from './types/authenticated-user';
 import { getAuthCookieOptions, clearAuthCookie } from './utils/auth-cookie-options';
 import { YandexOauthService } from './yandex-oauth.service';
 import { YandexUserInfo } from './types/yandex-user-info';
-import { YANDEX_OAUTH_STATE_COOKIE, getYandexOauthStateCookieOptions } from './utils/yandex-oauth-cookies';
+import { YANDEX_OAUTH_STATE_COOKIE, YANDEX_OAUTH_LINK_COOKIE, getYandexOauthStateCookieOptions } from './utils/yandex-oauth-cookies';
 
 @Injectable()
 export class AuthService {
@@ -267,14 +267,18 @@ export class AuthService {
     return res.status(HttpStatus.OK).json({ message: 'Вы успешно вышли' });
   }
 
-  startYandexOAuth(res: Response, req: Request) {
+  startYandexOAuth(res: Response, req: Request, link = false) {
     if (!this.yandexOauthService.isConfigured()) {
       throw new ServiceUnavailableException('Вход через Яндекс не настроен');
     }
 
     const state = crypto.randomBytes(24).toString('base64url');
     const redirectUri = this.buildYandexRedirectUri(req);
-    res.cookie(YANDEX_OAUTH_STATE_COOKIE, state, getYandexOauthStateCookieOptions(this.configService));
+    const cookieOptions = getYandexOauthStateCookieOptions(this.configService);
+    res.cookie(YANDEX_OAUTH_STATE_COOKIE, state, cookieOptions);
+    if (link) {
+      res.cookie(YANDEX_OAUTH_LINK_COOKIE, '1', cookieOptions);
+    }
     return res.redirect(this.yandexOauthService.buildAuthorizeUrl(state, redirectUri));
   }
 
@@ -283,34 +287,71 @@ export class AuthService {
     res: Response,
     query: Record<string, string | undefined>,
   ) {
-    const clearState = () => res.clearCookie(YANDEX_OAUTH_STATE_COOKIE, getYandexOauthStateCookieOptions(this.configService));
+    const cookieOptions = getYandexOauthStateCookieOptions(this.configService);
+    const clearOauthCookies = () => {
+      res.clearCookie(YANDEX_OAUTH_STATE_COOKIE, cookieOptions);
+      res.clearCookie(YANDEX_OAUTH_LINK_COOKIE, cookieOptions);
+    };
+    const linkMode = req.cookies[YANDEX_OAUTH_LINK_COOKIE] === '1';
 
     if (query.error) {
-      clearState();
-      return this.redirectToLogin(res, 'Вход через Яндекс отклонён');
+      clearOauthCookies();
+      return linkMode
+        ? this.redirectToApp(res, { yandex_error: 'Вход через Яндекс отклонён' })
+        : this.redirectToLogin(res, 'Вход через Яндекс отклонён');
     }
 
     const code = (query.code || '').trim();
     const state = (query.state || '').trim();
     const savedState = String(req.cookies[YANDEX_OAUTH_STATE_COOKIE] ?? '').trim();
     if (!code || !state || !savedState || state !== savedState) {
-      clearState();
-      return this.redirectToLogin(res, 'Сессия входа истекла. Попробуйте ещё раз');
+      clearOauthCookies();
+      const message = 'Сессия входа истекла. Попробуйте ещё раз';
+      return linkMode ? this.redirectToApp(res, { yandex_error: message }) : this.redirectToLogin(res, message);
     }
 
-    clearState();
+    clearOauthCookies();
 
     try {
       const redirectUri = this.buildYandexRedirectUri(req);
       const accessToken = await this.yandexOauthService.exchangeCode(code, redirectUri);
       const yandexUser = await this.yandexOauthService.fetchUser(accessToken);
+
+      if (linkMode) {
+        const userId = await this.getUserIdFromAuthCookie(req);
+        if (!userId) {
+          return this.redirectToApp(res, { yandex_error: 'Сначала войдите в аккаунт' });
+        }
+        await this.linkYandexToUser(userId, yandexUser);
+        return this.redirectToApp(res, { yandex_notice: 'linked' });
+      }
+
       const user = await this.resolveUserFromYandex(yandexUser);
       this.issueAuthCookie(user, res, req.hostname, 'yandex');
       return res.redirect('/');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Ошибка входа через Яндекс';
-      return this.redirectToLogin(res, message);
+      return linkMode ? this.redirectToApp(res, { yandex_error: message }) : this.redirectToLogin(res, message);
     }
+  }
+
+  async unlinkYandex(userId: number): Promise<{ yandex_linked: false }> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'hashed_password', 'yandex_id'],
+    });
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+    if (!user.yandex_id) {
+      return { yandex_linked: false };
+    }
+    if (!user.hashed_password) {
+      throw new BadRequestException('Чтобы отвязать Яндекс, сначала задайте пароль для входа по email');
+    }
+
+    await this.userRepository.update(userId, { yandex_id: null });
+    return { yandex_linked: false };
   }
 
   private buildYandexRedirectUri(req: Request): string {
@@ -334,6 +375,51 @@ export class AuthService {
   private redirectToLogin(res: Response, message: string) {
     const params = new URLSearchParams({ oauth_error: message });
     return res.redirect(`/login?${params.toString()}`);
+  }
+
+  private redirectToApp(res: Response, params: Record<string, string>) {
+    const query = new URLSearchParams(params);
+    return res.redirect(`/?${query.toString()}`);
+  }
+
+  private async getUserIdFromAuthCookie(req: Request & { cookies: Record<string, string | undefined> }): Promise<number | null> {
+    const token = req.cookies.authToken;
+    if (!token) {
+      return null;
+    }
+    try {
+      const decoded = this.jwtAuthService.verifyToken(token);
+      const candidate = decoded.id;
+      if (typeof candidate !== 'number' || !Number.isInteger(candidate) || candidate <= 0) {
+        return null;
+      }
+      return candidate;
+    } catch {
+      return null;
+    }
+  }
+
+  private async linkYandexToUser(userId: number, info: YandexUserInfo): Promise<void> {
+    const occupied = await this.userRepository.findOne({
+      where: { yandex_id: info.yandexId },
+      select: ['id'],
+    });
+    if (occupied && occupied.id !== userId) {
+      throw new ConflictException('Этот Яндекс ID уже привязан к другому пользователю');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'photo_url', 'yandex_id'],
+    });
+    if (!user) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+
+    await this.userRepository.update(userId, {
+      yandex_id: info.yandexId,
+      photo_url: user.photo_url || info.photoUrl || undefined,
+    });
   }
 
   private async resolveUserFromYandex(info: YandexUserInfo): Promise<Users> {
@@ -377,7 +463,7 @@ export class AuthService {
       select: ['id'],
     });
     if (taken && taken.id !== byEmail.id) {
-      throw new HttpException({ message: ['Этот Яндекс ID уже привязан к другому пользователю'] }, HttpStatus.CONFLICT);
+      throw new ConflictException('Этот Яндекс ID уже привязан к другому пользователю');
     }
 
     await this.userRepository.update(byEmail.id, {

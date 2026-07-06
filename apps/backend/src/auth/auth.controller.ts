@@ -36,8 +36,8 @@ export class AuthController {
   @ApiOperation({ summary: 'Старт OAuth-входа через Яндекс ID' })
   @ApiResponse({ status: 302, description: 'Редирект на oauth.yandex.ru' })
   @ApiResponse({ status: 503, description: 'OAuth не настроен' })
-  yandexStart(@Res() res: Response, @Req() req: RequestWithCookies) {
-    return this.authService.startYandexOAuth(res, req);
+  yandexStart(@Res() res: Response, @Req() req: RequestWithCookies, @Query('link') link?: string) {
+    return this.authService.startYandexOAuth(res, req, link === '1');
   }
 
   @Get('/yandex/callback')
@@ -71,6 +71,7 @@ export class AuthController {
       last_name: req.user.last_name,
       email: req.user.email,
       telegram_user_id: req.user.telegram_user_id,
+      yandex_linked: Boolean(req.user.yandex_id),
       hidden_menu_items: req.user.hidden_menu_items ?? [],
       created_at: req.user.createdAt,
       updated_at: req.user.updatedAt,
@@ -81,6 +82,13 @@ export class AuthController {
   @Patch('/password')
   async changePassword(@Body() changePasswordDto: ChangePasswordDto) {
     return this.authService.changePassword(changePasswordDto);
+  }
+
+  @Post('/yandex/unlink')
+  @ApiOperation({ summary: 'Отвязать Яндекс ID от текущего пользователя' })
+  @UseGuards(AuthGuard)
+  unlinkYandex(@Req() req: RequestWithCookies) {
+    return this.authService.unlinkYandex(req.user.id);
   }
 
   @Post('/logout')

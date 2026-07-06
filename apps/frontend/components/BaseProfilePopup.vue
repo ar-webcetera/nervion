@@ -12,6 +12,8 @@ import IconLongBack from './Icons/IconLongBack.vue';
 
 const { getUserInfo, openUserEditModal, userEditModal, closeUserEditModal, handleLogout } = useProfile();
 const { formatMessageDate } = useDateFormatter();
+const config = useRuntimeConfig();
+const authStore = useAuthStore();
 
 const emit = defineEmits(['close']);
 
@@ -76,6 +78,21 @@ const copyToken = async () => {
 const dismissNewToken = () => {
   apiTokenStore.clearNewToken();
 };
+
+const yandexLinkUrl = computed(() => `${config.public.API_URL}/api/auth/yandex?link=1`);
+const yandexUnlinking = ref(false);
+
+const unlinkYandex = async () => {
+  yandexUnlinking.value = true;
+  try {
+    await authStore.unlinkYandex();
+    $toast.success('Яндекс ID отвязан');
+  } catch (e) {
+    $toast.error(getErrorMessage(e));
+  } finally {
+    yandexUnlinking.value = false;
+  }
+};
 </script>
 
 <template>
@@ -120,6 +137,39 @@ const dismissNewToken = () => {
         />
         <span>{{ item.label }}</span>
       </label>
+    </div>
+
+    <div class="base-profile-popup__divider"></div>
+
+    <div class="base-profile-popup__section">
+      <div class="base-profile-popup__section-title">Вход через Яндекс</div>
+      <div class="base-profile-popup__provider">
+        <div class="base-profile-popup__provider-info">
+          <span class="base-profile-popup__provider-icon" aria-hidden="true">Я</span>
+          <span class="base-profile-popup__provider-name">
+            {{ userInfo.yandex_linked ? 'Яндекс ID привязан' : 'Не привязан' }}
+          </span>
+        </div>
+        <a
+          v-if="!userInfo.yandex_linked"
+          class="button_default base-profile-popup__provider-action base-profile-popup__provider-action_link"
+          :href="yandexLinkUrl"
+        >
+          Привязать
+        </a>
+        <button
+          v-else
+          type="button"
+          class="button_default base-profile-popup__provider-action base-profile-popup__provider-action_unlink"
+          :disabled="yandexUnlinking"
+          @click.stop="unlinkYandex"
+        >
+          {{ yandexUnlinking ? '...' : 'Отвязать' }}
+        </button>
+      </div>
+      <p v-if="!userInfo.yandex_linked" class="base-profile-popup__provider-hint">
+        Привяжите Яндекс, чтобы входить без пароля.
+      </p>
     </div>
 
     <div class="base-profile-popup__divider"></div>
@@ -423,6 +473,20 @@ const dismissNewToken = () => {
 
   &__provider-icon {
     @include flex(center);
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: #fc3f1d;
+    color: #fff;
+    font-weight: 800;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  &__provider-hint {
+    margin: 0;
+    @extend %text-s-regular;
+    color: var(--light-text-backgroung-primary-50);
   }
 
   &__provider-name {
@@ -431,17 +495,19 @@ const dismissNewToken = () => {
   }
 
   &__provider-action {
+    flex-shrink: 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    text-decoration: none;
+    @extend %text-s-medium;
+
     &_link {
-      svg {
-        stroke: var(--light-text-backgroung-primary);
-      }
+      color: var(--light-text-backgroung-primary);
     }
 
     &_unlink {
-      svg {
-        stroke: var(--danger-delete-50);
-        stroke-opacity: 1;
-      }
+      color: var(--danger-delete);
     }
   }
 
