@@ -24,6 +24,9 @@ interface AuditActorInput {
 }
 
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const ENTITY_LABEL_MAX_LENGTH = 255;
+const SUMMARY_MAX_LENGTH = 500;
+const ACTOR_NAME_MAX_LENGTH = 255;
 
 export interface RecordAuditLogParams {
   actionType: AuditActionType;
@@ -64,15 +67,15 @@ export class AuditLogsService {
         action_type: params.actionType,
         entity_type: params.entityType,
         entity_id: params.entityId !== undefined && params.entityId !== null ? String(params.entityId) : null,
-        entity_label: params.entityLabel ?? null,
-        summary: params.summary,
+        entity_label: this.truncate(params.entityLabel, ENTITY_LABEL_MAX_LENGTH),
+        summary: this.truncate(params.summary, SUMMARY_MAX_LENGTH) ?? params.summary,
         before_payload: beforePayload ?? null,
         after_payload: afterPayload ?? null,
         diff_payload: diffPayload ?? null,
         metadata_payload: this.clonePayload(params.metadataPayload) ?? null,
         source_type: params.sourceType ?? context?.sourceType ?? AuditSourceType.SYSTEM,
         actor_id: actor?.id ?? null,
-        actor_name: actor?.name ?? null,
+        actor_name: this.truncate(actor?.name, ACTOR_NAME_MAX_LENGTH),
         project_id: params.projectId ?? null,
         task_id: params.taskId ?? null,
         request_id: context?.requestId ?? null,
@@ -241,5 +244,11 @@ export class AuditLogsService {
     }
 
     return contextActor;
+  }
+
+  private truncate(value: string | null | undefined, maxLength: number): string | null {
+    if (!value) return null;
+    if (value.length <= maxLength) return value;
+    return `${value.slice(0, maxLength - 1)}…`;
   }
 }

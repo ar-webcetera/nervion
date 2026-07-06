@@ -3,7 +3,7 @@ import { CreateReportingDto } from './dto/create-reporting.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Timelogs } from '../timelogs/entities/timelog.entity';
 import { Between, FindOptionsWhere, Repository } from 'typeorm';
-import { TIMELOG_STATUSES } from '../common/enums/statuses.enum';
+import { TASK_STATUSES, TIMELOG_STATUSES } from '../common/enums/statuses.enum';
 import * as XLSX from 'xlsx';
 import { format } from 'date-fns';
 import { Tasks } from 'src/tasks/entities/task.entity';
@@ -24,19 +24,7 @@ export interface TimelogRow {
   amount: number;
 }
 
-export enum TASK_STATUSES {
-  open = 'open',
-  to_do = 'to_do',
-  in_progress = 'in_progress',
-  in_review = 'in_review',
-  testing = 'testing',
-  ready_for_release = 'ready_for_release',
-  prod_check = 'prod_check',
-  control = 'control',
-  closed = 'closed',
-}
-
-export const TASK_STATUS_LABELS: Record<TASK_STATUSES, string> = {
+const TASK_STATUS_LABELS: Record<TASK_STATUSES, string> = {
   [TASK_STATUSES.open]: 'Открыто',
   [TASK_STATUSES.to_do]: 'К выполнению',
   [TASK_STATUSES.in_progress]: 'Выполняется',
@@ -47,6 +35,8 @@ export const TASK_STATUS_LABELS: Record<TASK_STATUSES, string> = {
   [TASK_STATUSES.control]: 'Контроль',
   [TASK_STATUSES.closed]: 'Закрыто',
 };
+
+const getTaskStatusLabel = (status: TASK_STATUSES): string => TASK_STATUS_LABELS[status] ?? status;
 
 interface ReportRow {
   Проект: string;
@@ -103,7 +93,7 @@ export class ReportingsService {
     toDate.setUTCHours(0, 0, 0, 0);
 
     const where: FindOptionsWhere<Timelogs> = {
-      created_at: Between(fromDate, toDate),
+      updated_at: Between(fromDate, toDate),
       status: TIMELOG_STATUSES.completed,
       task: {},
     };
@@ -121,18 +111,21 @@ export class ReportingsService {
 
     const timelogs: TimelogRow[] = rawTimelogs.map((timelog) => {
       const author = timelog.author;
-      const hours = +(timelog.time_spent / 3600).toFixed(2);
-      const employee = createReportingDto.employees.find((e) => e.user_id === author.id);
+      const hours = +(Number(timelog.time_spent) / 3600).toFixed(2);
+      const employee = author ? createReportingDto.employees.find((e) => e.user_id === author.id) : undefined;
       const rate = employee ? employee.cost : 0;
       const amount = +(hours * rate).toFixed(2);
+      const loggedAt = this.resolveTimelogLoggedAt(timelog);
+      const executorName = author ? `${author.first_name} ${author.last_name}`.trim() : `Пользователь #${timelog.author_id}`;
+
       return {
         project: timelog.task?.project?.name || '',
-        executor: `${author.first_name} ${author.last_name}`.trim(),
+        executor: executorName,
         specialization: '',
         grade: '',
         rate,
         taskTitle: timelog.task?.title || '',
-        date: format(timelog.created_at, 'dd.MM.yyyy HH:mm'),
+        date: format(loggedAt, 'dd.MM.yyyy HH:mm'),
         summary: timelog.summary,
         hours,
         amount,
@@ -182,8 +175,8 @@ export class ReportingsService {
         aggByTask.set(key, {
           projectName: task.project?.name ?? '',
           taskTitle: task.title ?? '',
-          description: task.description ? extractTextFromDoc(task.description) : '',
-          status: TASK_STATUS_LABELS[task.status],
+          description: this.extractTaskDescription(task.description),
+          status: getTaskStatusLabel(task.status),
           totalHours: hours,
           totalAmount: amount,
         });
@@ -225,6 +218,27 @@ export class ReportingsService {
 
     const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' }) as Buffer;
     return buffer;
+  }
+
+  private resolveTimelogLoggedAt(timelog: Timelogs): Date {
+    if (timelog.tracking_date) {
+      const trackingDate = new Date(`${timelog.tracking_date}T12:00:00`);
+      if (!Number.isNaN(trackingDate.getTime())) {
+        return trackingDate;
+      }
+    }
+
+    return timelog.updated_at;
+  }
+
+  private extractTaskDescription(description: Tasks['description']): string {
+    if (!description) return '';
+
+    try {
+      return extractTextFromDoc(description).slice(0, 32_000);
+    } catch {
+      return '';
+    }
   }
   async syncProjectTasksToTable(projectId: number) {
     const workbook = XLSX.utils.book_new();
