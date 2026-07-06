@@ -22,7 +22,11 @@
 ## Деплой
 
 - Не деплоить изменения и не перезапускать production/preprod-процессы вручную без отдельного явного запроса.
-- Деплой выполняется через push ветки: CI/CD сам собирает и доставляет изменения.
+- Деплой выполняется через push в `origin` (сервер `111.88.245.47`): post-receive собирает Docker-образы и перезапускает стек.
+- **Prod:** push в `master`. **Preprod:** та же история, что у `master` — `git push origin master:preprod`.
+- Удобная команда из корня монорепо: `pnpm push:deploy` (lint/typecheck/test/build backend+frontend, затем push в `master` и `preprod`).
+- Обычный `git push origin master` тоже допустим: pre-push hook (`pnpm verify:push`) прогоняет проверки перед отправкой.
+- Ветка `preprod` локально должна указывать на `origin/preprod`; для деплоя работайте в `master` и используйте `pnpm push:deploy`.
 
 ## Документация
 
