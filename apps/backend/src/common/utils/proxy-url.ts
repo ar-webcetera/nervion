@@ -1,4 +1,4 @@
-export const DEFAULT_NO_PROXY = 'localhost,127.0.0.1,.local';
+export const DEFAULT_NO_PROXY = 'localhost,127.0.0.1,.local,openrouter.ai,login.yandex.ru,oauth.yandex.ru';
 
 const DEFAULT_PROXY_PROTOCOL = 'http';
 

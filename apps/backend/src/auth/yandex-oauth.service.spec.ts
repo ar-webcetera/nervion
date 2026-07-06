@@ -1,6 +1,14 @@
 import { ConfigService } from '@nestjs/config';
 import { YandexOauthService } from './yandex-oauth.service';
 
+jest.mock('../common/utils/fetch-direct', () => ({
+  fetchDirect: jest.fn(),
+}));
+
+import { fetchDirect } from '../common/utils/fetch-direct';
+
+const fetchDirectMock = fetchDirect as jest.MockedFunction<typeof fetchDirect>;
+
 describe('YandexOauthService', () => {
   const config = {
     get: jest.fn((key: string) => {
@@ -14,6 +22,7 @@ describe('YandexOauthService', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+    fetchDirectMock.mockReset();
   });
 
   it('собирает URL авторизации с force_confirm', () => {
@@ -26,7 +35,7 @@ describe('YandexOauthService', () => {
   });
 
   it('парсит профиль пользователя Яндекса', async () => {
-    jest.spyOn(global, 'fetch').mockResolvedValue({
+    fetchDirectMock.mockResolvedValue({
       ok: true,
       json: () =>
         Promise.resolve({
