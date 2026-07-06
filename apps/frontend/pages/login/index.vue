@@ -5,10 +5,22 @@ import { useAuthStore } from '~/stores/authStore';
 import IconLogo from '~/components/Icons/IconLogo.vue';
 
 const { $toast } = useNuxtApp();
+const config = useRuntimeConfig();
+const route = useRoute();
 const pending = ref(false);
 const authError = ref('');
 
 const authStore = useAuthStore();
+
+const yandexLoginUrl = computed(() => `${config.public.API_URL}/api/auth/yandex`);
+
+onMounted(() => {
+  const oauthError = typeof route.query.oauth_error === 'string' ? route.query.oauth_error : '';
+  if (oauthError) {
+    authError.value = oauthError;
+    $toast.error(oauthError);
+  }
+});
 
 const submitAuth = async (values: Record<string, string>) => {
   try {
@@ -41,6 +53,11 @@ definePageMeta({
       </div>
 
       <Form class="login__form" @submit="submitAuth">
+        <a class="login__yandex" :href="yandexLoginUrl">
+          <span class="login__yandex-icon" aria-hidden="true">Я</span>
+          Войти через Яндекс
+        </a>
+        <div class="login__divider"><span>или</span></div>
         <div class="login__field">
           <div class="login__label">
             <label for="email">Логин</label>
@@ -174,6 +191,50 @@ definePageMeta({
     @include flex(cn);
     gap: 24px;
     border-bottom: 1px solid var(--light-text-backgroung-primary-5);
+  }
+
+  &__yandex {
+    @include flex(rn, a-center, j-center);
+    gap: 10px;
+    width: 100%;
+    height: 56px;
+    border-radius: 12px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    background: var(--light-text-backgroung-primary);
+    color: var(--dark-text-background-primary);
+    text-decoration: none;
+    @extend %text-s-medium;
+
+    &:hover {
+      background: var(--light-text-backgroung-primary-5);
+    }
+  }
+
+  &__yandex-icon {
+    @include flex(center);
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    background: #fc3f1d;
+    color: #fff;
+    font-weight: 800;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  &__divider {
+    @include flex(rn, a-center);
+    gap: 12px;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %p12-regular;
+
+    &::before,
+    &::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--light-text-backgroung-primary-10);
+    }
   }
 
   &__field {

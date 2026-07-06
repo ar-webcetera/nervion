@@ -11,6 +11,9 @@ export class Users {
   @Column({ nullable: true })
   telegram_user_id: string;
 
+  @Column({ name: 'yandex_id', type: 'varchar', nullable: true, unique: true })
+  yandex_id: string | null;
+
   @Column({ type: 'varchar', length: 50, default: 'Имя' })
   first_name: string;
 

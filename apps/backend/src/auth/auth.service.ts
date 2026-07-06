@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditActionType, AuditEntityType } from '@tracker/contracts';
 import * as crypto from 'crypto';
@@ -6,13 +6,19 @@ import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Users } from '../users/entities/users.entity';
 import { JwtAuthService } from './jwt.service';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { LoginEmailDto } from './dto/login-email.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { JwtPayload } from './types/jwt-payload';
 import { AuthenticatedUser } from './types/authenticated-user';
 import { getAuthCookieOptions, clearAuthCookie } from './utils/auth-cookie-options';
+import { YandexOauthService } from './yandex-oauth.service';
+import { YandexUserInfo } from './types/yandex-user-info';
+import {
+  YANDEX_OAUTH_STATE_COOKIE,
+  getYandexOauthStateCookieOptions,
+} from './utils/yandex-oauth-cookies';
 
 @Injectable()
 export class AuthService {
@@ -22,6 +28,7 @@ export class AuthService {
     private readonly userRepository: Repository<Users>,
     private readonly jwtAuthService: JwtAuthService,
     private readonly auditLogsService: AuditLogsService,
+    private readonly yandexOauthService: YandexOauthService,
   ) {}
 
   generateRandomPassword(length = 8) {
@@ -261,5 +268,151 @@ export class AuthService {
       summary: 'Выход из системы',
     });
     return res.status(HttpStatus.OK).json({ message: 'Вы успешно вышли' });
+  }
+
+  startYandexOAuth(res: Response, req: Request) {
+    if (!this.yandexOauthService.isConfigured()) {
+      throw new ServiceUnavailableException('Вход через Яндекс не настроен');
+    }
+
+    const state = crypto.randomBytes(24).toString('base64url');
+    const redirectUri = this.buildYandexRedirectUri(req);
+    res.cookie(YANDEX_OAUTH_STATE_COOKIE, state, getYandexOauthStateCookieOptions(this.configService));
+    return res.redirect(this.yandexOauthService.buildAuthorizeUrl(state, redirectUri));
+  }
+
+  async handleYandexCallback(
+    req: Request & { cookies: Record<string, string | undefined> },
+    res: Response,
+    query: Record<string, string | undefined>,
+  ) {
+    const clearState = () => res.clearCookie(YANDEX_OAUTH_STATE_COOKIE, getYandexOauthStateCookieOptions(this.configService));
+
+    if (query.error) {
+      clearState();
+      return this.redirectToLogin(res, 'Вход через Яндекс отклонён');
+    }
+
+    const code = (query.code || '').trim();
+    const state = (query.state || '').trim();
+    const savedState = (req.cookies[YANDEX_OAUTH_STATE_COOKIE] || '').trim();
+    if (!code || !state || !savedState || state !== savedState) {
+      clearState();
+      return this.redirectToLogin(res, 'Сессия входа истекла. Попробуйте ещё раз');
+    }
+
+    clearState();
+
+    try {
+      const redirectUri = this.buildYandexRedirectUri(req);
+      const accessToken = await this.yandexOauthService.exchangeCode(code, redirectUri);
+      const yandexUser = await this.yandexOauthService.fetchUser(accessToken);
+      const user = await this.resolveUserFromYandex(yandexUser);
+      this.issueAuthCookie(user, res, req.hostname, 'yandex');
+      return res.redirect('/');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Ошибка входа через Яндекс';
+      return this.redirectToLogin(res, message);
+    }
+  }
+
+  private buildYandexRedirectUri(req: Request): string {
+    const origin = this.resolvePublicOrigin(req);
+    return `${origin}/api/auth/yandex/callback`;
+  }
+
+  private resolvePublicOrigin(req: Request): string {
+    const configured = (this.configService.get<string>('AUTH_PUBLIC_ORIGIN') || '').trim();
+    if (configured) {
+      return configured.replace(/\/+$/, '');
+    }
+
+    const forwardedProto = (req.headers['x-forwarded-proto'] as string | undefined)?.split(',')[0]?.trim();
+    const forwardedHost = (req.headers['x-forwarded-host'] as string | undefined)?.split(',')[0]?.trim();
+    const proto = forwardedProto || req.protocol;
+    const host = forwardedHost || req.get('host') || 'localhost';
+    return `${proto}://${host}`;
+  }
+
+  private redirectToLogin(res: Response, message: string) {
+    const params = new URLSearchParams({ oauth_error: message });
+    return res.redirect(`/login?${params.toString()}`);
+  }
+
+  private async resolveUserFromYandex(info: YandexUserInfo): Promise<Users> {
+    const select = [
+      'id',
+      'telegram_user_id',
+      'yandex_id',
+      'first_name',
+      'last_name',
+      'patronymic',
+      'email',
+      'photo_url',
+      'role',
+      'createdAt',
+      'updatedAt',
+      'deletedAt',
+    ] as const;
+
+    const byYandex = await this.userRepository.findOne({
+      where: { yandex_id: info.yandexId },
+      select: [...select],
+    });
+    if (byYandex) {
+      return byYandex;
+    }
+
+    if (!info.email) {
+      throw new NotFoundException('У аккаунта Яндекса нет email. Обратитесь к администратору');
+    }
+
+    const byEmail = await this.userRepository.findOne({
+      where: { email: info.email },
+      select: [...select, 'hashed_password'],
+    });
+    if (!byEmail) {
+      throw new NotFoundException('Аккаунт не найден. Попросите администратора создать пользователя с вашим email');
+    }
+
+    const taken = await this.userRepository.findOne({
+      where: { yandex_id: info.yandexId },
+      select: ['id'],
+    });
+    if (taken && taken.id !== byEmail.id) {
+      throw new HttpException({ message: ['Этот Яндекс ID уже привязан к другому пользователю'] }, HttpStatus.CONFLICT);
+    }
+
+    await this.userRepository.update(byEmail.id, {
+      yandex_id: info.yandexId,
+      photo_url: byEmail.photo_url || info.photoUrl || undefined,
+      first_name: byEmail.first_name === 'Имя' && info.firstName ? info.firstName : byEmail.first_name,
+      last_name: byEmail.last_name === 'Фамилия' && info.lastName ? info.lastName : byEmail.last_name,
+    });
+
+    const linked = await this.userRepository.findOne({
+      where: { id: byEmail.id },
+      select: [...select],
+    });
+    if (!linked) {
+      throw new NotFoundException('Пользователь не найден');
+    }
+    return linked;
+  }
+
+  private issueAuthCookie(user: Users, res: Response, host: string | undefined, method: 'email' | 'yandex' | 'demo') {
+    const token = this.jwtAuthService.generateToken(this.buildJwtPayload(user));
+    clearAuthCookie(this.configService, res, host);
+    res.cookie('authToken', token, getAuthCookieOptions(this.configService, true));
+
+    void this.auditLogsService.record({
+      actionType: AuditActionType.AUTH_LOGIN_SUCCESS,
+      entityType: AuditEntityType.AUTH,
+      entityId: user.id,
+      entityLabel: user.email,
+      actor: user,
+      summary: method === 'yandex' ? 'Успешный вход через Яндекс' : 'Успешный вход по email',
+      afterPayload: { method },
+    });
   }
 }

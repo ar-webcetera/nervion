@@ -56,6 +56,7 @@ const mockUser = (id: number): Users =>
     email: `user${id}@test.com`,
     photo_url: '',
     telegram_user_id: '',
+    yandex_id: null,
     role: ROLES.employee,
     hashed_password: 'hashed',
     project_members: [],

@@ -100,7 +100,6 @@ const copyCloneCommand = async () => {
   try {
     await navigator.clipboard.writeText(command);
     cloneCopied.value = true;
-    $toast.success('Команда скопирована');
     if (cloneCopiedTimer) clearTimeout(cloneCopiedTimer);
     cloneCopiedTimer = setTimeout(() => {
       cloneCopied.value = false;
@@ -280,28 +279,36 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
           @update:model-value="onBranchChange"
         />
       </div>
-      <button class="git__connect" @click="connectModal?.open()">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M8 3.5V12.5M3.5 8H12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-        </svg>
-        Подключить
-      </button>
+      <div class="git__topbar-actions">
+        <button
+          v-if="selectedRepo"
+          class="git__clone"
+          :class="{ git__clone_copied: cloneCopied }"
+          :disabled="!cloneCommand"
+          :title="cloneCommand ? 'Скопировать git clone' : 'Настройте GIT_CLONE_BASE_URL на сервере'"
+          @click="copyCloneCommand"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+            <path
+              d="M10.5 5.5V4.25C10.5 3.56 9.94 3 9.25 3H4.25C3.56 3 3 3.56 3 4.25V9.25C3 9.94 3.56 10.5 4.25 10.5H5.5"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+            />
+          </svg>
+          {{ cloneCopied ? 'Скопировано' : 'Клонировать' }}
+        </button>
+        <button class="git__connect" @click="connectModal?.open()">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 3.5V12.5M3.5 8H12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          </svg>
+          Подключить
+        </button>
+      </div>
     </div>
 
     <hr class="git__divider" />
-
-    <div v-if="selectedRepo" class="git__clone">
-      <code class="git__clone-cmd">{{ cloneCommand ?? 'git clone — URL не настроен (GIT_CLONE_BASE_URL)' }}</code>
-      <button
-        class="git__clone-copy"
-        :class="{ 'git__clone-copy_copied': cloneCopied }"
-        :disabled="!cloneCommand"
-        :title="cloneCommand ? 'Скопировать команду' : 'Настройте GIT_CLONE_BASE_URL на сервере'"
-        @click="copyCloneCommand"
-      >
-        {{ cloneCopied ? 'Скопировано' : 'Копировать' }}
-      </button>
-    </div>
 
     <div class="git__body">
       <div class="git__list">
@@ -436,7 +443,14 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
     flex-shrink: 0;
   }
 
-  &__connect {
+  &__topbar-actions {
+    @include flex(rn, a-center);
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  &__connect,
+  &__clone {
     @include flex(rn, a-center, j-center);
     gap: 8px;
     padding: 10px 14px;
@@ -448,10 +462,24 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
     white-space: nowrap;
     @extend %text-s-medium;
 
-    &:hover {
+    &:hover:not(:disabled) {
       border-color: var(--primary-50);
     }
 
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+  }
+
+  &__clone {
+    &_copied {
+      border-color: var(--green);
+      color: var(--green);
+    }
+  }
+
+  &__connect {
     &_solid {
       background: var(--primary);
       border-color: var(--primary);
@@ -468,57 +496,6 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
     border: none;
     background: var(--light-text-backgroung-primary-10);
     margin: 0;
-  }
-
-  &__clone {
-    @include flex(rn, a-center);
-    gap: 10px;
-    width: 100%;
-    padding: 10px 12px;
-    border: 1px solid var(--light-text-backgroung-primary-10);
-    border-radius: 10px;
-    background: var(--light-text-backgroung-primary-5);
-    min-width: 0;
-    @media (max-width: $screen-tablet) {
-      flex-direction: column;
-      align-items: stretch;
-    }
-  }
-
-  &__clone-cmd {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: ui-monospace, Menlo, Consolas, monospace;
-    @extend %p12-regular;
-    color: var(--light-text-backgroung-primary);
-  }
-
-  &__clone-copy {
-    flex-shrink: 0;
-    padding: 8px 12px;
-    border: 1px solid var(--light-text-backgroung-primary-10);
-    border-radius: 8px;
-    background: var(--dark-text-background-primary);
-    color: var(--light-text-backgroung-primary);
-    cursor: pointer;
-    @extend %text-s-medium;
-
-    &:hover:not(:disabled) {
-      border-color: var(--primary-50);
-    }
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
-
-    &_copied {
-      border-color: var(--green);
-      color: var(--green);
-    }
   }
 
   &__empty {
