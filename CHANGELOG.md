@@ -11,5 +11,5 @@
 - Транскрибация голосовых сообщений и аудио-задач переведена с OpenAI API на OpenRouter (`OPENROUTER_TRANSCRIBE_MODEL`, по умолчанию `openai/whisper-large-v3`).
 - Отчёт по таймлогам учитывает дату завершения (`updated_at`) вместо даты старта таймера; исправлены падения audit log на длинных описаниях и ошибка выгрузки Excel без проверки ответа сервера.
 - В разделе Git — копирование команды `git clone` (URL из `GIT_CLONE_BASE_URL` + имя bare-репозитория); кнопка «Клонировать» в шапке раздела.
-- Вход через Яндекс ID (`GET /api/auth/yandex`, callback `/api/auth/yandex/callback`); привязка к существующему пользователю по email.
+- Вход через Яндекс ID (`GET /api/auth/yandex`, callback `/api/auth/yandex/callback`); привязка к существующему пользователю по email; привязка/отвязка в профиле (`?link=1`, `POST /api/auth/yandex/unlink`).
 - Транскрибация и OpenRouter API идут в обход HTTP-прокси (`fetchDirect`, `NO_PROXY`), чтобы не ловить 403 от tinyproxy.

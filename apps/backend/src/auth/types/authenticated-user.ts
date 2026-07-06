@@ -4,6 +4,7 @@ export type AuthenticatedUser = Pick<
   Users,
   | 'id'
   | 'telegram_user_id'
+  | 'yandex_id'
   | 'first_name'
   | 'last_name'
   | 'patronymic'
