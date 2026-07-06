@@ -23,7 +23,11 @@ import { AuthenticatedUser } from './types/authenticated-user';
 import { getAuthCookieOptions, clearAuthCookie } from './utils/auth-cookie-options';
 import { YandexOauthService } from './yandex-oauth.service';
 import { YandexUserInfo } from './types/yandex-user-info';
-import { YANDEX_OAUTH_STATE_COOKIE, YANDEX_OAUTH_LINK_COOKIE, getYandexOauthStateCookieOptions } from './utils/yandex-oauth-cookies';
+import {
+  YANDEX_OAUTH_STATE_COOKIE,
+  YANDEX_OAUTH_LINK_COOKIE,
+  getYandexOauthStateCookieOptions,
+} from './utils/yandex-oauth-cookies';
 
 @Injectable()
 export class AuthService {
@@ -326,7 +330,7 @@ export class AuthService {
       const yandexUser = await this.yandexOauthService.fetchUser(accessToken);
 
       if (linkMode) {
-        const userId = await this.getUserIdFromAuthCookie(req);
+        const userId = this.getUserIdFromAuthCookie(req);
         if (!userId) {
           return this.redirectToApp(res, { yandex_error: 'Сначала войдите в аккаунт' });
         }
@@ -390,8 +394,8 @@ export class AuthService {
     return res.redirect(`/?${query.toString()}`);
   }
 
-  private async getUserIdFromAuthCookie(req: Request & { cookies: Record<string, string | undefined> }): Promise<number | null> {
-    const token = req.cookies.authToken;
+  private getUserIdFromAuthCookie(req: Request & { cookies: Record<string, string | undefined> }): number | null {
+    const token = String(req.cookies.authToken ?? '');
     if (!token) {
       return null;
     }
