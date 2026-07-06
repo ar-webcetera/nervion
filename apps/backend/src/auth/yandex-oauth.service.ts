@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { YandexUserInfo } from './types/yandex-user-info';
+import { fetchDirect } from '../common/utils/fetch-direct';
 
 const YANDEX_AUTHORIZE_URL = 'https://oauth.yandex.ru/authorize';
 const YANDEX_TOKEN_URL = 'https://oauth.yandex.ru/token';
@@ -54,7 +55,7 @@ export class YandexOauthService {
       redirect_uri: redirectUri,
     });
 
-    const response = await fetch(YANDEX_TOKEN_URL, {
+    const response = await fetchDirect(YANDEX_TOKEN_URL, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -73,7 +74,7 @@ export class YandexOauthService {
   }
 
   async fetchUser(accessToken: string): Promise<YandexUserInfo> {
-    const response = await fetch(YANDEX_INFO_URL, {
+    const response = await fetchDirect(YANDEX_INFO_URL, {
       headers: {
         Authorization: `OAuth ${accessToken}`,
         Accept: 'application/json',
