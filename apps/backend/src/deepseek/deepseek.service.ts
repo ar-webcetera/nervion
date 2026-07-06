@@ -83,18 +83,76 @@ export class DeepseekService {
     return response.choices[0].message.content?.trim() ?? '';
   }
   async transcribeAudio(buffer: Buffer, fileName: string, mimeType?: string): Promise<string> {
-    const file = await OpenAI.toFile(buffer, fileName, {
-      type: mimeType || 'audio/webm',
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) {
+      throw new InternalServerErrorException('OPENROUTER_API_KEY не настроен');
+    }
+
+    const model = process.env.OPENROUTER_TRANSCRIBE_MODEL || 'openai/whisper-large-v3';
+    const format = this.resolveAudioFormat(fileName, mimeType);
+
+    const response = await fetch('https://openrouter.ai/api/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        language: 'ru',
+        input_audio: {
+          data: buffer.toString('base64'),
+          format,
+        },
+      }),
     });
 
-    const response = await this.openai.audio.transcriptions.create({
-      file,
-      model: 'gpt-4o-mini-transcribe',
-      language: 'ru',
-      response_format: 'text',
-    });
+    if (!response.ok) {
+      const body = await response.text();
+      this.logger.error(`OpenRouter STT ${response.status}: ${body.slice(0, 500)}`);
+      throw new Error(`OpenRouter STT ${response.status}`);
+    }
 
-    return response.trim();
+    const json = (await response.json()) as { text: string };
+    return json.text.trim();
+  }
+
+  private resolveAudioFormat(fileName: string, mimeType?: string): string {
+    const mimeToFormat: Record<string, string> = {
+      'audio/webm': 'webm',
+      'audio/mpeg': 'mp3',
+      'audio/mp3': 'mp3',
+      'audio/wav': 'wav',
+      'audio/wave': 'wav',
+      'audio/x-wav': 'wav',
+      'audio/ogg': 'ogg',
+      'audio/mp4': 'm4a',
+      'audio/m4a': 'm4a',
+      'audio/aac': 'aac',
+      'audio/flac': 'flac',
+    };
+
+    if (mimeType && mimeToFormat[mimeType]) {
+      return mimeToFormat[mimeType];
+    }
+
+    const extension = fileName.split('.').pop()?.toLowerCase();
+    const extensionToFormat: Record<string, string> = {
+      webm: 'webm',
+      mp3: 'mp3',
+      wav: 'wav',
+      ogg: 'ogg',
+      m4a: 'm4a',
+      mp4: 'm4a',
+      aac: 'aac',
+      flac: 'flac',
+    };
+
+    if (extension && extensionToFormat[extension]) {
+      return extensionToFormat[extension];
+    }
+
+    return 'webm';
   }
 
   async parseTextToTaskFromGemini(text: string) {
