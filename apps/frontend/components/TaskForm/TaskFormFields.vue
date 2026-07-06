@@ -4,6 +4,7 @@ import { useUserStore } from '~/stores/userStore';
 import { useProjectStore } from '~/stores/projectStore';
 import { useAiStore } from '~/stores/aiStore';
 import { TASK_TYPE_OPTIONS } from '~/enums/task.enums';
+import DatePickerType from '~/enums/datepicker.enums';
 import { MAX_TASK_NAME_LENGTH } from '~/constants/task.constants';
 import { getErrorMessage } from '~/utils/error';
 import type { JSONContent } from '@tiptap/core';
@@ -79,6 +80,7 @@ const projectOptions = computed(() => {
 });
 
 const taskTypeOptions = TASK_TYPE_OPTIONS;
+const statusOptions = useStatusOptions();
 
 if (projectOptions.value.length === 1 && !newTask.value.project_id) {
   newTask.value.project_id = projectOptions.value[0].value;
@@ -206,9 +208,21 @@ const generateDescription = async () => {
           />
         </div>
 
-        <div class="task-form-fields__field">
+        <div class="task-form-fields__field task-form-fields__field_status">
+          <label>Статус</label>
+          <BaseDropdown v-model="newTask.status" :options="statusOptions" placeholder="Не указан" />
+        </div>
+
+        <div class="task-form-fields__field task-form-fields__field_deadline">
           <label>Дедлайн</label>
-          <BaseDatePicker v-model="newTask.planned_date" placeholder="Не указан" format-date="dd.MM.yyyy" small />
+          <BaseDatePicker
+            v-model="newTask.planned_date"
+            :clear-button="true"
+            :type="DatePickerType.taskField"
+            format-date="dd.MM.yyyy"
+            placeholder="Не указан"
+            small
+          />
         </div>
       </div>
     </div>

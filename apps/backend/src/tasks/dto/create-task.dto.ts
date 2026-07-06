@@ -58,6 +58,15 @@ export class CreateTaskDto {
   })
   status: TASK_STATUSES;
 
+  @IsString({ message: 'Дата планирования должна быть строкой' })
+  @IsOptional()
+  @ApiProperty({
+    description: 'Плановая дата (дедлайн) в формате YYYY-MM-DD',
+    example: '2026-07-15',
+    required: false,
+  })
+  planned_date?: string;
+
   @IsObject({ message: 'Описание задачи должно быть объектом с JSON-контентом TipTap' })
   @ApiProperty({
     description: 'Описание задачи в формате JSON для TipTap-редактора',

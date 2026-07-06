@@ -32,10 +32,6 @@ export class UpdateTaskDto extends CreateTaskDto {
   @IsOptional()
   declare title: string;
 
-  @IsString({ message: 'Дата планирования должна быть строкой' })
-  @IsOptional()
-  planned_date?: string;
-
   @IsNumber({}, { message: 'Story points должны быть числом' })
   @IsOptional()
   @ApiProperty({
