@@ -15,10 +15,7 @@ import { AuthenticatedUser } from './types/authenticated-user';
 import { getAuthCookieOptions, clearAuthCookie } from './utils/auth-cookie-options';
 import { YandexOauthService } from './yandex-oauth.service';
 import { YandexUserInfo } from './types/yandex-user-info';
-import {
-  YANDEX_OAUTH_STATE_COOKIE,
-  getYandexOauthStateCookieOptions,
-} from './utils/yandex-oauth-cookies';
+import { YANDEX_OAUTH_STATE_COOKIE, getYandexOauthStateCookieOptions } from './utils/yandex-oauth-cookies';
 
 @Injectable()
 export class AuthService {
@@ -295,7 +292,7 @@ export class AuthService {
 
     const code = (query.code || '').trim();
     const state = (query.state || '').trim();
-    const savedState = (req.cookies[YANDEX_OAUTH_STATE_COOKIE] || '').trim();
+    const savedState = String(req.cookies[YANDEX_OAUTH_STATE_COOKIE] ?? '').trim();
     if (!code || !state || !savedState || state !== savedState) {
       clearState();
       return this.redirectToLogin(res, 'Сессия входа истекла. Попробуйте ещё раз');

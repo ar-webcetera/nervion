@@ -28,13 +28,14 @@ describe('YandexOauthService', () => {
   it('парсит профиль пользователя Яндекса', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
-      json: async () => ({
-        id: 12345,
-        default_email: 'user@yandex.ru',
-        real_name: 'Иван Иванов',
-        default_avatar_id: 'avatar-1',
-        is_avatar_empty: false,
-      }),
+      json: () =>
+        Promise.resolve({
+          id: 12345,
+          default_email: 'user@yandex.ru',
+          real_name: 'Иван Иванов',
+          default_avatar_id: 'avatar-1',
+          is_avatar_empty: false,
+        }),
     } as Response);
 
     await expect(service.fetchUser('token')).resolves.toEqual({
