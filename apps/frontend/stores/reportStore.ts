@@ -40,6 +40,10 @@ export const useReportStore = defineStore('report', () => {
       body: JSON.stringify(payload),
     });
 
+    if (!response.ok) {
+      throw new Error(`Ошибка сервера: ${response.status}`);
+    }
+
     const blob = await response.blob();
 
     const disposition = response.headers.get('Content-Disposition') || '';

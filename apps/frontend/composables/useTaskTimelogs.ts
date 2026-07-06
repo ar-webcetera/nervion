@@ -61,7 +61,7 @@ export const useTaskTimelogs = (taskId: Ref<number | null>) => {
         $toast.error('Вы не заполнили поле с описанием');
         return;
       }
-      if (!timelog.time_spent) {
+      if (!timelog.time_spent || Number.isNaN(timelog.time_spent)) {
         $toast.error('Вы не заполнили поле с затраченным временем');
         return;
       }

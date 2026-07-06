@@ -1,8 +1,8 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { AuditActionType, AuditEntityType } from '@tracker/contracts';
 import * as XLSX from 'xlsx';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DeepPartial, FindOptionsWhere, In, Repository } from 'typeorm';
+import { DeepPartial, FindOptionsWhere, In, QueryFailedError, Repository } from 'typeorm';
 import { Timelogs } from './entities/timelog.entity';
 import { CreateTimelogDto } from './dto/create-timelog.dto';
 import { Users } from '../users/entities/users.entity';
@@ -70,7 +70,19 @@ export class TimelogsService {
       }
     }
 
-    const newTimelog = await this.timelogRepository.save(data);
+    let newTimelog: Timelogs;
+    try {
+      newTimelog = await this.timelogRepository.save(data);
+    } catch (error) {
+      if (error instanceof QueryFailedError) {
+        const pgCode = (error.driverError as { code?: string } | undefined)?.code;
+        if (pgCode === '23505') {
+          throw new ConflictException('У вас уже есть активный таймер по этой задаче. Остановите его перед запуском нового.');
+        }
+      }
+      throw error;
+    }
+
     const createdTimelog = await this.timelogRepository.findOne({ where: { id: newTimelog.id }, relations: ['author', 'task'] });
     if (createdTimelog) {
       void this.auditLogsService.record({

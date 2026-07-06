@@ -633,7 +633,7 @@ const submitComment = async () => {
         </div>
       </div>
       <div class="fix-timelog-modal__time">
-        <input v-model="newTimelog.time_spent" type="number" min="0" placeholder="Время в минутах (например, 30)" />
+        <input v-model.number="newTimelog.time_spent" type="number" min="0" placeholder="Время в минутах (например, 30)" />
       </div>
       <div class="fix-timelog-modal__textarea">
         <textarea

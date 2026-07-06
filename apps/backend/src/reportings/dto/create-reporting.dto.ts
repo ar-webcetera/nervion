@@ -13,10 +13,12 @@ class Employee {
 
   @ApiProperty({ example: 'Иван', description: 'Имя сотрудника', required: false })
   @IsString()
+  @IsOptional()
   first_name?: string;
 
   @ApiProperty({ example: 'Иванов', description: 'Фамилия сотрудника', required: false })
   @IsString()
+  @IsOptional()
   last_name?: string;
 
   @ApiProperty({ example: 'Иванович', description: 'Отчество сотрудника', required: false })
