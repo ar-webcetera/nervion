@@ -1,12 +1,11 @@
 import { Inject, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { ProxyAgent, fetch as undiciFetch, type RequestInit as UndiciRequestInit } from 'undici';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AI_CLIENT, AI_MODEL } from './constants/tokens';
 import { ParsedTaskDto } from './dto/parsed-task.dto';
 import { buildProxyUrlFromEnv } from '../common/utils/proxy-url';
-import { fetchDirect } from '../common/utils/fetch-direct';
+import { fetchOpenRouter } from '../common/utils/fetch-openrouter';
 
 @Injectable()
 export class DeepseekService {
@@ -29,7 +28,7 @@ export class DeepseekService {
     this.openrouter = new OpenAI({
       apiKey: process.env.OPENROUTER_API_KEY,
       baseURL: 'https://openrouter.ai/api/v1',
-      fetch: fetchDirect as typeof fetch,
+      fetch: fetchOpenRouter as typeof fetch,
     });
   }
 
@@ -94,7 +93,7 @@ export class DeepseekService {
     const model = process.env.OPENROUTER_TRANSCRIBE_MODEL || 'openai/whisper-large-v3';
     const format = this.resolveAudioFormat(fileName, mimeType);
 
-    const response = await this.fetchOpenRouter('https://openrouter.ai/api/v1/audio/transcriptions', {
+    const response = await fetchOpenRouter('https://openrouter.ai/api/v1/audio/transcriptions', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -156,18 +155,6 @@ export class DeepseekService {
     }
 
     return 'webm';
-  }
-
-  private fetchOpenRouter(input: string, init?: RequestInit): Promise<Response> {
-    const proxyUrl = buildProxyUrlFromEnv();
-    if (proxyUrl) {
-      return undiciFetch(input, {
-        ...(init as UndiciRequestInit),
-        dispatcher: new ProxyAgent(proxyUrl),
-      }) as unknown as Promise<Response>;
-    }
-
-    return fetchDirect(input, init);
   }
 
   async parseTextToTaskFromGemini(text: string) {

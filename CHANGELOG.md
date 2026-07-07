@@ -12,7 +12,7 @@
 - Отчёт по таймлогам учитывает дату завершения (`updated_at`) вместо даты старта таймера; исправлены падения audit log на длинных описаниях и ошибка выгрузки Excel без проверки ответа сервера.
 - В разделе Git — копирование команды `git clone` (URL из `GIT_CLONE_BASE_URL` + имя bare-репозитория); кнопка «Клонировать» в шапке раздела.
 - Вход через Яндекс ID (`GET /api/auth/yandex`, callback `/api/auth/yandex/callback`); привязка к существующему пользователю по email; привязка/отвязка в профиле (`?link=1`, `POST /api/auth/yandex/unlink`).
-- Транскрибация OpenRouter при `PROXY_ENABLE=1` идёт через HTTP-прокси (`fetchOpenRouter`), чтобы обойти блокировку российского IP.
-- Транскрибация и OpenRouter API идут в обход HTTP-прокси (`fetchDirect`, `NO_PROXY`), чтобы не ловить 403 от tinyproxy — для chat completions и Яндекс OAuth; STT использует прокси при `PROXY_ENABLE=1`.
+- Запросы к OpenRouter (транскрибация и chat completions) при `PROXY_ENABLE=1` идут через HTTP-прокси (`fetchOpenRouter`), чтобы обойти блокировку российского IP.
+- Яндекс OAuth по-прежнему идёт напрямую (`fetchDirect`, `NO_PROXY`), чтобы не ловить 403 от tinyproxy.
 - При создании задачи можно выбрать статус и дедлайн тем же виджетом, что и в карточке задачи; дедлайн сохраняется при создании.
 - `pnpm push:deploy` — одна команда для проверок и push в `master` + `preprod`; `verify:push` дополнен сборкой frontend.
