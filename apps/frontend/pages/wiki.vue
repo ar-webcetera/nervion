@@ -12,6 +12,7 @@ const markdownFileName = ref<string>('');
 const markdownKey = ref<string>('');
 const isSavingMarkdown = ref(false);
 const isLoadingMarkdown = ref(false);
+const filesProjectId = ref<number | null>(null);
 const isEditablePageName = ref(false);
 const editableName = ref<string>('');
 const deletePageModal = ref<InstanceType<typeof BaseModal> | null>(null);
@@ -99,19 +100,28 @@ const loadProjectData = async (id: number) => {
   }
 };
 
+const loadProjectFiles = async (id: number) => {
+  if (filesProjectId.value === id) return;
+
+  filesProjectId.value = id;
+  filesStore.files = [];
+  await filesStore.fetchFiles(`tracker-project-wiki/${id}/`);
+};
+
 const loadData = async () => {
   if (!projectId.value) {
     wikiStore.currentPage = null;
+    filesProjectId.value = null;
+    filesStore.files = [];
     wikiStore.isLoading = false;
     return;
   }
   wikiStore.isLoading = true;
-  await loadProjectData(projectId.value);
+  await Promise.all([loadProjectData(projectId.value), loadProjectFiles(projectId.value)]);
   if (pageId.value) {
-    await Promise.all([fetchPage(pageId.value), filesStore.fetchFiles(`tracker-project-wiki/${projectId.value}/`)]);
+    await fetchPage(pageId.value);
   } else {
     wikiStore.currentPage = null;
-    filesStore.files = [];
     wikiStore.isLoading = false;
   }
 };
