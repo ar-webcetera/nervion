@@ -240,6 +240,8 @@ watch(
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 const isLoadingMoreThreads = ref(false);
+const selectedThreadIds = ref<Set<number>>(new Set());
+const selectedThreadsCount = computed(() => selectedThreadIds.value.size);
 
 const threadQuery = () => ({
   folder: currentFolder.value,
@@ -248,11 +250,23 @@ const threadQuery = () => ({
 });
 
 const loadThreads = async () => {
+  selectedThreadIds.value = new Set();
   try {
     await mailStore.fetchThreads(threadQuery());
   } catch (e) {
     $toast.error(getErrorMessage(e));
   }
+};
+
+const toggleThreadSelection = (threadId: number) => {
+  const nextSelection = new Set(selectedThreadIds.value);
+  if (nextSelection.has(threadId)) nextSelection.delete(threadId);
+  else nextSelection.add(threadId);
+  selectedThreadIds.value = nextSelection;
+};
+
+const clearThreadSelection = () => {
+  selectedThreadIds.value = new Set();
 };
 
 const loadMoreThreads = async () => {
@@ -617,7 +631,10 @@ const saveDraftAction = async () => {
 
 // Удаление с подтверждением: тред (в корзину / насовсем из корзины) или одно письмо
 const confirmModal = ref<InstanceType<typeof BaseModal> | null>(null);
-const deleteTarget = ref<{ kind: 'thread' | 'message'; permanent: boolean; id: number; label: string } | null>(null);
+type DeleteTarget =
+  | { kind: 'thread' | 'message'; permanent: boolean; id: number; label: string }
+  | { kind: 'threads'; permanent: boolean; ids: number[] };
+const deleteTarget = ref<DeleteTarget | null>(null);
 const isTrashFolder = computed(() => currentFolder.value === 'trash');
 
 const askDeleteThread = () => {
@@ -641,10 +658,29 @@ const askDeleteMessage = (message: { id: number; subject: string | null; from_ad
   confirmModal.value?.open();
 };
 
+const askDeleteSelectedThreads = () => {
+  if (!selectedThreadsCount.value) return;
+  deleteTarget.value = {
+    kind: 'threads',
+    permanent: isTrashFolder.value,
+    ids: [...selectedThreadIds.value],
+  };
+  confirmModal.value?.open();
+};
+
 const confirmDelete = async () => {
   if (!deleteTarget.value) return;
   try {
-    if (deleteTarget.value.kind === 'message') {
+    if (deleteTarget.value.kind === 'threads') {
+      const selectedIds = deleteTarget.value.ids;
+      if (deleteTarget.value.permanent) {
+        await Promise.all(selectedIds.map((threadId) => mailStore.deleteThread(threadId)));
+      } else {
+        await Promise.all(selectedIds.map((threadId) => mailStore.moveThreadToFolder(threadId, 'trash')));
+      }
+      if (selectedThreadId.value && selectedIds.includes(selectedThreadId.value)) selectedThreadId.value = null;
+      clearThreadSelection();
+    } else if (deleteTarget.value.kind === 'message') {
       await mailStore.deleteMessage(deleteTarget.value.id);
     } else if (deleteTarget.value.permanent) {
       await mailStore.deleteThread(deleteTarget.value.id);
@@ -752,6 +788,9 @@ watch(
   threads,
   (list) => {
     (list || []).forEach((thread) => ensureGravatar(thread.counterparty_address));
+    const availableIds = new Set((list || []).map((thread) => thread.id));
+    const availableSelection = new Set([...selectedThreadIds.value].filter((threadId) => availableIds.has(threadId)));
+    if (availableSelection.size !== selectedThreadIds.value.size) selectedThreadIds.value = availableSelection;
   },
   { immediate: true },
 );
@@ -784,21 +823,45 @@ watch(
         <button class="mail-page__compose-btn mail-page__compose-mobile" @click="openComposer">Написать</button>
       </div>
 
+      <div v-if="selectedThreadsCount" class="mail-page__selection-bar">
+        <span class="mail-page__selection-count">Выбрано: {{ selectedThreadsCount }}</span>
+        <button class="mail-page__selection-clear" type="button" @click="clearThreadSelection">Снять</button>
+        <button class="mail-page__selection-delete" type="button" @click="askDeleteSelectedThreads">
+          {{ isTrashFolder ? 'Удалить навсегда' : 'Удалить выбранные' }}
+        </button>
+      </div>
+
       <div class="mail-page__threads" @scroll.passive="handleThreadsScroll">
         <div v-if="pendingThreads && !threads.length" class="mail-page__placeholder">Загрузка…</div>
         <div v-else-if="!threads.length" class="mail-page__placeholder">Писем пока нет</div>
-        <button
+        <div
           v-for="thread in threads"
           :key="thread.id"
-          :class="['mail-page__thread', { 'mail-page__thread_active': thread.id === selectedThreadId }]"
+          :class="[
+            'mail-page__thread',
+            {
+              'mail-page__thread_active': thread.id === selectedThreadId,
+              'mail-page__thread_selected': selectedThreadIds.has(thread.id),
+            },
+          ]"
+          role="button"
+          tabindex="0"
           @click="openThread(thread)"
+          @keydown.enter.self="openThread(thread)"
         >
-          <span
+          <button
+            type="button"
             class="mail-page__thread-avatar"
             :style="avatarUrl(thread.counterparty_address) ? {} : { backgroundColor: avatarColor(thread.counterparty_address) }"
+            :aria-label="selectedThreadIds.has(thread.id) ? 'Снять выбор' : 'Выбрать письмо'"
+            :aria-pressed="selectedThreadIds.has(thread.id)"
+            @click.stop="toggleThreadSelection(thread.id)"
           >
+            <svg v-if="selectedThreadIds.has(thread.id)" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 12.5l4 4L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
             <img
-              v-if="avatarUrl(thread.counterparty_address)"
+              v-else-if="avatarUrl(thread.counterparty_address)"
               :src="avatarUrl(thread.counterparty_address)"
               class="mail-page__thread-avatar-img"
               alt=""
@@ -806,7 +869,7 @@ watch(
               @error="onAvatarError(thread.counterparty_address)"
             />
             <template v-else>{{ avatarInitials(thread.counterparty_address) }}</template>
-          </span>
+          </button>
           <span class="mail-page__thread-body">
             <span class="mail-page__thread-top">
               <span class="mail-page__thread-counterparty">{{ thread.counterparty_address }}</span>
@@ -820,7 +883,7 @@ watch(
             </span>
             <span v-if="!selectedAccountId" class="mail-page__thread-account">{{ accountLabel(thread.account_id) }}</span>
           </span>
-        </button>
+        </div>
         <div v-if="isLoadingMoreThreads" class="mail-page__load-more">Загружаем ещё…</div>
       </div>
     </div>
@@ -1006,11 +1069,17 @@ watch(
     <BaseModal ref="confirmModal">
       <div class="mail-confirm">
         <h2 class="mail-confirm__title">
-          {{ deleteTarget?.kind === 'message' ? 'Удалить письмо?' : 'Удалить переписку?' }}
+          {{ deleteTarget?.kind === 'message' ? 'Удалить письмо?' : deleteTarget?.kind === 'threads' ? 'Удалить выбранные?' : 'Удалить переписку?' }}
         </h2>
         <p class="mail-confirm__text">
           <template v-if="deleteTarget?.kind === 'message'">
             Письмо «{{ deleteTarget?.label }}» будет удалено из переписки.
+          </template>
+          <template v-else-if="deleteTarget?.kind === 'threads' && deleteTarget.permanent">
+            Выбранные цепочки ({{ deleteTarget.ids.length }}) будут удалены навсегда, без возможности восстановления.
+          </template>
+          <template v-else-if="deleteTarget?.kind === 'threads'">
+            Выбранные цепочки ({{ deleteTarget.ids.length }}) переедут в Корзину.
           </template>
           <template v-else-if="deleteTarget?.permanent">
             Цепочка «{{ deleteTarget?.label }}» будет удалена навсегда, без возможности восстановления.
@@ -1304,6 +1373,54 @@ watch(
     }
   }
 
+  &__selection-bar {
+    @include flex(rn, a-center);
+    gap: 8px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+    background: var(--light-text-backgroung-primary-5);
+  }
+
+  &__selection-count {
+    flex: 1;
+    color: var(--light-text-backgroung-primary);
+    font-variant-numeric: tabular-nums;
+    @extend %text-s-medium;
+  }
+
+  &__selection-clear,
+  &__selection-delete {
+    min-height: 36px;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    cursor: pointer;
+    @extend %p12-medium;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-50);
+      outline-offset: 2px;
+    }
+  }
+
+  &__selection-clear {
+    color: var(--light-text-backgroung-primary-50);
+
+    &:hover {
+      color: var(--light-text-backgroung-primary);
+      background: var(--light-text-backgroung-primary-5);
+    }
+  }
+
+  &__selection-delete {
+    color: var(--danger-delete);
+
+    &:hover {
+      background: var(--danger-delete-25);
+    }
+  }
+
   &__load-more {
     flex-shrink: 0;
     padding: 16px;
@@ -1330,6 +1447,10 @@ watch(
     &_active {
       background: var(--light-text-backgroung-primary-10);
     }
+
+    &_selected {
+      background: var(--primary-10);
+    }
   }
 
   &__thread-avatar {
@@ -1340,6 +1461,9 @@ watch(
     overflow: hidden;
     @include flex(center);
     color: var(--light-text-backgroung-primary);
+    border: none;
+    padding: 0;
+    cursor: pointer;
     text-transform: uppercase;
     @extend %p12-bold;
   }
