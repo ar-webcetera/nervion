@@ -19,7 +19,17 @@ definePageMeta({
 
 const { $toast } = useNuxtApp();
 const mailStore = useMailStore();
-const { accounts, threads, currentThread, messages, pendingThreads, pendingMessages } = storeToRefs(mailStore);
+const {
+  accounts,
+  threads,
+  threadsTotal,
+  threadsPage,
+  threadsLimit,
+  currentThread,
+  messages,
+  pendingThreads,
+  pendingMessages,
+} = storeToRefs(mailStore);
 
 const route = useRoute();
 const router = useRouter();
@@ -229,17 +239,44 @@ watch(
 );
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
+const isLoadingMoreThreads = ref(false);
+
+const threadQuery = () => ({
+  folder: currentFolder.value,
+  account_id: selectedAccountId.value || undefined,
+  search: search.value || undefined,
+});
 
 const loadThreads = async () => {
   try {
-    await mailStore.fetchThreads({
-      folder: currentFolder.value,
-      account_id: selectedAccountId.value || undefined,
-      search: search.value || undefined,
-    });
+    await mailStore.fetchThreads(threadQuery());
   } catch (e) {
     $toast.error(getErrorMessage(e));
   }
+};
+
+const loadMoreThreads = async () => {
+  if (isLoadingMoreThreads.value || pendingThreads.value || threads.value.length >= threadsTotal.value) return;
+
+  isLoadingMoreThreads.value = true;
+  try {
+    await mailStore.fetchThreads({
+      ...threadQuery(),
+      page: threadsPage.value + 1,
+      limit: threadsLimit.value,
+      append: true,
+    });
+  } catch (e) {
+    $toast.error(getErrorMessage(e));
+  } finally {
+    isLoadingMoreThreads.value = false;
+  }
+};
+
+const handleThreadsScroll = (event: Event) => {
+  const container = event.currentTarget as HTMLElement;
+  const distanceToBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+  if (distanceToBottom <= 160) void loadMoreThreads();
 };
 
 const selectFolder = async (folder: FolderKey) => {
@@ -260,9 +297,8 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 const pollThreads = () => {
   void mailStore
     .fetchThreads({
-      folder: currentFolder.value,
-      account_id: selectedAccountId.value || undefined,
-      search: search.value || undefined,
+      ...threadQuery(),
+      limit: Math.max(30, threads.value.length),
       silent: true,
     })
     .catch(() => {});
@@ -748,7 +784,7 @@ watch(
         <button class="mail-page__compose-btn mail-page__compose-mobile" @click="openComposer">Написать</button>
       </div>
 
-      <div class="mail-page__threads">
+      <div class="mail-page__threads" @scroll.passive="handleThreadsScroll">
         <div v-if="pendingThreads && !threads.length" class="mail-page__placeholder">Загрузка…</div>
         <div v-else-if="!threads.length" class="mail-page__placeholder">Писем пока нет</div>
         <button
@@ -785,6 +821,7 @@ watch(
             <span v-if="!selectedAccountId" class="mail-page__thread-account">{{ accountLabel(thread.account_id) }}</span>
           </span>
         </button>
+        <div v-if="isLoadingMoreThreads" class="mail-page__load-more">Загружаем ещё…</div>
       </div>
     </div>
 
@@ -1265,6 +1302,14 @@ watch(
     @media (max-width: $screen-mobile-l) {
       padding-bottom: var(--mobile-nav-h);
     }
+  }
+
+  &__load-more {
+    flex-shrink: 0;
+    padding: 16px;
+    color: var(--light-text-backgroung-primary-50);
+    text-align: center;
+    @extend %p12-regular;
   }
 
   &__thread {

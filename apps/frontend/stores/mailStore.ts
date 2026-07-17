@@ -34,6 +34,9 @@ export const useMailStore = defineStore('mail', () => {
   const unreadCount = ref(0);
   const pendingThreads = ref(false);
   const pendingMessages = ref(false);
+  const threadsPage = ref(1);
+  const threadsLimit = ref(30);
+  let threadsRequestVersion = 0;
 
   const requestOptions = () => ({
     baseURL: config.public.API_URL as string,
@@ -53,8 +56,17 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const fetchThreads = async (
-    params: { folder?: string; account_id?: number; search?: string; page?: number; silent?: boolean } = {},
+    params: {
+      folder?: string;
+      account_id?: number;
+      search?: string;
+      page?: number;
+      limit?: number;
+      silent?: boolean;
+      append?: boolean;
+    } = {},
   ) => {
+    const requestVersion = params.append ? threadsRequestVersion : ++threadsRequestVersion;
     // silent — фоновое обновление (поллинг): не показываем спиннер, чтобы список не моргал
     if (!params.silent) {
       pendingThreads.value = true;
@@ -67,10 +79,20 @@ export const useMailStore = defineStore('mail', () => {
           account_id: params.account_id || undefined,
           search: params.search || undefined,
           page: params.page || undefined,
+          limit: params.limit || undefined,
         },
       });
-      threads.value = response.threads;
+      if (requestVersion !== threadsRequestVersion) return response;
+
+      if (params.append) {
+        const existingIds = new Set(threads.value.map((thread) => thread.id));
+        threads.value = [...threads.value, ...response.threads.filter((thread) => !existingIds.has(thread.id))];
+      } else {
+        threads.value = response.threads;
+      }
       threadsTotal.value = response.total;
+      threadsPage.value = response.page;
+      threadsLimit.value = response.limit;
       return response;
     } finally {
       if (!params.silent) {
@@ -200,6 +222,8 @@ export const useMailStore = defineStore('mail', () => {
     fetchManageAccounts,
     threads,
     threadsTotal,
+    threadsPage,
+    threadsLimit,
     currentThread,
     messages,
     unreadCount,
