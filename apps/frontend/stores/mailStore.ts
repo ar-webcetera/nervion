@@ -108,11 +108,13 @@ export const useMailStore = defineStore('mail', () => {
       body: { folder },
     });
     threads.value = threads.value.filter((item) => item.id !== threadId);
+    threadsTotal.value = Math.max(0, threadsTotal.value - 1);
   };
 
   const deleteThread = async (threadId: number) => {
     await $fetch(`/api/mailbox/threads/${threadId}`, { ...requestOptions(), method: 'DELETE' });
     threads.value = threads.value.filter((item) => item.id !== threadId);
+    threadsTotal.value = Math.max(0, threadsTotal.value - 1);
   };
 
   const deleteMessage = async (messageId: number) => {
