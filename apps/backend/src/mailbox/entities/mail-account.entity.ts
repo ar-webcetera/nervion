@@ -13,8 +13,6 @@ import {
 import { Users } from '../../users/entities/users.entity';
 import { MailThreads } from './mail-thread.entity';
 
-// Тип ящика — операционное поле (catch-all для входящих, выбор ящика для task-алиасов).
-// На ДОСТУП больше не влияет: доступ выдаётся явно через allowedUsers.
 export enum MAIL_ACCOUNT_TYPES {
   personal = 'personal',
   service = 'service',
@@ -46,7 +44,6 @@ export class MailAccounts {
   @JoinColumn({ name: 'user_id' })
   user: Users | null;
 
-  // Доступ к ящику: видят только пользователи из этого списка (плюс админ — всегда).
   @ManyToMany(() => Users)
   @JoinTable({
     name: 'mail_account_access',

@@ -29,12 +29,9 @@ const { repos, branches, commits, tree, currentRepoId: repoId, currentBranch: br
 const qNum = (v: unknown): number | undefined => (typeof v === 'string' && v ? Number(v) : undefined);
 const qStr = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
-// Запоминаем выбранные репо/ветку между переходами (cookie доступен и на SSR —
-// при заходе на /git без параметров восстанавливаем последний выбор без мелькания).
 const lastRepo = useCookie<number | null>('git_repo', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 });
 const lastBranch = useCookie<string | null>('git_branch', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 });
 
-// URL — источник истины состояния раздела (?repo&branch&tab&commit&file).
 const setQuery = (patch: Record<string, string | number | undefined>, replace = false) => {
   const next: Record<string, string> = {};
   for (const [k, v] of Object.entries({ ...route.query, ...patch })) {
@@ -44,9 +41,6 @@ const setQuery = (patch: Record<string, string | number | undefined>, replace = 
   void (replace ? router.replace(loc) : router.push(loc)).catch(() => {});
 };
 
-// Первичная загрузка (SSR) по параметрам из URL — данные кладутся в Pinia-стор.
-// ВАЖНО: вернуть truthy, иначе useAsyncData считает payload пустым и
-// перезапрашивает на клиенте (прогрузка после маунта вместо SSR-гидрации).
 await useAsyncData('git-initial', async () => {
   await gitStore.loadInitial(
     qNum(route.query.repo) ?? lastRepo.value ?? undefined,
@@ -60,18 +54,15 @@ await useAsyncData('git-initial', async () => {
 const treeRows = ref<TreeRow[]>([]);
 const connectModal = ref();
 
-// Подсветка активного коммита/файла — из URL.
 const activeKey = computed(() => {
   if (route.query.commit) return `c:${String(route.query.commit)}`;
   if (route.query.file) return `f:${String(route.query.file)}`;
   return '';
 });
 
-// Пропсы для DiffView (картинки) — считаем в скрипте, чтобы не сужать detail в шаблоне.
 const diffRepoId = computed(() => repoId.value ?? 0);
 const diffHeadRef = computed(() => (detail.value?.kind === 'diff' ? detail.value.commit.hash : ''));
 
-// Вкладка живёт в URL (?tab=files).
 const mode = computed<'commits' | 'files'>({
   get: () => (route.query.tab === 'files' ? 'files' : 'commits'),
   set: (v) => setQuery({ tab: v === 'files' ? 'files' : undefined }),
@@ -113,7 +104,6 @@ onBeforeUnmount(() => {
   if (cloneCopiedTimer) clearTimeout(cloneCopiedTimer);
 });
 
-// Строки дерева строим из корневого store.tree.
 watch(
   tree,
   (entries) => {
@@ -122,7 +112,6 @@ watch(
   { immediate: true },
 );
 
-// Запоминаем текущий выбор репо/ветки в cookie (для восстановления при возврате на /git).
 watch([repoId, branch], ([r, br]) => {
   if (r != null) lastRepo.value = r;
   if (br) lastBranch.value = br;
@@ -177,10 +166,6 @@ const onNodeClick = (row: TreeRow, index: number) => {
   else openFile(row.entry);
 };
 
-// Деталь (дифф коммита / файл) грузим по параметрам URL.
-// Реакция на изменения URL (клики, назад/вперёд) — на клиенте.
-// Деталь по URL грузит стор (loadDetail), он же пропускает повтор, если она
-// уже загружена (в т.ч. из SSR), — поэтому при перезагрузке нет мелькания.
 const reconcile = async () => {
   const repoQ = qNum(route.query.repo);
   const branchQ = qStr(route.query.branch);

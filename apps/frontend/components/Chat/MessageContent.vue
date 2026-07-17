@@ -10,7 +10,6 @@ const props = defineProps<{ value: JSONContent | null | undefined }>();
 
 const config = useRuntimeConfig();
 
-// Клик по картинке в сообщении → просмотр на весь экран (в статике нет NodeView, делаем сами)
 const isImageOpen = ref(false);
 const modalImageUrl = ref('');
 const onContentClick = (e: MouseEvent) => {
@@ -22,7 +21,6 @@ const onContentClick = (e: MouseEvent) => {
 };
 
 const EMPTY_DOC: JSONContent = { type: 'doc', content: [{ type: 'paragraph' }] };
-// Значение для fallback-редактора (срабатывает только при непустом value, но TS этого не знает)
 const editorValue = computed<JSONContent>(() => props.value ?? EMPTY_DOC);
 
 const isEmpty = computed(() => {
@@ -30,8 +28,6 @@ const isEmpty = computed(() => {
   return !Array.isArray(content) || content.length === 0;
 });
 
-// Голосовое сообщение = doc, состоящий только из узлов audioMessage.
-// Такие рендерим напрямую кастомным плеером (SSR + гидратация, без редактора и без мерцания).
 const audioNodes = computed<JSONContent[]>(() => {
   const content = props.value?.content;
   if (!Array.isArray(content)) return [];
@@ -61,7 +57,6 @@ const html = computed<string | null>(() => {
 </script>
 
 <template>
-  <!-- Голосовое: кастомный плеер напрямую, рендерится сразу (SSR), без мерцания -->
   <template v-if="isAudioMessage">
     <ChatAudioPlayer
       v-for="(node, i) in audioNodes"
@@ -72,12 +67,10 @@ const html = computed<string | null>(() => {
   </template>
   <!-- eslint-disable-next-line vue/no-v-html -->
   <div v-else-if="html !== null" class="message-content" @click="onContentClick" v-html="html" />
-  <!-- Прочие интерактивные ноды (видео/файлы) рендерим только на клиенте, без SSR -->
   <ClientOnly v-else>
     <EditorTiptap :value="editorValue" :model-value="editorValue" :is-editable="false" />
   </ClientOnly>
 
-  <!-- Просмотр картинок на весь экран; интерактивно — только на клиенте -->
   <ClientOnly>
     <Teleport to="body">
       <div v-if="isImageOpen" class="message-image-viewer" @click="isImageOpen = false">
@@ -119,7 +112,6 @@ const html = computed<string | null>(() => {
     cursor: zoom-in;
   }
 
-  // Эмодзи — это inline-картинки, их нельзя растягивать как обычные изображения
   :deep([data-type='emoji']) img,
   :deep(img[alt$='emoji']) {
     display: inline-block;

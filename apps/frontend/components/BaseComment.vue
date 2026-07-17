@@ -293,9 +293,6 @@ onUnmounted(() => {
     padding: 0;
   }
 
-  // &_active {
-  //   background-color: var(--white-10);
-  // }
 
   &_resolved {
     background-color: var(--primary-25);

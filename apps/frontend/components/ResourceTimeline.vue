@@ -150,7 +150,6 @@ const getRowHeight = (userId: number) => {
 
 <template>
   <div class="resource-timeline">
-    <!-- Header с днями -->
     <div class="resource-timeline__header">
       <div class="resource-timeline__header-corner">Специалист</div>
       <div class="resource-timeline__days">

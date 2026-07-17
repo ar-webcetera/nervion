@@ -1,9 +1,6 @@
 import { PAGE_NAMES } from '~/constants/pages.constants';
 import { ROLES } from '~/types/user';
 
-// Реестр настраиваемых пунктов бокового меню.
-// always: true — пункт нельзя скрыть (Задачи всегда видны).
-// adminOnly: true — пункт виден только админу (и в настройке показывается только ему).
 export interface MenuItemMeta {
   key: string;
   label: string;
@@ -30,7 +27,6 @@ export const MENU_ITEMS: MenuItemMeta[] = [
   { key: 'git', label: 'Git', page: PAGE_NAMES.GIT, adminOnly: true },
 ];
 
-// Доступен ли пункт пользователю по роли (до учёта персональной видимости)
 export const isMenuItemAllowedForRole = (item: MenuItemMeta, role?: ROLES): boolean => {
   if (item.adminOnly) {
     return role === ROLES.admin;

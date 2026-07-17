@@ -325,7 +325,6 @@ definePageMeta({
     @include flex(cn, a-start);
     gap: 8px;
 
-    // селект приводим по высоте к датапикеру-фильтру (padding 6px 12px)
     :deep(.home-select__input_large) {
       padding: 6px 12px;
     }

@@ -2,7 +2,6 @@ import { ROLES } from '../common/enums/roles.enum';
 
 const TASK_ALIAS_PATTERN = /^task\+(\d+)@/i;
 
-// Message-ID храним в каноничном виде: без угловых скобок и пробелов
 export function normalizeMessageId(value?: string | null): string | null {
   if (!value) {
     return null;
@@ -29,7 +28,6 @@ export function parseTaskIdFromAddress(address?: string | null): number | null {
   return Number.isSafeInteger(taskId) && taskId > 0 ? taskId : null;
 }
 
-// Все ссылки на предыдущие письма треда: In-Reply-To + References
 export function extractReferencedIds(inReplyTo?: string | null, referencesHeader?: string | null): string[] {
   const ids = new Set<string>();
 
@@ -69,8 +67,6 @@ interface AccountAccessUser {
 }
 
 interface AccountAccessTarget {
-  // Список пользователей, которым открыт доступ к ящику. Доступ — только по явному гранту,
-  // спец-привилегии у админа на ЧТЕНИЕ нет (он лишь управляет грантами в админке).
   allowedUsers?: { id: number }[] | null;
 }
 

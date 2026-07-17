@@ -191,8 +191,6 @@ export class TimelogsService {
       beforePayload,
       afterPayload: this.serializeTimelogForAudit(updatedTimelog),
     });
-    // Уведомляем другие клиенты (вкладки, десктоп, другие устройства) об изменении таймлога,
-    // чтобы веб мгновенно остановил/обновил таймер при действии извне.
     this.websocketGateway.sendTimelogUpdated(updatedTimelog);
     return updatedTimelog;
   }

@@ -45,7 +45,6 @@ export class MailMessages {
   })
   direction: MAIL_DIRECTIONS;
 
-  // RFC 5322 Message-ID — по нему склеиваются треды при ответах
   @Index()
   @Column({ type: 'varchar', length: 998, name: 'message_id', nullable: true })
   message_id: string | null;
@@ -77,7 +76,6 @@ export class MailMessages {
   @Column({ type: 'text', name: 'html_body', nullable: true })
   html_body: string | null;
 
-  // Исходный .eml в S3 — на случай разборов и переимпорта
   @Column({ type: 'varchar', length: 1024, name: 'raw_s3_key', nullable: true })
   raw_s3_key: string | null;
 
@@ -108,7 +106,6 @@ export class MailMessages {
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;
 
-  // Мягкое удаление одного письма (скрываем из треда, но не теряем)
   @Column({ type: 'timestamp', name: 'deleted_at', nullable: true })
   deleted_at: Date | null;
 }

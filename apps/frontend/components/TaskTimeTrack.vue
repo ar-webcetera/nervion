@@ -284,7 +284,6 @@ onUnmounted(() => {
 
   &__table-wrapper {
     height: 100%;
-    // по горизонтали без отступа — таблица выравнивается по шапке (у строк свой padding 24px)
     padding: 16px 0;
 
     @media (max-width: $screen-mobile-l) {

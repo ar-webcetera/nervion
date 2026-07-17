@@ -24,7 +24,7 @@ export const useAuthStore = defineStore('auth', () => {
         },
       });
     } catch {
-      // Если backend не принял отписку (например, токен уже истёк), всё равно удаляем локальную подписку.
+      // Локальная подписка всё равно удаляется в finally.
     } finally {
       await subscription.unsubscribe().catch(() => {});
     }

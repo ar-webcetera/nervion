@@ -126,7 +126,6 @@ const selectDate = (isNegative: boolean = false) => {
 };
 
 const handleDateChange = (value: Date[] | string | null) => {
-  // В range-режиме это событие срабатывает при нажатии "Select"
   if (value && Array.isArray(value) && value.length >= 1) {
     selectDate(false);
   }

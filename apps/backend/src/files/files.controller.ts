@@ -22,8 +22,6 @@ import { FileInterceptor } from '@nestjs/platform-express';
 
 const FALLBACK_DOWNLOAD_FILE_NAME = 'file';
 
-// Боты иногда дёргают эндпоинты с битым/двойным URL-кодированием (?key%3D...),
-// из-за чего `key` приходит пустым и S3-клиент падает с 500. Отдаём чистый 400.
 const requireKey = (key: string | undefined): string => {
   const normalized = typeof key === 'string' ? key.trim() : '';
   if (!normalized) {

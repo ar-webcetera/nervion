@@ -47,9 +47,6 @@ import { MailboxModule } from './mailbox/mailbox.module';
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
         synchronize: false,
         migrationsRun: true,
-        // Ограничиваем пул соединений: на общей БД сидят prod+preprod бэки/smtp и др. сервисы.
-        // Без лимита (дефолт ~10/процесс) сумма пулов переполняет max_connections при деплоях.
-        // idleTimeoutMillis закрывает простаивающие соединения, чтобы они не копились.
         extra: {
           max: Number(configService.get('DB_POOL_MAX')) || 5,
           idleTimeoutMillis: 30000,
@@ -86,8 +83,6 @@ import { MailboxModule } from './mailbox/mailbox.module';
 
   controllers: [],
   providers: [
-    // Глобальный фильтр Sentry: ловит необработанные исключения, шлёт их в
-    // Sentry/GlitchTip и пробрасывает дальше (HTTP-ответы об ошибках не ломаются).
     {
       provide: APP_FILTER,
       useClass: SentryGlobalFilter,

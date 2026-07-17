@@ -44,19 +44,13 @@ export class AuthService {
     return crypto.randomBytes(length).toString('hex').slice(0, length);
   }
 
-  // Легаси-хеш (HMAC-SHA1 на ключе JWT_SECRET) — нужен ТОЛЬКО для проверки старых паролей и их
-  // бесшовной миграции на scrypt при первом успешном входе. Когда все мигрируют — можно удалить.
   encryptPassword(password: string): string {
     const APP_SALT = this.configService.get<string>('JWT_SECRET') || '';
     return crypto.createHmac('sha1', APP_SALT).update(password).digest('hex');
   }
 
-  // Параметры scrypt по умолчанию (стоимость). Хранятся прямо в хеше, чтобы их можно было
-  // поднять в будущем без поломки старых паролей (каждый хеш проверяется СВОИМИ параметрами).
   private static readonly SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64, maxmem: 64 * 1024 * 1024 };
 
-  // Хеширование пароля: scrypt (KDF, самосолящийся) — не зависит ни от какого app-секрета.
-  // Формат: scrypt$N$r$p$<соль>$<хеш>
   hashPassword(password: string): string {
     const { N, r, p, keylen, maxmem } = AuthService.SCRYPT;
     const salt = crypto.randomBytes(16);
@@ -64,12 +58,10 @@ export class AuthService {
     return `scrypt$${N}$${r}$${p}$${salt.toString('hex')}$${derived.toString('hex')}`;
   }
 
-  // Проверка пароля + бесшовная миграция старого HMAC-хеша на scrypt при первом успешном входе
   async verifyPassword(password: string, user: Users): Promise<boolean> {
     const stored = user.hashed_password || '';
     if (stored.startsWith('scrypt$')) {
       const parts = stored.split('$');
-      // дефолтные параметры — для совместимости с ранним форматом scrypt$<соль>$<хеш> без параметров
       let N = AuthService.SCRYPT.N;
       let r = AuthService.SCRYPT.r;
       let p = AuthService.SCRYPT.p;
@@ -93,7 +85,6 @@ export class AuthService {
       const derived = crypto.scryptSync(password, salt, expected.length, { N, r, p, maxmem: AuthService.SCRYPT.maxmem });
       return crypto.timingSafeEqual(expected, derived);
     }
-    // легаси HMAC-SHA1 → проверяем и сразу пере-хешируем в scrypt
     const legacyOk = !!stored && this.encryptPassword(password) === stored;
     if (legacyOk) {
       const migrated = this.hashPassword(password);
@@ -233,8 +224,6 @@ export class AuthService {
     res.cookie('authToken', token, getAuthCookieOptions(this.configService, true));
   }
 
-  // Демо-вход: без пароля логинит под настроенным демо-пользователем.
-  // Включается флагом DEMO_AUTH_ENABLED=true (на проде выключен → 404).
   async demoLogin(res: Response, host?: string) {
     const enabled = (this.configService.get<string>('DEMO_AUTH_ENABLED') || '').toLowerCase() === 'true';
     const email = this.configService.get<string>('DEMO_AUTH_EMAIL');

@@ -300,7 +300,6 @@ export const useTaskStore = defineStore('task', () => {
     return response || [];
   };
 
-  // Догрузка следующей страницы карточек одной колонки (по скроллу к низу колонки)
   const loadMoreColumn = async (status: string, params: Partial<KanbanParams>, offset: number, limit = 50) => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<{ status: string; total: number; cards: KanbanCard[] }>(`/api/tasks/kanban/column`, {

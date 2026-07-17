@@ -29,7 +29,9 @@ const openPicker = (el: HTMLInputElement | null) => {
   el.focus();
   try {
     el.showPicker();
-  } catch {}
+  } catch {
+    return;
+  }
 };
 
 const form = ref({
@@ -322,12 +324,10 @@ const handleDelete = () => {
       border-color: var(--primary);
     }
 
-    // у time-полей есть кастомная кнопка-часы — нативный индикатор прячем (иначе часы дублируются)
     &[type='time']::-webkit-calendar-picker-indicator {
       display: none;
     }
 
-    // color-scheme: dark уже делает иконку календаря светлой; invert переворачивал её в чёрный — убрано
     &[type='date']::-webkit-calendar-picker-indicator {
       opacity: 0.7;
       cursor: pointer;
@@ -451,7 +451,6 @@ const handleDelete = () => {
   }
 }
 
-// Появление модалки: fade оверлея + лёгкий подъём со scale у панели
 .modal-enter-active {
   transition: opacity 0.22s ease;
 

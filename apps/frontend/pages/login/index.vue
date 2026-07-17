@@ -267,7 +267,6 @@ definePageMeta({
     background: var(--light-text-backgroung-primary-5);
     transition: all 0.2s ease;
     border: 1px solid transparent;
-    // 16px обязательно: iOS зумит страницу при фокусе на инпут с текстом < 16px
     @extend %text-m-medium;
 
     &::placeholder {

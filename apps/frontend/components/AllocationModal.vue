@@ -300,7 +300,6 @@ const handleClose = () => {
   }
 }
 
-// Появление модалки: fade оверлея + лёгкий подъём со scale у панели
 .modal-enter-active {
   transition: opacity 0.22s ease;
 

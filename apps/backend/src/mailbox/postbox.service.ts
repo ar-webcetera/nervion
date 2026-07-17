@@ -21,8 +21,6 @@ export interface PostboxSendParams {
 const DEFAULT_POSTBOX_ENDPOINT = 'https://postbox.cloud.yandex.net';
 const DEFAULT_POSTBOX_REGION = 'ru-central1';
 
-// Исходящая почта через Yandex Cloud Postbox (SES-совместимый API).
-// Сами наружу по SMTP не ходим — репутацию IP обеспечивает Яндекс.
 @Injectable()
 export class PostboxService {
   private readonly logger = new Logger(PostboxService.name);
@@ -55,7 +53,6 @@ export class PostboxService {
     return `${randomUUID()}@${domain}`;
   }
 
-  // Возвращает наш Message-ID отправленного письма (без угловых скобок)
   async send(params: PostboxSendParams): Promise<string> {
     const client = this.getClient();
     const messageId = this.generateMessageId();

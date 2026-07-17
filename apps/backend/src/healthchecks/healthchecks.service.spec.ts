@@ -65,8 +65,6 @@ describe('HealthchecksService', () => {
     expect(service).toBeDefined();
   });
 
-  // ─── onModuleInit ────────────────────────────────────────────────────────────
-
   describe('onModuleInit', () => {
     it('должен запустить таймеры для активных мониторов', async () => {
       const hcs = [makeHc({ id: 1 }), makeHc({ id: 2 })];
@@ -87,8 +85,6 @@ describe('HealthchecksService', () => {
     });
   });
 
-  // ─── onModuleDestroy ─────────────────────────────────────────────────────────
-
   describe('onModuleDestroy', () => {
     it('должен очищать все таймеры', async () => {
       mockRepo.findBy.mockResolvedValue([makeHc({ id: 1 }), makeHc({ id: 2 })]);
@@ -101,8 +97,6 @@ describe('HealthchecksService', () => {
     });
   });
 
-  // ─── findAll ─────────────────────────────────────────────────────────────────
-
   describe('findAll', () => {
     it('должен возвращать список мониторов', async () => {
       const list = [makeHc({ id: 1 }), makeHc({ id: 2 })];
@@ -114,8 +108,6 @@ describe('HealthchecksService', () => {
       expect(result).toBe(list);
     });
   });
-
-  // ─── findOne ─────────────────────────────────────────────────────────────────
 
   describe('findOne', () => {
     it('должен возвращать монитор по id', async () => {
@@ -133,8 +125,6 @@ describe('HealthchecksService', () => {
       await expect(service.findOne(999)).rejects.toThrow('Healthcheck #999 не найден');
     });
   });
-
-  // ─── create ──────────────────────────────────────────────────────────────────
 
   describe('create', () => {
     it('должен создавать монитор и запускать таймер если is_active=true', async () => {
@@ -159,8 +149,6 @@ describe('HealthchecksService', () => {
     });
   });
 
-  // ─── update ──────────────────────────────────────────────────────────────────
-
   describe('update', () => {
     it('должен обновлять монитор и перезапускать таймер', async () => {
       const existing = makeHc({ id: 1, is_active: true });
@@ -180,7 +168,6 @@ describe('HealthchecksService', () => {
       mockRepo.findOneBy.mockResolvedValue(existing);
       mockRepo.save.mockResolvedValue(updated);
 
-      // Запускаем таймер вручную
       (service as any).startTimer(existing);
       expect((service as any).timers.has(1)).toBe(true);
 
@@ -189,8 +176,6 @@ describe('HealthchecksService', () => {
       expect((service as any).timers.has(1)).toBe(false);
     });
   });
-
-  // ─── remove ──────────────────────────────────────────────────────────────────
 
   describe('remove', () => {
     it('должен останавливать таймер и удалять монитор', async () => {
@@ -204,8 +189,6 @@ describe('HealthchecksService', () => {
       expect((service as any).timers.has(3)).toBe(false);
     });
   });
-
-  // ─── toggle ──────────────────────────────────────────────────────────────────
 
   describe('toggle', () => {
     it('должен включать неактивный монитор', async () => {
@@ -230,8 +213,6 @@ describe('HealthchecksService', () => {
       expect(result.is_active).toBe(false);
     });
   });
-
-  // ─── runCheck ────────────────────────────────────────────────────────────────
 
   describe('runCheck (логика проверок)', () => {
     let httpGetSpy: jest.SpyInstance;
@@ -337,8 +318,6 @@ describe('HealthchecksService', () => {
       expect(mockRepo.save).not.toHaveBeenCalled();
     });
   });
-
-  // ─── sendAlert ───────────────────────────────────────────────────────────────
 
   describe('sendAlert', () => {
     it('не должен падать если sendSystemMessage выбрасывает ошибку', async () => {

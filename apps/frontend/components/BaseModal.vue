@@ -119,7 +119,6 @@ defineExpose({
   }
 }
 
-// Появление/исчезновение модалки: мягкий fade оверлея + лёгкий подъём со scale
 .modal-enter-active {
   transition: opacity 0.2s ease;
 }

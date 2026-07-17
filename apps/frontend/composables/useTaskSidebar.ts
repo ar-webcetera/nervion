@@ -306,7 +306,6 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
     try {
       if (!taskId.value) return;
       const newTask = await taskStore.duplicateTask(taskId.value);
-      // Сразу показываем копию на доске в колонке её статуса
       moveTaskToStatusColumn(newTask.id, newTask.status);
       $toast.success('Задача продублирована');
       await openTaskSidebar(newTask.id);

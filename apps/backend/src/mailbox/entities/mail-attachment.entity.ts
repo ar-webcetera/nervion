@@ -25,7 +25,6 @@ export class MailAttachments {
   @Column({ type: 'varchar', length: 1024, name: 's3_key' })
   s3_key: string;
 
-  // Content-ID для inline-картинок в HTML письма
   @Column({ type: 'varchar', length: 255, name: 'content_id', nullable: true })
   content_id: string | null;
 

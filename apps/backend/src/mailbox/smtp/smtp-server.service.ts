@@ -11,7 +11,6 @@ import { InboundMailData } from '../mailbox.types';
 import { parseTaskIdFromAddress, normalizeMessageId } from '../mailbox.utils';
 
 const DEFAULT_SMTP_PORT = 25;
-// Лимит размера письма с вложениями
 const MAX_MESSAGE_SIZE = 26214400; // 25 MB
 
 function flattenAddresses(value?: AddressObject | AddressObject[]): MailAddress[] {
@@ -65,7 +64,6 @@ export class SmtpServerService {
         this.handleMessage(stream, session)
           .then(() => callback())
           .catch((error) => {
-            // Возвращаем 451 — отправитель повторит доставку позже, письмо не потеряется
             this.logger.error(`Ошибка обработки письма: ${error instanceof Error ? error.stack : error}`);
             callback(Object.assign(new Error('Temporary processing failure'), { responseCode: 451 }));
           });
@@ -92,8 +90,6 @@ export class SmtpServerService {
   }
 
   private validateRecipient(address: SMTPServerAddress): Promise<boolean> {
-    // Catch-all: принимаем любой адрес нашего домена. Ящик для нового адреса
-    // заводится автоматически при доставке (см. handleMessage), письма не теряются.
     return Promise.resolve(address.address.toLowerCase().endsWith(`@${this.domain}`));
   }
 
@@ -138,7 +134,6 @@ export class SmtpServerService {
       })),
     };
 
-    // Конверт SMTP надёжнее заголовков: туда входят и BCC-доставки, и алиасы
     const envelopeRecipients = session.envelope.rcptTo.map((rcpt) => rcpt.address.toLowerCase());
     const targetAccountIds = new Set<number>();
 
@@ -155,7 +150,6 @@ export class SmtpServerService {
 
       targetAccountIds.add(account.id);
 
-      // Получатель из конверта мог не попасть в To/Cc (BCC) — добавим для привязки к задаче
       const dataForAccount: InboundMailData =
         data.to.some((item) => item.address === recipient) || data.cc.some((item) => item.address === recipient)
           ? data
@@ -197,7 +191,6 @@ export class SmtpServerService {
 
       return key;
     } catch (error) {
-      // Письмо важнее архива: не валим доставку из-за S3
       this.logger.error(`Не удалось сохранить raw-письмо в S3: ${error}`);
       return null;
     }

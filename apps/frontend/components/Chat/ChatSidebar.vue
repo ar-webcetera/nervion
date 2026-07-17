@@ -57,7 +57,6 @@ const handleWsEvent = (payload: { type: string; data: VoiceRoomState }) => {
 };
 
 onMounted(() => {
-  // Восстанавливаем состояние если пользователь уже в комнате
   if (voiceActiveProjectId.value !== null) {
     voiceRoomsMap.value.set(voiceActiveProjectId.value, {
       projectId: voiceActiveProjectId.value,
@@ -143,8 +142,6 @@ const requestDeleteChat = (chat: ChatListItem) => {
   deleteChatModal.value?.open();
 };
 
-// На мобилке корзина поверх текста мешала — вместо неё долгое нажатие открывает меню с «Удалить».
-// На десктопе корзина на ховере остаётся (тут только тач).
 const chatMenu = ref<{ chat: ChatListItem; x: number; y: number } | null>(null);
 let longPressTimer: ReturnType<typeof setTimeout> | null = null;
 let longPressFired = false;
@@ -163,9 +160,7 @@ const onChatTouchStart = (event: TouchEvent, chat: ChatListItem) => {
   clearLongPress();
   longPressTimer = setTimeout(() => {
     longPressFired = true;
-    // лёгкая вибро-отдача, если поддерживается
     navigator.vibrate?.(10);
-    // на iOS выделение могло уже начаться — снимаем его
     window.getSelection?.()?.removeAllRanges();
     const x = Math.min(touch.clientX, window.innerWidth - 180);
     const y = Math.min(touch.clientY, window.innerHeight - 80);
@@ -264,14 +259,11 @@ const getInitials = (name: string): string => {
 };
 
 const openChat = async (chat: ChatListItem) => {
-  // если только что сработало долгое нажатие (открыли меню) — клик-открытие подавляем
   if (longPressFired) {
     longPressFired = false;
     return;
   }
   try {
-    // Только навигация: загрузку сообщений (с учётом кэша) и файлов делает страница chat.vue
-    // в watch(chatId). Это убирает дублирующий запрос и спиннер при переключении на кэшированный чат.
     if (!chat.chatId && chat.type === ChatType.Direct && chat.memberId != null) {
       const newChat = await chatStore.createChat(chat.memberId);
       await router.replace({ query: { chatId: newChat.id } });
@@ -397,7 +389,6 @@ const vImgReveal = {
       </ul>
     </div>
 
-    <!-- контекстное меню чата по долгому нажатию (тач) -->
     <template v-if="chatMenu">
       <div class="chat-ctx__backdrop" @click="closeChatMenu" @touchstart.passive="closeChatMenu"></div>
       <Transition name="modal" appear>
@@ -625,12 +616,10 @@ const vImgReveal = {
     @include flex(cn);
     gap: 12px;
 
-    // чтобы последний чат не уходил под фиксированную нижнюю нав-панель
     @media (max-width: $screen-mobile-l) {
       padding-bottom: var(--mobile-nav-h);
     }
 
-    // iOS при долгом нажатии иначе выделяет «весь экран» — гасим выделение на всём списке
     @media (hover: none) and (pointer: coarse) {
       user-select: none;
       -webkit-user-select: none;
@@ -646,7 +635,6 @@ const vImgReveal = {
   padding: 4px;
   cursor: pointer;
   transition: background-color 0.2s ease;
-  // при долгом нажатии (тач) не выделять текст/не показывать системное меню
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
@@ -770,7 +758,6 @@ const vImgReveal = {
     pointer-events: none;
     appearance: none;
 
-    // на тач-устройствах корзину прячем — там удаление через долгое нажатие (меню)
     @media (hover: none) and (pointer: coarse) {
       display: none;
     }
@@ -803,14 +790,12 @@ const vImgReveal = {
     pointer-events: auto;
   }
 
-  // на ховере прячем время — кнопка удаления занимает его место (правый-верхний угол)
   &:hover &__time,
   &:focus-within &__time {
     opacity: 0;
   }
 }
 
-// контекстное меню чата (долгое нажатие на мобилке)
 .chat-ctx {
   position: fixed;
   z-index: 1001;
@@ -1120,7 +1105,6 @@ const vImgReveal = {
   }
 }
 
-// Появление/исчезновение модалок чата: fade + лёгкий подъём со scale
 .modal-enter-active,
 .modal-leave-active {
   transition: opacity 0.2s ease;

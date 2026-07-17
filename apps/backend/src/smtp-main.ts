@@ -3,7 +3,6 @@ import { Logger } from '@nestjs/common';
 import { SmtpWorkerModule } from './smtp-worker.module';
 import { SmtpServerService } from './mailbox/smtp/smtp-server.service';
 
-// Отдельный процесс: SMTP-приёмник входящей почты (отдельная точка входа SMTP-приёмника)
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(SmtpWorkerModule);
   const smtpServer = app.get(SmtpServerService);

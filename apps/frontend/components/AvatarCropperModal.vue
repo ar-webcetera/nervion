@@ -8,7 +8,6 @@ const filesStore = useFilesStore();
 const userStore = useUserStore();
 const config = useRuntimeConfig();
 
-// ─── State ────────────────────────────────────────────────────────────────────
 const CANVAS_SIZE = 320;
 
 const isOpen = ref(false);
@@ -16,13 +15,11 @@ const isUploading = ref(false);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 
-// Image state
 const img = ref<HTMLImageElement | null>(null);
 const offsetX = ref(0);
 const offsetY = ref(0);
 const scale = ref(1);
 
-// Drag state
 let dragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
@@ -32,7 +29,6 @@ let pinching = false;
 let pinchStartDistance = 0;
 let pinchStartScale = 1;
 
-// ─── Open / close ─────────────────────────────────────────────────────────────
 const open = () => {
   isOpen.value = true;
   nextTick(() => fileInputRef.value?.click());
@@ -45,7 +41,6 @@ const close = () => {
 
 defineExpose({ open });
 
-// ─── File → image ─────────────────────────────────────────────────────────────
 const onFileChange = (e: Event) => {
   const file = (e.target as HTMLInputElement).files?.[0];
   (e.target as HTMLInputElement).value = '';
@@ -59,7 +54,6 @@ const onFileChange = (e: Event) => {
     const image = new Image();
     image.onload = () => {
       img.value = image;
-      // cover: scale so the shorter side fills CANVAS_SIZE
       const s = Math.max(CANVAS_SIZE / image.naturalWidth, CANVAS_SIZE / image.naturalHeight);
       scale.value = s;
       offsetX.value = (CANVAS_SIZE - image.naturalWidth * s) / 2;
@@ -71,7 +65,6 @@ const onFileChange = (e: Event) => {
   reader.readAsDataURL(file);
 };
 
-// ─── Canvas draw ─────────────────────────────────────────────────────────────
 const draw = () => {
   const canvas = canvasRef.value;
   if (!canvas || !img.value) return;
@@ -85,7 +78,6 @@ const draw = () => {
     img.value.naturalHeight * scale.value,
   );
 
-  // Overlay: тёмная область снаружи круга, внутри — чистое изображение
   ctx.save();
   ctx.beginPath();
   ctx.rect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
@@ -97,7 +89,6 @@ const draw = () => {
 
 watch([offsetX, offsetY, scale, img], draw);
 
-// ─── Drag ─────────────────────────────────────────────────────────────────────
 const clampOffset = (ox: number, oy: number) => {
   if (!img.value) return { ox, oy };
   const w = img.value.naturalWidth * scale.value;
@@ -194,7 +185,6 @@ const onTouchEnd = (e: TouchEvent) => {
   }
 };
 
-// ─── Wheel zoom ───────────────────────────────────────────────────────────────
 const onWheel = (e: WheelEvent) => {
   e.preventDefault();
   const delta = e.deltaY < 0 ? 0.05 : -0.05;
@@ -204,12 +194,10 @@ const onWheel = (e: WheelEvent) => {
   offsetY.value = oy;
 };
 
-// ─── Save ────────────────────────────────────────────────────────────────────
 const save = async () => {
   const canvas = canvasRef.value;
   if (!canvas) return;
 
-  // Draw without overlay for upload
   const exportCanvas = document.createElement('canvas');
   exportCanvas.width = CANVAS_SIZE;
   exportCanvas.height = CANVAS_SIZE;

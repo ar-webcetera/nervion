@@ -1639,7 +1639,6 @@ input {
         flex-shrink: 0;
       }
 
-      // на мобилке — только иконки (подписи скрываем, чтобы не теснить заголовок)
       @media (max-width: $screen-mobile-l) {
         padding: 6px;
       }

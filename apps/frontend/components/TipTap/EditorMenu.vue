@@ -8,12 +8,6 @@ import IconAlignJustify from '~/components/Icons/IconAlignJustify.vue';
 import IconNumberList from '~/components/Icons/IconNumberList.vue';
 import IconList from '~/components/Icons/IconList.vue';
 import type { Editor as TiptapCoreEditor } from '@tiptap/core';
-// Tiptap chain commands (toggleBold, setLink, setTextAlign, ...) are added via
-// `declare module '@tiptap/core'` augmentations inside each extension package.
-// vue-tsc only picks them up in files that import the extensions as values
-// (see EditorTiptap.vue). This menu component receives the already-configured
-// editor as a prop, so we widen the chain return type here to keep template
-// chain calls valid.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TiptapEditor = Omit<TiptapCoreEditor, 'chain'> & { chain: () => any };
 import IconH2 from '~/components/Icons/IconH2.vue';

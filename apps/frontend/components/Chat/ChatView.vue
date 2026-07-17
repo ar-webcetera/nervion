@@ -34,7 +34,6 @@ const EMPTY_MESSAGE_CONTENT: JSONContent = {
 const currentChatInfo = computed(() => chatList.value.find((c) => c.chatId?.toString() === chatId.value?.toString()));
 const isGroupChat = computed(() => currentChatInfo.value?.type === ChatType.Group);
 
-// Members panel
 const isMembersOpen = ref(false);
 type ChatMember = { id: number; first_name: string; last_name: string; photo_url: string };
 const groupMembers = ref<ChatMember[]>([]);
@@ -138,7 +137,6 @@ const sendMessage = async (chatId: string, senderId: number | undefined, message
     editorComponentRef.value?.clearContent();
     editorComponentRef.value?.focusEditor();
     replyingTo.value = null;
-    // Показываем своё сообщение сразу, не дожидаясь ws-эха (дедуп по id заменит его при эхе)
     const created = await chatStore.createMessage(chatId, senderId, content, replyToId);
     if (created) chatStore.addMessageToCache(chatId, created);
   } catch (error) {
@@ -226,7 +224,6 @@ const replySnippet = (msg: Chat): string => {
 
 const startReply = (message: Chat) => {
   replyingTo.value = message;
-  // двойной клик выделяет слово — убираем выделение, чтобы не оставался «огрызок»
   window.getSelection?.()?.removeAllRanges();
   editorComponentRef.value?.focusEditor();
 };
@@ -235,8 +232,6 @@ const cancelReply = () => {
   replyingTo.value = null;
 };
 
-// На мобилке кнопка «Ответить» справа от пузыря вылезала за экран (горизонтальный скролл).
-// Вместо неё — долгое нажатие на сообщение открывает меню с «Ответить».
 const messageMenu = ref<{ message: Chat; x: number; y: number } | null>(null);
 let msgLongPressTimer: ReturnType<typeof setTimeout> | null = null;
 let msgLongPressFired = false;
@@ -255,7 +250,6 @@ const onMessageTouchStart = (event: TouchEvent, message: Chat) => {
   msgLongPressTimer = setTimeout(() => {
     msgLongPressFired = true;
     navigator.vibrate?.(10);
-    // на iOS выделение могло уже начаться — снимаем его
     window.getSelection?.()?.removeAllRanges();
     const x = Math.min(touch.clientX, window.innerWidth - 180);
     const y = Math.min(touch.clientY, window.innerHeight - 80);
@@ -312,7 +306,6 @@ const scrollToMessage = (id: string) => {
       </button>
     </div>
 
-    <!-- Members panel -->
     <div v-if="isMembersOpen" class="members-panel">
       <div class="members-panel__overlay" @click="isMembersOpen = false" />
       <div class="members-panel__content">
@@ -478,7 +471,6 @@ const scrollToMessage = (id: string) => {
       <p>Выберите диалог из списка слева</p>
     </div>
 
-    <!-- меню сообщения по долгому нажатию (тач) -->
     <template v-if="messageMenu">
       <div class="msg-ctx__backdrop" @click="closeMessageMenu" @touchstart.passive="closeMessageMenu"></div>
       <Transition name="modal" appear>
@@ -592,8 +584,6 @@ const scrollToMessage = (id: string) => {
       margin-top: 74px;
     }
 
-    // iOS при долгом нажатии уходит выделять вверх по дереву — гасим выделение на всём контейнере,
-    // иначе выделяется «весь экран». Только тач, чтобы на десктопе можно было копировать текст.
     @media (hover: none) and (pointer: coarse) {
       user-select: none;
       -webkit-user-select: none;
@@ -617,8 +607,6 @@ const scrollToMessage = (id: string) => {
 
   &__reply-bar {
     flex: 0 0 100%;
-    // min-width:0 обязателен: иначе длинный неразрывный текст цитаты раздувает бар
-    // (его авто-минимум = min-content) и кнопка ✕ уезжает за экран
     min-width: 0;
     max-width: 100%;
     overflow: hidden;
@@ -809,7 +797,6 @@ const scrollToMessage = (id: string) => {
     padding: 8px;
     min-width: 0;
 
-    // на тач долгое нажатие открывает меню «Ответить» — гасим выделение текста/системное меню
     @media (hover: none) and (pointer: coarse) {
       user-select: none;
       -webkit-user-select: none;
@@ -893,7 +880,6 @@ const scrollToMessage = (id: string) => {
     opacity: 0;
     pointer-events: none;
 
-    // на тач кнопку прячем — она вылезала за экран (горизонтальный скролл); там ответ через долгое нажатие
     @media (hover: none) and (pointer: coarse) {
       display: none;
     }
@@ -902,7 +888,6 @@ const scrollToMessage = (id: string) => {
       color 0.15s ease,
       background 0.15s ease;
 
-    // Невидимый «мостик» от пузыря до кнопки, чтобы курсор не терял её по пути.
     &::before {
       content: '';
       position: absolute;
@@ -930,7 +915,6 @@ const scrollToMessage = (id: string) => {
   }
 }
 
-// контекстное меню сообщения (долгое нажатие на мобилке)
 .msg-ctx {
   position: fixed;
   z-index: 1001;

@@ -24,7 +24,6 @@ export const useMailStore = defineStore('mail', () => {
   const config = useRuntimeConfig();
 
   const accounts = ref<MailAccount[]>([]);
-  // Полный список ящиков для admin-страницы управления доступом (с allowedUsers)
   const manageAccounts = ref<MailAccount[]>([]);
   const contacts = ref<string[]>([]);
   const threads = ref<MailThread[]>([]);
@@ -49,7 +48,6 @@ export const useMailStore = defineStore('mail', () => {
     return accounts.value;
   };
 
-  // Все ящики (admin) — для управления доступом
   const fetchManageAccounts = async () => {
     manageAccounts.value = await $fetch<MailAccount[]>('/api/mailbox/accounts/manage', requestOptions());
     return manageAccounts.value;
@@ -67,7 +65,6 @@ export const useMailStore = defineStore('mail', () => {
     } = {},
   ) => {
     const requestVersion = params.append ? threadsRequestVersion : ++threadsRequestVersion;
-    // silent — фоновое обновление (поллинг): не показываем спиннер, чтобы список не моргал
     if (!params.silent) {
       pendingThreads.value = true;
     }

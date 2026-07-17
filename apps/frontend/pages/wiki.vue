@@ -371,7 +371,6 @@ definePageMeta({
           <h1>База знаний</h1>
           <p>Выберите проект в меню слева, чтобы начать работу.</p>
         </div>
-        <!-- Загрузка MD-файла -->
         <div v-else-if="isLoadingMarkdown" class="project-wiki__page">
           <div class="project-wiki__page-body">
             <div class="project-wiki__skeleton">
@@ -383,7 +382,6 @@ definePageMeta({
             </div>
           </div>
         </div>
-        <!-- MD-файл из файлового менеджера -->
         <div v-else-if="markdownContent" class="project-wiki__page">
           <div class="project-wiki__page-top">
             <div class="project-wiki__page-title">

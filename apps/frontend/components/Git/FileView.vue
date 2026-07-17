@@ -82,7 +82,6 @@ const humanSize = computed(() => {
     @include flex(rn, stretch);
     min-height: 100%;
     overflow: hidden;
-    // редакторская тема Darcula (моноширинный код) — не из DS, оставлена как есть
     background: var(--code-bg);
     color: var(--code-fg);
     font-family: 'Fira Code', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;

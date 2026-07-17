@@ -92,7 +92,7 @@ const parsePushPayload = (data: PushMessageData | null): PushPayload | null => {
       };
     }
   } catch {
-    // fallback на text payload
+    // Ниже обрабатывается текстовый payload.
   }
 
   const textPayload = data.text();

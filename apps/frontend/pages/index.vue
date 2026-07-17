@@ -46,7 +46,6 @@ enum ViewType {
   LIST = 'list',
   WEEKLY = 'weekly',
 }
-// Режим отображения хранится per-user в БД (приходит на SSR через getFilterState) — без моргания.
 const viewType = computed<ViewType>(() => (taskStore.viewType as ViewType) ?? ViewType.LIST);
 
 const onToggleCollapse = (payload: { status: TASK_STATUSES; collapsed: boolean }) => {
@@ -1030,7 +1029,6 @@ useHead({
     margin-top: 16px;
     overflow: auto;
 
-    // чтобы контент не уходил под фиксированную нижнюю нав-панель
     @media (max-width: $screen-mobile-l) {
       padding-bottom: var(--mobile-nav-h);
     }

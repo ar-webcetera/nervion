@@ -1,7 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-// Блог (статьи/категории) вынесен из трекера в отдельный бэкенд сайта.
-// Окончательно удаляем осиротевшие таблицы блога из БД трекера.
 export class DropArticleTables1776800000000 implements MigrationInterface {
   name = 'DropArticleTables1776800000000';
 
@@ -12,7 +10,5 @@ export class DropArticleTables1776800000000 implements MigrationInterface {
     await queryRunner.query(`DROP TABLE IF EXISTS article_categories CASCADE`);
   }
 
-  public async down(): Promise<void> {
-    // Откат не предусмотрен: блог живёт в отдельной БД сайта (webcetera_blog).
-  }
+  public async down(): Promise<void> {}
 }
