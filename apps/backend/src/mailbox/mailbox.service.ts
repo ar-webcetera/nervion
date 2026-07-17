@@ -12,6 +12,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, IsNull, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { PushService } from '../push/push.service';
 import { StorageService } from '../storage/storage.service';
 import { CreateMailAccountDto } from './dto/create-mail-account.dto';
 import { FindThreadsDto, MAIL_FOLDER_FILTER } from './dto/find-threads.dto';
@@ -47,16 +48,13 @@ export class MailboxService {
     private readonly storageService: StorageService,
     private readonly postboxService: PostboxService,
     private readonly configService: ConfigService,
+    private readonly pushService: PushService,
   ) {}
-
-  // ===== Аккаунты =====
 
   async findAccountByAddress(address: string): Promise<MailAccounts | null> {
     return this.accountsRepository.findOne({ where: { address: address.toLowerCase(), is_active: true } });
   }
 
-  // Catch-all: для входящего на ещё не заведённый адрес автоматически создаём
-  // ненаназначенный общий ящик, чтобы письма не терялись (потом админ привяжет к сотруднику).
   async findOrCreateInboundAccount(address: string): Promise<MailAccounts> {
     const normalized = address.toLowerCase();
     const existing = await this.accountsRepository.findOne({ where: { address: normalized } });
@@ -77,7 +75,6 @@ export class MailboxService {
     );
   }
 
-  // Ящик, в который падают треды с алиасов task+ID@ (сам алиас не является аккаунтом)
   async findTaskAliasAccount(): Promise<MailAccounts | null> {
     const configured = this.configService.get<string>('MAILBOX_TASK_ALIAS_ACCOUNT');
 
@@ -103,7 +100,6 @@ export class MailboxService {
     return accounts.filter((account) => canAccessAccount(user, account));
   }
 
-  // Все ящики для управления грантами (только админ) — без фильтра по доступу.
   async listAllAccounts(): Promise<MailAccounts[]> {
     return this.accountsRepository.find({
       order: { id: 'ASC' },
@@ -184,10 +180,7 @@ export class MailboxService {
     return account;
   }
 
-  // ===== Входящие =====
-
   async ingestInbound(account: MailAccounts, data: InboundMailData): Promise<MailMessages | null> {
-    // Повторная доставка (ретрай отправителя) — не дублируем
     if (data.messageId) {
       const duplicate = await this.messagesRepository
         .createQueryBuilder('message')
@@ -232,11 +225,42 @@ export class MailboxService {
     }
     await this.threadsRepository.save(thread);
 
+    await this.notifyInboundMessage(account.id, thread.id, message.id, data);
+
     return message;
   }
 
+  private async notifyInboundMessage(
+    accountId: number,
+    threadId: number,
+    messageId: number,
+    data: InboundMailData,
+  ): Promise<void> {
+    try {
+      const account = await this.accountsRepository.findOne({
+        where: { id: accountId },
+        relations: { allowedUsers: true },
+      });
+      const recipientIds = [...new Set((account?.allowedUsers ?? []).map((user) => user.id))];
+      if (recipientIds.length === 0) return;
+
+      const sender = data.from.name?.trim() || data.from.address;
+      const subject = data.subject?.trim() || '(без темы)';
+      const preview = (data.text ?? '').replace(/\s+/g, ' ').trim();
+      const body = preview ? `${subject}: ${preview.slice(0, 180)}` : subject;
+
+      await this.pushService.sendToUsers(recipientIds, {
+        title: `Новое письмо от ${sender}`,
+        body,
+        url: `/mail?folder=inbox&account=${accountId}&thread=${threadId}`,
+        tag: `mail-message-${messageId}`,
+      });
+    } catch (error) {
+      this.logger.warn(`Не удалось отправить push о письме ${messageId}: ${String(error)}`);
+    }
+  }
+
   private async resolveInboundThread(account: MailAccounts, data: InboundMailData): Promise<MailThreads> {
-    // 1. По цепочке In-Reply-To/References — ответ в существующий тред
     const referencedIds = extractReferencedIds(data.inReplyTo, data.referencesHeader);
 
     if (referencedIds.length > 0) {
@@ -253,7 +277,6 @@ export class MailboxService {
       }
     }
 
-    // 2. По plus-адресации task+ID@ — привязка к задаче
     const taskId = data.to
       .concat(data.cc)
       .map((recipient) => parseTaskIdFromAddress(recipient.address))
@@ -296,9 +319,7 @@ export class MailboxService {
     }
   }
 
-  // Адреса из истории переписки (для автодополнения в поле «Кому»)
   async getContacts(user: AuthenticatedUser): Promise<string[]> {
-    // Доступ только по гранту — одинаково для всех ролей (включая админа).
     const access = `AND a.id IN (SELECT mail_account_id FROM mail_account_access WHERE user_id = $1)`;
     const params = [user.id];
 
@@ -326,9 +347,6 @@ export class MailboxService {
     return (rows as { addr: string }[]).map((row) => row.addr);
   }
 
-  // ===== Вложения исходящих =====
-
-  // Загрузка файла из композера в S3 — отдаём фронту дескриптор для последующей отправки
   async uploadOutboundAttachment(file: Express.Multer.File): Promise<MailAttachmentInputDto> {
     const original = file.originalname || 'file';
     const safeName = original.replace(/[^\wа-яА-ЯёЁ.-]+/g, '_').slice(0, 200);
@@ -370,8 +388,6 @@ export class MailboxService {
       ),
     );
   }
-
-  // ===== Исходящие =====
 
   async sendMail(user: AuthenticatedUser, dto: SendMailDto): Promise<MailMessages> {
     const account = await this.getAccountForUser(user, dto.account_id);
@@ -463,8 +479,6 @@ export class MailboxService {
     return message;
   }
 
-  // ===== Чтение =====
-
   async findThreads(user: AuthenticatedUser, dto: FindThreadsDto) {
     const limit = Math.min(dto.limit ?? DEFAULT_THREADS_LIMIT, MAX_THREADS_LIMIT);
     const page = dto.page ?? 1;
@@ -479,7 +493,6 @@ export class MailboxService {
       .skip((page - 1) * limit)
       .take(limit);
 
-    // Доступ только по гранту — одинаково для всех ролей (включая админа).
     query.andWhere('account.id IN (SELECT mail_account_id FROM mail_account_access WHERE user_id = :userId)', {
       userId: user.id,
     });
@@ -558,8 +571,6 @@ export class MailboxService {
     return { thread, messages };
   }
 
-  // ===== Папки и удаление =====
-
   async moveThreadToFolder(user: AuthenticatedUser, threadId: number, folder: MAIL_FOLDERS): Promise<MailThreads> {
     const { thread } = await this.getThreadWithMessages(user, threadId);
 
@@ -568,14 +579,12 @@ export class MailboxService {
     return this.threadsRepository.save(thread);
   }
 
-  // Полное удаление треда — только из корзины (необратимо)
   async deleteThreadPermanently(user: AuthenticatedUser, threadId: number): Promise<void> {
     const { thread } = await this.getThreadWithMessages(user, threadId);
 
     await this.threadsRepository.remove(thread);
   }
 
-  // Мягкое удаление одного письма из треда
   async softDeleteMessage(user: AuthenticatedUser, messageId: number): Promise<void> {
     const message = await this.messagesRepository.findOne({
       where: { id: messageId },
@@ -593,8 +602,6 @@ export class MailboxService {
     message.deleted_at = new Date();
     await this.messagesRepository.save(message);
   }
-
-  // ===== Черновики =====
 
   async saveDraft(user: AuthenticatedUser, dto: SaveDraftDto): Promise<MailMessages> {
     const account = await this.getAccountForUser(user, dto.account_id);
@@ -758,7 +765,6 @@ export class MailboxService {
       .where('message.is_read = false')
       .andWhere('message.direction = :inbound', { inbound: MAIL_DIRECTIONS.inbound });
 
-    // Доступ только по гранту — одинаково для всех ролей (включая админа).
     query.andWhere('account.id IN (SELECT mail_account_id FROM mail_account_access WHERE user_id = :userId)', {
       userId: user.id,
     });

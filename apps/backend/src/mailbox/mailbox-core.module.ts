@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { PushModule } from '../push/push.module';
 import { StorageModule } from '../storage/storage.module';
 import { MailAccounts } from './entities/mail-account.entity';
 import { MailAttachments } from './entities/mail-attachment.entity';
@@ -9,9 +10,8 @@ import { MailboxService } from './mailbox.service';
 import { PostboxService } from './postbox.service';
 import { SmtpServerService } from './smtp/smtp-server.service';
 
-// Без контроллеров — используется и HTTP-бэкендом, и SMTP-воркером
 @Module({
-  imports: [StorageModule, TypeOrmModule.forFeature([MailAccounts, MailThreads, MailMessages, MailAttachments])],
+  imports: [PushModule, StorageModule, TypeOrmModule.forFeature([MailAccounts, MailThreads, MailMessages, MailAttachments])],
   providers: [MailboxService, PostboxService, SmtpServerService],
   exports: [MailboxService, PostboxService, SmtpServerService],
 })
