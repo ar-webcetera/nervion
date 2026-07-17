@@ -103,7 +103,6 @@ export class GitService {
     if (!gitdir.startsWith('/')) {
       throw new BadRequestException('Путь должен быть абсолютным');
     }
-    // проверяем, что по пути действительно git-репозиторий
     try {
       await this.execGitText(gitdir, ['rev-parse', '--git-dir']);
     } catch {
@@ -112,7 +111,6 @@ export class GitService {
 
     let defaultBranch = dto.defaultBranch?.trim() ?? '';
     if (!defaultBranch) {
-      // определяем ветку по умолчанию автоматически: HEAD, иначе первая ветка
       try {
         defaultBranch = (await this.execGitText(gitdir, ['symbolic-ref', '--short', 'HEAD'])).trim();
       } catch {
@@ -189,7 +187,6 @@ export class GitService {
       [commitList, treeList] = await Promise.all([this.commits(selected.id, branch), this.tree(selected.id, branch, '')]);
     }
 
-    // Деталь (дифф коммита / файл) грузим тут же — чтобы её рендерил SSR, без мелькания на клиенте.
     let detail:
       | { kind: 'diff'; commit: CommitInfo; data: DiffResult }
       | { kind: 'file'; entry: TreeEntry; data: FileContent }
@@ -367,7 +364,6 @@ export class GitService {
         };
       });
 
-    // папки сверху, затем файлы; внутри — по алфавиту
     return entries.sort((a, b) => {
       if (a.type !== b.type) return a.type === 'tree' ? -1 : 1;
       return a.name.localeCompare(b.name);
@@ -553,8 +549,6 @@ export class GitService {
             current.deletions++;
           } else if (t === ' ') {
             hunk.lines.push({ type: 'ctx', content: l.slice(1), oldNo: oldNo++, newNo: newNo++ });
-          } else {
-            // пустая строка/прочее в теле ханка — пропускаем
           }
           i++;
         }

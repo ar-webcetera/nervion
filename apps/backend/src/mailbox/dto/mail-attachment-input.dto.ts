@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import { IsInt, IsString, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-// Дескриптор уже загруженного в S3 вложения (возвращается POST /mailbox/attachments)
 export class MailAttachmentInputDto {
   @ApiProperty({ description: 'Ключ объекта вложения в S3', example: 'mail/outbound/2026/abc123.pdf' })
   @IsString()

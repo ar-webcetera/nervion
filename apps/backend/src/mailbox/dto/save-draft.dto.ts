@@ -3,7 +3,6 @@ import { IsArray, IsEmail, IsInt, IsOptional, IsString, MaxLength, ValidateNeste
 import { MailAttachmentInputDto } from './mail-attachment-input.dto';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-// У черновика получатель и тема необязательны — можно сохранить «как есть»
 export class SaveDraftDto {
   @ApiProperty({ description: 'ID почтового ящика, из которого отправляется письмо', example: 1 })
   @IsInt()

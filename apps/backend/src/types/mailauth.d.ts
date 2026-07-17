@@ -1,4 +1,3 @@
-// Минимальные типы для mailauth — у пакета нет официальных деклараций
 declare module 'mailauth' {
   interface MailauthStatus {
     result?: string;

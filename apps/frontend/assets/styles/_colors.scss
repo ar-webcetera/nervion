@@ -9,9 +9,7 @@
   --light-text-backgroung-primary: #fefefe;
   --dark-text-background-primary-5: #16141d;
   --dark-text-background-primary: #16141d;
-  // корневой фон страницы (html), чуть светлее панелей — под панелями и в просветах
   --app-backdrop: #1b1922;
-  // брендовое свечение сверху (фиолет бренда с низкой альфой) — для глубины тёмной темы
   --app-glow: rgba(111, 87, 243, 0.18);
   --black-50: #0d0d1580;
   --primary-100: #6b66d9;
@@ -20,7 +18,6 @@
   --green-25: rgba(18, 206, 139, 0.25);
   --green-10: rgba(18, 206, 139, 0.1);
   --secondary: #f75138;
-  // new colors
   --primary: #6f57f3;
   --primary-75: #6f57f3;
   --primary-50: rgba(111, 87, 243, 0.5);
@@ -38,7 +35,6 @@
   --danger-delete-10: rgba(251, 22, 22, 0.1);
   --danger-delete-50: rgba(251, 22, 22, 0.5);
 
-  // ── Бренд: доп. альфа-оттенки ──
   --primary-5: rgba(111, 87, 243, 0.05);
   --primary-10: rgba(111, 87, 243, 0.1);
   --primary-15: rgba(111, 87, 243, 0.15);
@@ -48,20 +44,16 @@
   --secondary-15: rgba(247, 81, 56, 0.15);
   --green-50: rgba(18, 206, 139, 0.5);
 
-  // ── Затемнения / оверлеи / тени (база #0d0d15) ──
   --black-10: rgba(13, 13, 21, 0.1);
   --black-25: rgba(13, 13, 21, 0.25);
   --black-40: rgba(13, 13, 21, 0.4);
   --black-60: rgba(13, 13, 21, 0.6);
   --black-85: rgba(13, 13, 21, 0.85);
 
-  // ── Светлый текст: доп. альфа ──
   --light-text-backgroung-primary-30: rgba(254, 254, 254, 0.3);
 
-  // ── Доп. тёмная поверхность (меню, дропдауны, поповеры) ──
   --dark-text-background-secondary: #201d2a;
 
-  // ── Палитра статусов / меток ──
   --status-blue: #38aef7;
   --status-violet: #8b5cf6;
   --status-rose: #f43f5e;
@@ -73,7 +65,6 @@
   --status-yellow-15: rgba(245, 197, 24, 0.15);
   --status-in-progress-15: rgba(245, 158, 11, 0.15);
 
-  // ── Тема подсветки кода (Git-вьюхи, IDE-стиль; самостоятельная палитра) ──
   --code-bg: #2b2b2b;
   --code-surface: #313335;
   --code-line: #606366;
@@ -86,6 +77,5 @@
   --code-deleted: #ff7b72;
   --code-checker: #3a3a3a;
 
-  // высота нижней мобильной нав-панели (+ safe-area iPhone) — для отступа списков, чтобы контент не уходил под неё
   --mobile-nav-h: calc(64px + env(safe-area-inset-bottom));
 }

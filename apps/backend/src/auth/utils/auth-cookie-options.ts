@@ -16,15 +16,9 @@ export const getAuthCookieOptions = (configService: ConfigService, withPersisten
     options.maxAge = getAuthTokenTtlMs(configService);
   }
 
-  // Host-only cookie: НЕ задаём Domain. Фронт и API на одном origin, домен не нужен.
-  // С Domain=APP_DOMAIN кука отвергалась браузером на другом хосте (напр. preprod.app.nervion.ru) — и не было входа.
   return options;
 };
 
-// Чистит куку authToken во ВСЕХ возможных scope: host-only, APP_DOMAIN (легаси) и
-// все родительские домены текущего host. Старые куки, выставленные когда-то с
-// Domain=..., host-only-чисткой не удаляются и «затеняют» новую host-only куку,
-// ломая вход — поэтому чистим по всем вариантам (несуществующие безвредны).
 export const clearAuthCookie = (configService: ConfigService, res: Response, host?: string): void => {
   const secure = (configService.get<string>('NODE_ENV') || 'development') === 'production';
   const base: CookieOptions = { httpOnly: true, sameSite: 'lax', path: '/', secure };

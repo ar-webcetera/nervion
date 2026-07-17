@@ -266,7 +266,6 @@ export class ChatsService {
     const messageWithReply = await this.attachReplyPreview(message);
     this.websocketGateway.sendChatMessageAdded(messageWithReply);
 
-    // Push-уведомления остальным участникам чата
     const members = await this.chatMemberRepository.find({ where: { chat_id: chatId } });
     const recipientIds = members.map((m) => m.user_id).filter((id) => id !== senderId);
     if (recipientIds.length > 0) {

@@ -25,7 +25,6 @@ export function createWikiDnd(): WikiDndContext {
   let expandTimer: ReturnType<typeof setTimeout> | null = null;
   let pending: { id: number; x0: number; y0: number; el: HTMLElement } | null = null;
 
-  // ── Tree helpers ──────────────────────────────────────────────────────
 
   function find(nodes: WikiTreeNode[], id: number): WikiTreeNode | null {
     for (const n of nodes) {
@@ -80,7 +79,6 @@ export function createWikiDnd(): WikiDndContext {
           nodes.splice(i + 1, 0, node);
           return true;
         }
-        // 'into'
         node.priority = cur.children.length > 0 ? Math.max(...cur.children.map((c) => c.priority)) + 100 : 1000;
         node.parent_page_id = cur.id;
         cur.children.push(node);
@@ -91,7 +89,6 @@ export function createWikiDnd(): WikiDndContext {
     return false;
   }
 
-  // ── Ghost element ─────────────────────────────────────────────────────
 
   function spawnGhost(itemEl: HTMLElement, e: PointerEvent) {
     const lbl = itemEl.querySelector<HTMLElement>('.wiki-menu-item__label') ?? itemEl;
@@ -121,7 +118,6 @@ export function createWikiDnd(): WikiDndContext {
     document.body.appendChild(ghost);
   }
 
-  // ── Auto scroll ───────────────────────────────────────────────────────
 
   function findScrollParent(el: HTMLElement): HTMLElement | null {
     let p = el.parentElement;
@@ -133,10 +129,8 @@ export function createWikiDnd(): WikiDndContext {
     return null;
   }
 
-  // ── Core pointer handlers ─────────────────────────────────────────────
 
   function onMove(e: PointerEvent) {
-    // Pending: wait for drag threshold
     if (pending) {
       if (Math.hypot(e.clientX - pending.x0, e.clientY - pending.y0) < 4) return;
       const { id, el } = pending;
@@ -152,7 +146,6 @@ export function createWikiDnd(): WikiDndContext {
     ghost.style.left = e.clientX - offsetX + 'px';
     ghost.style.top = e.clientY - offsetY + 'px';
 
-    // Auto-scroll the sidebar
     if (scrollEl) {
       if (rafId) cancelAnimationFrame(rafId);
       const y = e.clientY;
@@ -166,7 +159,6 @@ export function createWikiDnd(): WikiDndContext {
       });
     }
 
-    // Hit detection under ghost
     ghost.style.display = 'none';
     const hit = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
     ghost.style.display = '';
@@ -180,7 +172,6 @@ export function createWikiDnd(): WikiDndContext {
 
     const tid = Number(itemEl.getAttribute('data-page-id'));
 
-    // Prevent drop on self or own descendants
     if (tid === draggingId.value || isDescendant(draggingId.value, tid)) {
       dropTarget.value = null;
       killExpand();
@@ -210,25 +201,21 @@ export function createWikiDnd(): WikiDndContext {
     reset();
     if (!fromId || !tgt) return;
 
-    // Optimistic tree update
     const node = excise(wikiStore.wikiTree, fromId);
     if (!node) return;
     place(wikiStore.wikiTree, node, tgt.id, tgt.zone);
 
-    // Persist
     try {
       await wikiStore.updatePage(fromId, {
         parent_page_id: node.parent_page_id,
         priority: node.priority,
       });
     } catch {
-      // Rollback: re-fetch tree
       const pid = wikiStore.selectedProjectId;
       if (pid) void wikiStore.fetchPages(pid);
     }
   }
 
-  // ── Auto expand closed folders ────────────────────────────────────────
 
   function scheduleExpand(id: number) {
     killExpand();
@@ -245,7 +232,6 @@ export function createWikiDnd(): WikiDndContext {
     expandTargetId.value = null;
   }
 
-  // ── Cleanup ───────────────────────────────────────────────────────────
 
   function reset() {
     draggingId.value = null;
@@ -264,7 +250,6 @@ export function createWikiDnd(): WikiDndContext {
     scrollEl = null;
   }
 
-  // ── Public API ────────────────────────────────────────────────────────
 
   function initDrag(e: PointerEvent, pageId: number, itemEl: HTMLElement) {
     if (e.button !== 0) return;

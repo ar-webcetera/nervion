@@ -22,8 +22,6 @@ import { YandexOauthService } from './yandex-oauth.service';
       global: true,
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        // Реальный секрет грузится JwtSecretService при старте и применяется
-        // jwt.service'ом явно в sign/verify. Это значение-дефолт не используется.
         secret: '__jwt_default_overridden_per_call__',
         signOptions: { expiresIn: getAuthTokenTtlSeconds(configService) },
       }),

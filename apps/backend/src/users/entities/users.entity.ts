@@ -40,7 +40,6 @@ export class Users {
   })
   role: ROLES;
 
-  // Скрытые пользователем пункты бокового меню (по ключам, см. фронт MENU_ITEMS)
   @Column({ type: 'jsonb', name: 'hidden_menu_items', default: () => "'[]'" })
   hidden_menu_items?: string[];
 

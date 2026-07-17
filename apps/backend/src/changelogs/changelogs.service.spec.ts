@@ -87,8 +87,6 @@ describe('ChangelogsService', () => {
     expect(service).toBeDefined();
   });
 
-  // ─── findAll ────────────────────────────────────────────────────────────────
-
   describe('findAll', () => {
     it('должен возвращать все changelog-и с views_count', async () => {
       const list = [makeChangelog({ id: 2 }), makeChangelog({ id: 1 })];
@@ -107,8 +105,6 @@ describe('ChangelogsService', () => {
       expect(result[1]).toMatchObject({ id: 1, views_count: 0 });
     });
   });
-
-  // ─── findUnseen ─────────────────────────────────────────────────────────────
 
   describe('findUnseen', () => {
     it('должен возвращать опубликованные changelog-и без фильтра по id, если пользователь ничего не просматривал', async () => {
@@ -135,8 +131,6 @@ describe('ChangelogsService', () => {
       expect(qb.andWhere).toHaveBeenCalledWith('changelog.id NOT IN (:...viewedIds)', { viewedIds: [1, 2] });
     });
   });
-
-  // ─── markViewed ─────────────────────────────────────────────────────────────
 
   describe('markViewed', () => {
     it('должен сохранять просмотр если его ещё нет', async () => {
@@ -171,8 +165,6 @@ describe('ChangelogsService', () => {
     });
   });
 
-  // ─── create ─────────────────────────────────────────────────────────────────
-
   describe('create', () => {
     it('должен создавать changelog с author_id текущего пользователя', async () => {
       const user = makeUser(3);
@@ -199,8 +191,6 @@ describe('ChangelogsService', () => {
     });
   });
 
-  // ─── update ─────────────────────────────────────────────────────────────────
-
   describe('update', () => {
     it('должен обновлять поля changelog-а', async () => {
       const existing = makeChangelog({ id: 1, is_published: false });
@@ -221,8 +211,6 @@ describe('ChangelogsService', () => {
       );
     });
   });
-
-  // ─── remove ─────────────────────────────────────────────────────────────────
 
   describe('remove', () => {
     it('должен удалять changelog и возвращать { ok: true }', async () => {

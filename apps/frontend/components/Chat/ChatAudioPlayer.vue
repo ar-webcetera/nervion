@@ -11,7 +11,6 @@ const isPlaying = ref(false);
 const currentTime = ref(0);
 const loadedDuration = ref(totalDuration.value);
 
-// Транскрипция
 const config = useRuntimeConfig();
 const transcriptionText = ref<string | null>(null);
 const isTranscribing = ref(false);
@@ -73,7 +72,6 @@ const togglePlay = () => {
     }
     hasError.value = false;
     audio.play().catch(() => {
-      // Если браузер ещё не загрузил — дождёмся canplay и повторим
       audio.load();
       audio.addEventListener('canplay', () => void audio.play(), { once: true });
     });
@@ -184,7 +182,6 @@ onBeforeUnmount(() => {
           {{ isPlaying ? formatTime(currentTime) : displayDuration }}
         </div>
       </div>
-      <!-- Кнопка транскрипции сбоку от плеера -->
       <button
         v-if="!transcriptionText && !isTranscribing"
         class="audio-message__transcribe-btn"
@@ -215,7 +212,6 @@ onBeforeUnmount(() => {
         </svg>
       </button>
     </div>
-    <!-- Текст транскрипции на всю ширину -->
     <p v-if="transcriptionText && isTranscriptionExpanded" class="audio-message__text">
       {{ transcriptionText }}
     </p>

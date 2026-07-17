@@ -414,7 +414,6 @@ const onTreeClick = (node: TreeNode) => {
     object-fit: contain;
     border: 1px solid var(--light-text-backgroung-primary-10);
     border-radius: 6px;
-    // шахматка под прозрачные PNG
     background-image:
       linear-gradient(45deg, var(--code-checker) 25%, transparent 25%),
       linear-gradient(-45deg, var(--code-checker) 25%, transparent 25%),
@@ -429,7 +428,6 @@ const onTreeClick = (node: TreeNode) => {
   }
 
   &__body {
-    // редакторская тема Darcula (моноширинный код) — не из DS, оставлена как есть
     background: var(--code-bg);
     color: var(--code-fg);
     font-family: 'Fira Code', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;

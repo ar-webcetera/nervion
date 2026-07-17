@@ -79,7 +79,6 @@ export class TasksService {
     return qb.getMany();
   }
 
-  // Построитель отфильтрованного запроса задач (без выполнения) — переиспользуется для канбана с пагинацией
   private async buildFilteredTasksQuery(
     findTasksByFilterDto: FindTasksByFilterDto,
     currentUser: AuthenticatedUser,
@@ -275,7 +274,6 @@ export class TasksService {
     }
   }
 
-  // Для TIMESTAMP-полей: фильтрация по UTC-диапазону с учётом таймзоны пользователя
   private applyUtcDateFilter(
     qb: SelectQueryBuilder<Tasks>,
     fieldName: string,
@@ -306,7 +304,6 @@ export class TasksService {
     }
   }
 
-  // Для DATE-полей: фильтрация через DATE() cast без учёта времени
   private applyLocalDateFilter(
     qb: SelectQueryBuilder<Tasks>,
     fieldName: string,
@@ -325,14 +322,12 @@ export class TasksService {
         qb.andWhere(`DATE(${fieldName}) BETWEEN :${sp} AND :${ep}`, { [sp]: d0, [ep]: d1 });
       }
     } else if (dates.length === 2) {
-      // точная дата (оба значения одинаковы)
       if (isNegative) {
         qb.andWhere(`(DATE(${fieldName}) != :${field} OR ${fieldName} IS NULL)`, { [field]: d0 });
       } else {
         qb.andWhere(`DATE(${fieldName}) = :${field}`, { [field]: d0 });
       }
     } else {
-      // до указанной даты
       if (isNegative) {
         qb.andWhere(`(DATE(${fieldName}) > :${field} OR ${fieldName} IS NULL)`, { [field]: d0 });
       } else {
@@ -423,7 +418,6 @@ export class TasksService {
     return columns;
   }
 
-  // Догрузка одной колонки канбана постранично (по скроллу) — БД отдаёт только нужную страницу
   async getKanbanColumn(
     getKanbanByFilterDto: FindTasksByFilterDto,
     status: TASK_STATUSES,
@@ -435,8 +429,6 @@ export class TasksService {
     return { status, total, cards };
   }
 
-  // Страница карточек одной колонки прямо из БД: LIMIT/OFFSET по статусу + COUNT для total.
-  // Выбираем только то, что отдаём, а не всю доску.
   private async fetchKanbanColumnPage(
     getKanbanByFilterDto: FindTasksByFilterDto,
     status: TASK_STATUSES,
@@ -613,8 +605,6 @@ export class TasksService {
       });
     }
 
-    // Уведомляем другие клиенты о новой задаче (раньше событие не слалось — список устаревал).
-    // Шлём созданную задачу как есть: фронт по этому событию делает мягкий refetch с фильтрами.
     this.websocketGateway.sendTaskAdded(createdTask);
 
     return createdTask;
@@ -671,7 +661,6 @@ export class TasksService {
       story_points: source.story_points,
       recurrence_days: source.recurrence_days,
       recurrence_since: source.recurrence_since,
-      // Копируем внешние ключи напрямую — это надёжнее, чем через relation-объекты
       project_id: source.project_id ?? source.project?.id ?? null,
       responsible_id: source.responsible_id ?? source.responsible?.id ?? null,
       parent_task_id: source.parent_task_id ?? source.parent_task?.id ?? null,
@@ -682,7 +671,6 @@ export class TasksService {
     const task = this.tasksRepository.create(data);
     const createdTask = await this.tasksRepository.save(task);
 
-    // Воспроизводим связанные задачи двунаправленно, как при ручном связывании
     for (const related of source.related_tasks ?? []) {
       if (related.id === createdTask.id) continue;
       await this.linkTasks(String(createdTask.id), String(related.id));
@@ -868,7 +856,6 @@ export class TasksService {
         summary: `Удалена задача "${existingTask.title}"`,
         beforePayload: this.serializeTaskForAudit(existingTask),
       });
-      // Уведомляем другие клиенты об удалении (раньше событие не слалось — оставался «призрак»)
       this.websocketGateway.sendTaskDeleted(task_id);
     } catch (e) {
       console.log(e);

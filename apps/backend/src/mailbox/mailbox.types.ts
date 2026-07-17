@@ -9,7 +9,6 @@ export interface InboundAttachment {
   isInline?: boolean;
 }
 
-// Нормализованное входящее письмо — то, что SMTP-приёмник передаёт сервису
 export interface InboundMailData {
   messageId: string | null;
   inReplyTo: string | null;

@@ -34,8 +34,6 @@ const newFolderInputRef = ref<HTMLInputElement | null>(null);
 const bodyRef = ref<HTMLElement | null>(null);
 const justUploadedKeys = ref<Set<string>>(new Set());
 
-// isFilesReady сбрасывается при смене проекта и восстанавливается после загрузки,
-// чтобы не показывать "пустое состояние" в переходный момент до старта fetchFiles
 const isFilesReady = ref(false);
 watch(
   () => scopeId.value,
@@ -91,10 +89,8 @@ const visibleCrumbs = computed((): CrumbItem[] => {
     });
     return items;
   }
-  // 3+: root › … › parent › current
   return [
     { type: 'root', isCurrent: false },
-    // Переход в ближайший скрытый уровень пути.
     { type: 'ellipsis', index: path.length - 2 },
     { type: 'segment', label: path[path.length - 2], index: path.length - 1, isCurrent: false },
     { type: 'segment', label: path[path.length - 1], index: path.length, isCurrent: true },
@@ -256,7 +252,6 @@ const confirmDelete = async () => {
     @dragleave="onDragLeave"
     @drop="onDrop"
   >
-    <!-- DnD overlay -->
     <Transition name="explorer-fade">
       <div v-if="isDragging" class="wiki-explorer__dnd-overlay">
         <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
@@ -272,7 +267,6 @@ const confirmDelete = async () => {
       </div>
     </Transition>
 
-    <!-- Toolbar -->
     <div class="wiki-explorer__toolbar">
       <button class="wiki-explorer__tool-btn" :disabled="isUploading" @click="triggerUpload">
         <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
@@ -304,7 +298,6 @@ const confirmDelete = async () => {
       </button>
     </div>
 
-    <!-- Breadcrumbs -->
     <div class="wiki-explorer__breadcrumbs">
       <template v-for="(crumb, i) in visibleCrumbs" :key="i">
         <span v-if="i > 0" class="wiki-explorer__crumb-sep">›</span>
@@ -337,7 +330,6 @@ const confirmDelete = async () => {
     </div>
 
     <div ref="bodyRef" class="wiki-explorer__body">
-      <!-- Создание папки -->
       <div v-if="isCreatingFolder" class="wiki-explorer__new-folder">
         <div class="wiki-explorer__item-icon wiki-explorer__item-icon_folder">
           <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -369,7 +361,6 @@ const confirmDelete = async () => {
         </button>
       </div>
 
-      <!-- Лоадер -->
       <div v-if="!isFilesReady || filesStore.isLoading" class="wiki-explorer__loading">
         <svg class="wiki-explorer__spinner" width="28" height="28" viewBox="0 0 28 28" fill="none">
           <circle
@@ -384,7 +375,6 @@ const confirmDelete = async () => {
         </svg>
       </div>
 
-      <!-- Пустое состояние -->
       <div v-else-if="currentNodes.length === 0 && !isCreatingFolder" class="wiki-explorer__empty">
         <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
           <path
@@ -398,7 +388,6 @@ const confirmDelete = async () => {
         <span class="wiki-explorer__empty-hint">Перетащите файлы сюда или нажмите «Загрузить»</span>
       </div>
 
-      <!-- Список -->
       <div
         v-for="node in currentNodes"
         :key="node.type === 'file' ? node.key : node.name"
@@ -511,7 +500,6 @@ const confirmDelete = async () => {
       </div>
     </div>
 
-    <!-- Диалог подтверждения удаления -->
     <Teleport to="body">
       <div v-if="confirmDeleteNode" class="wiki-explorer__confirm-overlay" @click.self="cancelDelete">
         <div class="wiki-explorer__confirm">
@@ -542,7 +530,6 @@ const confirmDelete = async () => {
       </div>
     </Teleport>
 
-    <!-- Превью изображений / видео -->
     <Teleport to="body">
       <div v-if="previewFile" class="wiki-explorer__preview-overlay" @click.self="closePreview">
         <div class="wiki-explorer__preview">
@@ -621,7 +608,6 @@ const confirmDelete = async () => {
     }
   }
 
-  // ── Toolbar ────────────────────────────────────────────
   &__toolbar {
     @include flex(rn, a-center);
     gap: 8px;
@@ -696,7 +682,6 @@ const confirmDelete = async () => {
     }
   }
 
-  // ── Breadcrumbs ────────────────────────────────────────
   &__breadcrumbs {
     @include flex(rn, a-center);
     flex-wrap: nowrap;
@@ -757,7 +742,6 @@ const confirmDelete = async () => {
     user-select: none;
   }
 
-  // ── Body ───────────────────────────────────────────────
   &__body {
     @include flex(cn);
     gap: 1px;
@@ -767,7 +751,6 @@ const confirmDelete = async () => {
     min-height: 0;
   }
 
-  // Форма создания папки
   &__new-folder {
     @include flex(rn, a-center);
     gap: 6px;
@@ -828,7 +811,6 @@ const confirmDelete = async () => {
     }
   }
 
-  // Лоадер
   &__loading {
     @include flex(rn, a-center, j-center);
     padding: 48px 20px;
@@ -846,7 +828,6 @@ const confirmDelete = async () => {
     }
   }
 
-  // Пустое состояние
   &__empty {
     @include flex(cn, a-center);
     gap: 10px;
@@ -873,7 +854,6 @@ const confirmDelete = async () => {
     line-height: 1.5;
   }
 
-  // Элемент списка
   &__item {
     @include flex(rn, a-center);
     gap: 10px;
@@ -1045,7 +1025,6 @@ const confirmDelete = async () => {
     }
   }
 
-  // Диалог подтверждения удаления
   &__confirm-overlay {
     position: fixed;
     inset: 0;
@@ -1123,7 +1102,6 @@ const confirmDelete = async () => {
     }
   }
 
-  // Превью — fullscreen lightbox
   &__preview-overlay {
     position: fixed;
     inset: 0;

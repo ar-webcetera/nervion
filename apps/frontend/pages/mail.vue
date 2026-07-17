@@ -34,7 +34,6 @@ const {
 const route = useRoute();
 const router = useRouter();
 
-// Состояние раздела (папка + ящик + открытое письмо) держим в URL, чтобы переживало перезагрузку
 const syncUrl = () => {
   if (import.meta.server) return;
   const query: Record<string, string> = { folder: currentFolder.value };
@@ -60,7 +59,6 @@ const selectedThreadId = ref<number | null>(
 const replyText = ref('');
 const sendingReply = ref(false);
 const replyInput = ref<HTMLTextAreaElement | null>(null);
-// композер ответа раскрывается по кнопке «Ответить» (а не висит всегда внизу)
 const replyOpen = ref(false);
 
 const openReply = async () => {
@@ -85,12 +83,9 @@ type FolderKey = (typeof FOLDERS)[number]['key'];
 const initialFolder = FOLDERS.find((item) => item.key === route.query.folder)?.key ?? 'inbox';
 const currentFolder = ref<FolderKey>(initialFolder);
 
-// режим композера восстанавливаем из URL синхронно (на SSR) — иначе при рефреше мелькает список, потом письмо.
-// compose=1 — пустое «новое письмо»; compose=<threadId> — автосохранённый черновик (продолжаем редактировать).
 const composeParam = String(route.query.compose ?? '');
 const composeMode = ref(composeParam !== '');
 const isDetailOpen = computed(() => composeMode.value || selectedThreadId.value !== null);
-// синхронно прячем нав-панель в детальном представлении письма/композера (без моргания через route.query)
 const rootStore = useRootStore();
 watch(isDetailOpen, (open) => (rootStore.isDetailFullscreen = open), { immediate: true });
 onBeforeUnmount(() => (rootStore.isDetailFullscreen = false));
@@ -99,14 +94,11 @@ const backToList = () => {
   if (composeMode.value) closeComposer();
   else selectedThreadId.value = null;
 };
-// id уже сохранённого черновика текущего письма (чтобы автосейв обновлял, а не плодил)
 const composeDraftId = ref<number | null>(null);
-// id треда черновика — для восстановления открытого композера из URL
 const composeThreadId = ref<number | null>(
   composeParam !== '1' && Number(composeParam) > 0 ? Number(composeParam) : null,
 );
 
-// Кастомный автокомплит получателей (в стиле селекта, вместо нативного datalist)
 const activeRecipientField = ref<'to' | 'cc' | null>(null);
 const recipientSuggestions = computed(() => {
   const field = activeRecipientField.value;
@@ -126,7 +118,6 @@ const openRecipientList = (field: 'to' | 'cc') => {
   activeRecipientField.value = field;
 };
 const closeRecipientList = () => {
-  // задержка, чтобы успел отработать клик по подсказке
   setTimeout(() => {
     activeRecipientField.value = null;
   }, 150);
@@ -192,7 +183,6 @@ const composeIsDirty = () =>
       composeForm.attachments.length,
   );
 
-// Автосохранение черновика при уходе из недописанного письма
 const autosaveDraft = async () => {
   if (!composeMode.value || !composeForm.account_id || !composeIsDirty()) return;
   const split = (value: string) =>
@@ -221,11 +211,10 @@ const autosaveDraft = async () => {
     composeDraftId.value = message.id;
     composeThreadId.value = message.thread_id;
   } catch {
-    // тихо: автосейв не должен мешать работе
+    // Ошибка фонового автосохранения не должна прерывать работу с письмом.
   }
 };
 
-// Дебаунс-автосохранение черновика при вводе — чтобы открытое письмо пережило перезагрузку
 let draftDebounce: ReturnType<typeof setTimeout> | null = null;
 watch(
   () => [composeForm.to, composeForm.cc, composeForm.subject, composeForm.text, composeForm.attachments.length],
@@ -304,7 +293,6 @@ const selectFolder = async (folder: FolderKey) => {
   void loadThreads();
 };
 
-// Тихое автообновление списка: поллинг раз в 30с (без спиннера, выбранный тред не сбрасывается)
 const POLL_INTERVAL_MS = 30000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -319,7 +307,6 @@ const pollThreads = () => {
   void mailStore.fetchUnreadCount().catch(() => {});
 };
 
-// Заполнить композер из черновика (объявлено выше loadMailPageData — вызывается на SSR в useAsyncData)
 const editDraft = (draft: MailMessage) => {
   composeDraftId.value = draft.id;
   composeThreadId.value = draft.thread_id;
@@ -338,7 +325,6 @@ const editDraft = (draft: MailMessage) => {
   composeMode.value = true;
 };
 
-// Открыть письмо по id (используется и при клике, и при восстановлении из URL)
 const openThreadById = async (id: number, unread = false) => {
   await autosaveDraft();
   composeMode.value = false;
@@ -347,7 +333,6 @@ const openThreadById = async (id: number, unread = false) => {
   replyText.value = '';
   try {
     await mailStore.fetchThread(id);
-    // Если в треде есть черновик — открываем его в композере для продолжения
     const draft = messages.value.find((message) => message.status === 'draft');
     if (draft) {
       editDraft(draft);
@@ -358,16 +343,11 @@ const openThreadById = async (id: number, unread = false) => {
       await mailStore.markThreadRead(id);
     }
   } catch {
-    // письмо могло быть удалено — просто не открываем
     selectedThreadId.value = null;
   }
 };
 
-// Начальная загрузка в store на этапе SSR (только данные, без локальных ref —
-// иначе ломается гидратация). Открытие письма по URL грузит его в store тоже.
 const loadMailPageData = async () => {
-  // ВАЖНО: все запросы создаём синхронно (до await), пока на SSR жив контекст
-  // для useRequestHeaders(['cookie']) — иначе после await cookie теряется и прилетает 401.
   const tasks: Promise<unknown>[] = [
     mailStore.fetchAccounts(),
     loadThreads(),
@@ -381,7 +361,6 @@ const loadMailPageData = async () => {
       }),
     );
   } else if (composeThreadId.value) {
-    // восстановление автосохранённого черновика «нового письма» из URL (?compose=<threadId>) — на SSR, до рендера
     tasks.push(
       mailStore.fetchThread(composeThreadId.value).catch(() => {
         composeThreadId.value = null;
@@ -391,15 +370,12 @@ const loadMailPageData = async () => {
   }
   await Promise.allSettled(tasks);
 
-  // черновик загружен — заполняем форму композера ещё на SSR, чтобы при рефреше не мелькал список
   if (composeMode.value && composeThreadId.value) {
     const draft = messages.value.find((message) => message.status === 'draft');
     if (draft) editDraft(draft);
   }
 };
 
-// useAsyncData: грузит на SSR, кладёт в payload, на клиенте при гидратации не перевыполняет
-// (берёт из payload → нет рассинхрона), при навигации выполняет заново.
 await useAsyncData('mailbox-init', async () => {
   await loadMailPageData();
   return true;
@@ -410,7 +386,6 @@ onMounted(() => {
     composeForm.account_id = accounts.value[0].id;
   }
 
-  // Открытый тред-черновик переносим в композер; обычное письмо помечаем прочитанным
   if (selectedThreadId.value) {
     const draft = messages.value.find((message) => message.status === 'draft');
     if (draft) {
@@ -420,9 +395,7 @@ onMounted(() => {
     }
   }
 
-  // Композер/черновик из URL (?compose=…) восстановлены синхронно на SSR (loadMailPageData) — здесь не нужно.
 
-  // Поллинг — только на клиенте (setInterval на сервере бессмыслен)
   pollTimer = setInterval(pollThreads, POLL_INTERVAL_MS);
 });
 
@@ -432,7 +405,6 @@ onUnmounted(() => {
 });
 
 watch(selectedAccountId, loadThreads);
-// Синхронизация URL при смене папки/ящика/письма/состояния композера
 watch([currentFolder, selectedAccountId, selectedThreadId, composeMode, composeThreadId], syncUrl);
 
 watch(search, () => {
@@ -440,10 +412,8 @@ watch(search, () => {
   searchTimeout = setTimeout(loadThreads, 400);
 });
 
-// Открыть черновик в композере для продолжения редактирования
 const openThread = (thread: MailThread) => openThreadById(thread.id, Boolean(thread.unread_count));
 
-// Адресат ответа: отправитель последнего входящего, иначе собеседник треда
 const replyRecipient = computed(() => {
   const lastInbound = [...messages.value].reverse().find((message) => message.direction === MAIL_DIRECTIONS.inbound);
   return lastInbound?.from_address || currentThread.value?.counterparty_address || '';
@@ -480,7 +450,6 @@ const sendReply = async () => {
   }
 };
 
-// при переключении письма сворачиваем композер ответа
 watch(selectedThreadId, () => {
   replyOpen.value = false;
   replyText.value = '';
@@ -510,7 +479,6 @@ const closeComposer = async () => {
   if (currentFolder.value === 'drafts') await loadThreads();
 };
 
-// Удалить открытый черновик (без автосохранения — иначе пересоздастся)
 const deleteDraft = async () => {
   if (composeDraftId.value === null) return;
   if (!confirm('Удалить черновик?')) return;
@@ -531,7 +499,6 @@ const deleteDraft = async () => {
   }
 };
 
-// Переслать письмо: открыть композер с темой Fwd: и процитированным телом
 const forwardMessage = async (message: { from_address: string; subject: string | null; createdAt: string; text_body: string | null; html_body: string | null }) => {
   await autosaveDraft();
   composeDraftId.value = null;
@@ -560,7 +527,6 @@ const sendCompose = async () => {
   sendingCompose.value = true;
   try {
     if (composeDraftId.value) {
-      // Письмо уже лежит черновиком (автосейв) — обновим и отправим его же, чтобы не плодить
       await mailStore.saveDraft({
         account_id: composeForm.account_id,
         to: recipients,
@@ -629,7 +595,6 @@ const saveDraftAction = async () => {
   }
 };
 
-// Удаление с подтверждением: тред (в корзину / насовсем из корзины) или одно письмо
 const confirmModal = ref<InstanceType<typeof BaseModal> | null>(null);
 type DeleteTarget =
   | { kind: 'thread' | 'message'; permanent: boolean; id: number; label: string }
@@ -706,7 +671,6 @@ const restoreThread = async () => {
   }
 };
 
-// Черновик внутри открытого треда — можно дослать
 const threadDraft = computed(() => messages.value.find((message) => message.status === 'draft'));
 const sendThreadDraft = async () => {
   if (!threadDraft.value || !currentThread.value) return;
@@ -724,12 +688,10 @@ const accountLabel = (accountId: number) => {
 };
 
 const threadDate = (value: string) => {
-  // Фиксированная таймзона (МСК) — чтобы SSR и клиент рендерили одинаково (без hydration mismatch)
   const date = new Date(value);
   return mskDay(date) === mskDay(new Date()) ? mskTime(date) : mskDay(date);
 };
 
-// Инициалы из адреса/имени контакта: ivan.ivanov@ -> «AR», client@ -> «CL»
 const avatarInitials = (address: string | null) => {
   if (!address) return '?';
   const local = address.split('@')[0] || address;
@@ -740,7 +702,6 @@ const avatarInitials = (address: string | null) => {
   return local.slice(0, 2).toUpperCase();
 };
 
-// Детерминированный цвет фона аватара по строке адреса
 const avatarColor = (address: string | null) => {
   const source = address || '?';
   let hash = 0;
@@ -750,7 +711,6 @@ const avatarColor = (address: string | null) => {
   return `hsl(${Math.abs(hash) % 360}deg 48% 42%)`;
 };
 
-// Аватар отправителя через Gravatar (хэш адреса). Нет аватара (d=404) -> фолбэк на инициалы.
 const gravatarHash = ref<Record<string, string>>({});
 const brokenAvatars = ref<Set<string>>(new Set());
 
@@ -1111,11 +1071,9 @@ watch(
     grid-template-columns: 1fr;
     grid-template-rows: auto 1fr;
 
-    // письмо открыто: показываем только письмо во весь экран
     &_detail-open {
       grid-template-rows: 1fr;
 
-      // дочерние под модификатором — полным классом (здесь & уже .mail-page_detail-open)
       .mail-page__folders,
       .mail-page__list {
         display: none;
@@ -1151,7 +1109,6 @@ watch(
     background-color: var(--dark-text-background-primary);
     border-right: 1px solid var(--light-text-backgroung-primary-10);
 
-    // мобилка: папки горизонтальной полосой сверху
     @media (max-width: $screen-tablet) {
       flex-direction: row;
       align-items: center;
@@ -1238,7 +1195,6 @@ watch(
     &_block {
       width: 100%;
 
-      // на мобилке кнопку «Написать» из шапки папок прячем — она переезжает под поиск
       @media (max-width: $screen-tablet) {
         display: none;
       }
@@ -1272,7 +1228,6 @@ watch(
       }
     }
 
-    // на мобилке прячем (там вместо «Закрыть» — стрелка «Назад», как в письме)
     &_desktop {
       @media (max-width: $screen-tablet) {
         display: none;
@@ -1286,7 +1241,6 @@ watch(
     padding: 16px 16px 12px;
   }
 
-  // кнопка «Написать» под поиском — только на мобилке (на десктопе она в шапке папок)
   &__compose-mobile {
     display: none;
 
@@ -1315,7 +1269,6 @@ watch(
       border-color: var(--primary-50);
     }
 
-    // 16px на тач — iOS иначе зумит
     @media (hover: none) and (pointer: coarse) {
       font-size: 16px;
     }
@@ -1367,7 +1320,6 @@ watch(
     overflow-y: auto;
     @include flex(cn);
 
-    // чтобы последнее письмо не уходило под фиксированную нижнюю нав-панель
     @media (max-width: $screen-mobile-l) {
       padding-bottom: var(--mobile-nav-h);
     }
@@ -1541,7 +1493,6 @@ watch(
     overflow: hidden;
     background-color: var(--light-text-backgroung-primary-5);
 
-    // на мобилке письмо скрыто в режиме списка (показывается в .mail-page_detail-open)
     @media (max-width: $screen-tablet) {
       display: none;
     }
@@ -1553,7 +1504,6 @@ watch(
     padding: 20px 24px 16px;
     border-bottom: 1px solid var(--light-text-backgroung-primary-10);
 
-    // мобилка: строка 1 — «Назад» + «Удалить», строка 2 — тема + почта
     @media (max-width: $screen-tablet) {
       padding: 16px;
       flex-wrap: wrap;
@@ -1587,7 +1537,6 @@ watch(
     margin: 0;
     @extend %h1;
 
-    // на мобилке заголовок занимает место сразу после стрелки «Назад» (а не прижимается к правому краю)
     @media (max-width: $screen-tablet) {
       flex: 1;
     }
@@ -1723,7 +1672,6 @@ watch(
       border-color: var(--primary-50);
     }
 
-    // 16px на тач — iOS иначе зумит
     @media (hover: none) and (pointer: coarse) {
       font-size: 16px;
     }

@@ -22,7 +22,6 @@ import { ConfigService } from '@nestjs/config';
 import { In } from 'typeorm';
 
 const makeQueryBuilder = (overrides: Partial<Record<string, jest.Mock>> = {}) => {
-  // We need the qb object to be the same reference so chaining works correctly.
   const qb = {} as Record<string, jest.Mock>;
   const chainMethods = [
     'innerJoin',
@@ -186,8 +185,6 @@ describe('ChatsService', () => {
     service = module.get<ChatsService>(ChatsService);
   });
 
-  // ─── findAllForUser ───────────────────────────────────────────────────────
-
   describe('findAllForUser', () => {
     it('возвращает только чаты, в которых пользователь является участником', async () => {
       const userId = 1;
@@ -234,8 +231,6 @@ describe('ChatsService', () => {
     });
   });
 
-  // ─── createGroupChat ──────────────────────────────────────────────────────
-
   describe('createGroupChat', () => {
     it('создаёт группу и назначает создателя администратором', async () => {
       const creatorId = 1;
@@ -271,8 +266,6 @@ describe('ChatsService', () => {
       expect(memberRepo.create).toHaveBeenCalledWith(expect.objectContaining({ user_id: 2, role: ChatMemberRole.MEMBER }));
     });
   });
-
-  // ─── addMemberToGroup / removeMemberFromGroup ─────────────────────────────
 
   describe('addMemberToGroup', () => {
     it('добавляет нового участника', async () => {
@@ -351,12 +344,9 @@ describe('ChatsService', () => {
     });
   });
 
-  // ─── getChatMembers ───────────────────────────────────────────────────────
-
   describe('getChatMembers', () => {
     it('возвращает актуальный список участников после удаления', async () => {
       const chatId = 'chat-1';
-      // До удаления: 3 участника
       memberRepo.find.mockResolvedValue([mockMember(chatId, 1), mockMember(chatId, 2)]);
       userRepo.findBy.mockResolvedValue([mockUser(1), mockUser(2)]);
 
@@ -373,8 +363,6 @@ describe('ChatsService', () => {
       expect(userRepo.findBy).not.toHaveBeenCalled();
     });
   });
-
-  // ─── createDirectChat ─────────────────────────────────────────────────────
 
   describe('createDirectChat', () => {
     it('выбрасывает ConflictException при попытке создать чат с самим собой', async () => {
@@ -416,8 +404,6 @@ describe('ChatsService', () => {
       expect(memberRepo.save).toHaveBeenCalled();
     });
   });
-
-  // ─── findChatWithMessages ─────────────────────────────────────────────────
 
   describe('findChatWithMessages', () => {
     it('выбрасывает NotFoundException если чат не существует', async () => {
@@ -508,8 +494,6 @@ describe('ChatsService', () => {
       expect(result.messages).toHaveLength(10);
     });
   });
-
-  // ─── createMessage ────────────────────────────────────────────────────────
 
   describe('createMessage', () => {
     it('выбрасывает NotFoundException если чат не найден', async () => {
@@ -645,8 +629,6 @@ describe('ChatsService', () => {
     });
   });
 
-  // ─── markMessagesAsRead ───────────────────────────────────────────────────
-
   describe('markMessagesAsRead', () => {
     it('ничего не делает если нет входящих сообщений', async () => {
       messageRepo.find.mockResolvedValue([]);
@@ -670,8 +652,6 @@ describe('ChatsService', () => {
     });
 
     it('не помечает собственные сообщения пользователя', async () => {
-      // find уже фильтрует по sender_id != userId (Not(userId)),
-      // поэтому если find возвращает пустой массив — своих нет
       messageRepo.find.mockResolvedValue([]);
 
       await service.markMessagesAsRead('chat-1', '2');

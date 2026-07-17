@@ -4,8 +4,6 @@ export class CreateWorkSchedules1775200000000 implements MigrationInterface {
   name = 'CreateWorkSchedules1775200000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    // Таблица уже существовала со старой схемой (day_of_week, is_active).
-    // Приводим к новой схеме через ALTER.
     const tableExists = await queryRunner.hasTable('work_schedules');
 
     if (!tableExists) {
@@ -33,7 +31,6 @@ export class CreateWorkSchedules1775200000000 implements MigrationInterface {
       return;
     }
 
-    // Старая таблица — мигрируем колонки
     const hasWorkDate = await queryRunner.hasColumn('work_schedules', 'work_date');
     const hasDayOfWeek = await queryRunner.hasColumn('work_schedules', 'day_of_week');
     const hasIsActive = await queryRunner.hasColumn('work_schedules', 'is_active');
@@ -42,14 +39,12 @@ export class CreateWorkSchedules1775200000000 implements MigrationInterface {
     const hasNotes = await queryRunner.hasColumn('work_schedules', 'notes');
 
     if (hasDayOfWeek && !hasWorkDate) {
-      // Очищаем старые данные и меняем колонку
       await queryRunner.query(`DELETE FROM "work_schedules"`);
       await queryRunner.query(`ALTER TABLE "work_schedules" DROP COLUMN "day_of_week"`);
       await queryRunner.query(`ALTER TABLE "work_schedules" ADD COLUMN "work_date" date NOT NULL DEFAULT CURRENT_DATE`);
       await queryRunner.query(`ALTER TABLE "work_schedules" ALTER COLUMN "work_date" DROP DEFAULT`);
     }
 
-    // start_time / end_time — сделать nullable
     await queryRunner.query(`ALTER TABLE "work_schedules" ALTER COLUMN "start_time" DROP NOT NULL`);
     await queryRunner.query(`ALTER TABLE "work_schedules" ALTER COLUMN "end_time"   DROP NOT NULL`);
 
@@ -67,8 +62,6 @@ export class CreateWorkSchedules1775200000000 implements MigrationInterface {
     if (!hasNotes) {
       await queryRunner.query(`ALTER TABLE "work_schedules" ADD COLUMN "notes" text`);
     }
-
-    // FK уже существует как FK_work_schedules_user — ничего не делаем
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {

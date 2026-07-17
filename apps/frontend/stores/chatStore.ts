@@ -43,8 +43,6 @@ export const useChatStore = defineStore('chat', () => {
     hasMore: false,
   });
   const messages = ref<Chat[]>([]);
-  // Какой чат сейчас открыт (его сообщения лежат в messages.value).
-  // Нужно, чтобы входящее по вебсокету гарантированно обновляло открытую панель.
   const activeChatId = ref<string | null>(null);
   const messagesCache = ref<Map<string, Chat[]>>(new Map());
   const metaCache = ref<Map<string, { total: number; offset: number; limit: number; hasMore: boolean }>>(new Map());
@@ -57,9 +55,6 @@ export const useChatStore = defineStore('chat', () => {
       headers,
     });
     chatList.value = response;
-    // Прогреваем кэш на клиенте после каждой загрузки списка (вход, ре-логин, реконнект).
-    // На первой SSR-гидратации этот вызов не сработает (список приходит из payload),
-    // поэтому стартовый префетч дополнительно дёргается из app.vue в onMounted.
     if (import.meta.client) void prefetchChats();
     return response;
   };
@@ -109,7 +104,6 @@ export const useChatStore = defineStore('chat', () => {
    * Вызывается в фоне после загрузки списка чатов. Вебсокет затем держит кэш свежим.
    */
   const prefetchChats = async (limit = 20, concurrency = 4) => {
-    // Нет смысла греть кэш при заведомом оффлайне
     if (import.meta.client && typeof navigator !== 'undefined' && navigator.onLine === false) return;
 
     const targets = chatList.value
@@ -124,7 +118,7 @@ export const useChatStore = defineStore('chat', () => {
         try {
           await prefetchChatMessages(id);
         } catch {
-          // префетч не критичен — молча пропускаем, чат догрузится при открытии
+          continue;
         }
       }
     };
@@ -268,17 +262,12 @@ export const useChatStore = defineStore('chat', () => {
     return response;
   };
 
-  // Вставка сообщения (входящее по вебсокету ИЛИ оптимистичная вставка отправителя).
-  // Строим НОВЫЙ массив (не мутация in-place) — это даёт гарантированный реактивный
-  // ре-рендер. Дедуп по id: если сообщение уже есть (ws-эхо после оптимистичной вставки) —
-  // заменяем на месте, без дубля.
   const mergeMessage = (list: Chat[], newMessage: Chat): Chat[] => {
     const idx = list.findIndex((m) => m.id === newMessage.id);
     return idx !== -1 ? list.map((m, i) => (i === idx ? newMessage : m)) : [newMessage, ...list];
   };
 
   const addMessageToCache = (chatId: string, newMessage: Chat) => {
-    // Кэш чата (если он закэширован) — для мгновенного открытия других чатов
     if (messagesCache.value.has(chatId)) {
       const cached = messagesCache.value.get(chatId) || [];
       const isNew = !cached.some((m) => m.id === newMessage.id);
@@ -292,8 +281,6 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    // Открытый сейчас чат — обновляем видимый список НАПРЯМУЮ новым массивом,
-    // чтобы входящее по вебсокету появлялось СРАЗУ, не дожидаясь 30-сек пуллинга.
     if (chatId === activeChatId.value) {
       messages.value = mergeMessage(messages.value, newMessage);
     }

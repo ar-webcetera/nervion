@@ -22,7 +22,6 @@ const isHidden = computed(() => {
 });
 
 const chatId = computed(() => route.query?.chatId);
-// почта в детальном режиме: по роуту (для SSR при рефреше) ИЛИ по store-флагу (для навигации без моргания)
 const mailDetailOpen = computed(
   () => route.name === 'mail' && Boolean(route.query?.thread || route.query?.compose),
 );

@@ -59,18 +59,15 @@ export const useGitStore = defineStore('git', () => {
   const deleteRepo = (id: number) => send(`/api/git/repos/${id}`, 'DELETE');
 
   // --- состояние текущего вида в сторе: Pinia state надёжно гидрируется через
-  // SSR-payload, поэтому дерево/коммиты не моргают и не показывают ложное «нет реп» ---
   const repos = ref<GitRepo[]>([]);
   const branches = ref<GitBranch[]>([]);
   const commits = ref<GitCommit[]>([]);
   const tree = ref<GitTreeEntry[]>([]);
   const currentRepoId = ref<number | null>(null);
   const currentBranch = ref<string>('');
-  // Деталь (дифф коммита / содержимое файла) — в сторе, чтобы гидрировалась из SSR.
   const detail = ref<GitDetail | null>(null);
   const detailLoading = ref(false);
 
-  // Клиентская догрузка детали при смене URL (SSR грузит её через loadInitial).
   const loadDetail = async (commit?: string, file?: string) => {
     if (currentRepoId.value == null) {
       detail.value = null;
@@ -140,8 +137,6 @@ export const useGitStore = defineStore('git', () => {
   };
 
   const loadInitial = async (repoId?: number, branch?: string, commit?: string, file?: string) => {
-    // один запрос — весь каскад (включая деталь) делает бэкенд, поэтому SSR надёжен,
-    // состояние не приходит частичным и деталь рендерится из SSR без мелькания.
     const query: Record<string, unknown> = {};
     if (repoId != null) query.repo = repoId;
     if (branch) query.branch = branch;

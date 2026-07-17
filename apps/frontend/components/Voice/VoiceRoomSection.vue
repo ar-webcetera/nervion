@@ -15,7 +15,6 @@ const { joinRoom, leaveRoom, activeProjectId, isConnecting } = useVoiceRoom();
 
 const activeCount = computed(() => props.rooms.filter((r) => r.participants.length > 0).length);
 const inactiveCount = computed(() => props.rooms.length - activeCount.value);
-// активные комнаты — вперёд, чтобы всегда были на виду
 const orderedRooms = computed(() => [...props.rooms].sort((a, b) => b.participants.length - a.participants.length));
 const isExpanded = ref(false);
 
@@ -196,7 +195,6 @@ const handleClick = async (projectId: number) => {
       opacity: 0.5;
     }
 
-    // живая комната (в ней есть люди) — всегда видна и подсвечена, чтобы хотелось зайти
     &--live {
       background-color: var(--green-10);
 

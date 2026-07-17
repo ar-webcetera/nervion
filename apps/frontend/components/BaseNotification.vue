@@ -254,7 +254,6 @@ onMounted(() => {
       width: 100%;
       padding: 12px 24px;
 
-      // на мобилке боковые отступы списка = шапке (16px)
       @media (max-width: $screen-mobile-l) {
         padding: 12px 16px;
       }

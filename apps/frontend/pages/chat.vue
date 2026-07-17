@@ -39,7 +39,6 @@ const raisePageError = (statusCode: number, statusMessage: string) => {
 const loadChatPageData = async () => {
   try {
     if (chatId.value) {
-      // Если чат уже в кэше (открывали ранее или префетч) — показываем мгновенно, без спиннера
       const isCached = chatStore.messagesCache.has(chatId.value);
       pendingMessageList.value = !isCached;
       const prefix = `tracker-chat/${chatId.value}/`;
@@ -68,7 +67,6 @@ watch(
   chatId,
   async (nextChatId, prevChatId) => {
     if (nextChatId === prevChatId) return;
-    // Спиннер показываем только если данных ещё нет в кэше
     chatPending.value = !nextChatId || !chatStore.messagesCache.has(nextChatId);
     await loadChatPageData();
   },

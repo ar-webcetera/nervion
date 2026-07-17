@@ -27,7 +27,6 @@ const recipientsLabel = computed(() =>
   props.message.to_addresses.map((item) => (item.name ? `${item.name} <${item.address}>` : item.address)).join(', '),
 );
 
-// Фиксированная таймзона (МСК) — одинаковый рендер на SSR и клиенте, без hydration mismatch
 const formattedDate = computed(() =>
   new Intl.DateTimeFormat('ru-RU', {
     timeZone: 'Europe/Moscow',
@@ -41,8 +40,6 @@ const formattedDate = computed(() =>
     .replace(',', ''),
 );
 
-// HTML письма рендерим в sandbox-iframe: без allow-scripts JS внутри не исполняется,
-// allow-same-origin нужен только чтобы подогнать высоту фрейма под контент
 const iframeContent = computed(() => {
   if (!props.message.html_body) {
     return '';
@@ -57,7 +54,6 @@ const iframeContent = computed(() => {
 const adjustIframeHeight = () => {
   const body = iframeRef.value?.contentWindow?.document?.body;
   if (body) {
-    // Длинные письма растягиваем по контенту (до 3000px). Минимум держит CSS min-height: 70vh.
     iframeHeight.value = Math.min(body.scrollHeight + 32, 3000);
   }
 };
@@ -140,7 +136,6 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
     @include flex(rn, between, a-start);
     gap: 12px;
 
-    // на мобилке шапка письма в колонку — иначе отправитель + дата + кнопки комкаются в одну строку
     @media (max-width: $screen-tablet) {
       flex-direction: column;
       align-items: stretch;
@@ -209,8 +204,6 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
 
   &__html {
     width: 100%;
-    // Крупное окно: короткие письма растягиваются на бóльшую часть экрана,
-    // длинные растут по контенту (height задаётся inline из adjustIframeHeight).
     min-height: 70vh;
     border: none;
     border-radius: 8px;

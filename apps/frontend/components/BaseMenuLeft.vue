@@ -20,18 +20,13 @@ const taskStore = useTaskStore();
 const chatStore = useChatStore();
 
 const chatId = computed(() => route.query?.chatId);
-// в почте детальный режим определяем И по роуту (thread/compose), И по store-флагу:
-// роут доступен при SSR-рендере layout (без него шапка мелькала при рефреше в письме),
-// store-флаг синхронен при навигации (без него моргала панель при открытии/выходе).
 const mailDetailOpen = computed(
   () => route.name === 'mail' && Boolean(route.query?.thread || route.query?.compose),
 );
-// нав-панель прячем в чате (по chatId) и в детальном представлении письма
 const hideChrome = computed(
   () => Boolean(chatId.value) || mailDetailOpen.value || rootStore.isDetailFullscreen,
 );
 
-// Персональная видимость пунктов меню (настраивается в попапе профиля)
 const isMenuVisible = (key: string) => !(userStore.user?.hidden_menu_items ?? []).includes(key);
 
 const totalUnreadCount = computed(() => {
@@ -46,9 +41,6 @@ const { openPopup, closePopup, isPopupOpen } = useProfile();
 const mailStore = useMailStore();
 let mailUnreadTimer: ReturnType<typeof setInterval> | null = null;
 
-// Индикатор прокрутки навигации: на невысоких экранах список переходов скроллится.
-// Overflow включаем только когда иконки реально не влезают (isNavOverflowing),
-// иначе overflow обрезал бы подсказки (tooltip уходит вправо за пределы панели).
 const navScrollRef = ref<HTMLElement | null>(null);
 const canScrollUp = ref(false);
 const canScrollDown = ref(false);
@@ -494,7 +486,6 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
     gap: 32px;
     height: 100%;
 
-    // overflow включаем только при реальном переполнении, иначе он обрезает tooltip
     &_scrollable {
       overflow-y: auto;
       overflow-x: hidden;
@@ -682,16 +673,12 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
       left: 0;
       right: 0;
       width: 100%;
-      // прилеплена к низу, во всю ширину, квадратная, без бордеров (на телефонах без нижней полоски выглядит чище);
-      // safe-area — чтобы не залезать под домашнюю полоску iPhone
       padding: 10px 16px;
       padding-bottom: calc(10px + env(safe-area-inset-bottom));
       @include flex(rn, around);
       gap: 12px;
       border-radius: 0;
       border: none;
-      // плотный фон (полупрозрачный сливался с тёмным контентом) + тонкая светлая отбивка сверху
-      // и мягкая тень — отделяет панель от контента без бордера
       background: var(--dark-text-background-primary);
       box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.08),

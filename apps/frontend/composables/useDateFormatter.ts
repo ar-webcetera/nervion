@@ -1,11 +1,6 @@
-// Форматирование дат сообщений в зоне Москвы — ОДИНАКОВО на сервере и клиенте.
-// date-fns format()/isToday()/isYesterday() считают в локальной TZ рантайма
-// (сервер обычно UTC, браузер — МСК) → расхождение времени → hydration mismatch.
-// Intl с timeZone фиксирует зону, поэтому SSR и гидратация дают идентичную строку.
 const MSK = 'Europe/Moscow';
 const DAY_MS = 86_400_000;
 
-// Ключ дня (YYYY-MM-DD) в зоне МСК — для сравнения «сегодня/вчера»
 const dayKeyFmt = new Intl.DateTimeFormat('en-CA', {
   timeZone: MSK,
   year: 'numeric',

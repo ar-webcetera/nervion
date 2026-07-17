@@ -1,4 +1,3 @@
-// Инициализация Sentry/GlitchTip ДО любого другого импорта (нужно для авто-инструментирования).
 import './instrument';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -12,8 +11,6 @@ import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { buildProxyUrlFromEnv, DEFAULT_NO_PROXY } from './common/utils/proxy-url';
 
 const REQUEST_BODY_LIMIT = '1mb';
-// Опционально: разрешить CORS для всех https-поддоменов корневого хоста.
-// Задаётся через env CORS_ALLOWED_ROOT_HOST (например, example.com). Пусто = выключено.
 const CORS_ALLOWED_ROOT_HOST = (process.env.CORS_ALLOWED_ROOT_HOST || '').trim().toLowerCase();
 
 function isAllowedRootHostOrigin(origin: string): boolean {
@@ -41,7 +38,6 @@ export function buildProxyUrl(): string | null {
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const configService = new ConfigService();
-  // Разрешённые origin'ы задаются через env CORS_ALLOWED_ORIGINS (через запятую).
   const allowedOrigins = new Set(
     (configService.get<string>('CORS_ALLOWED_ORIGINS') || '')
       .split(',')
@@ -97,9 +93,6 @@ async function bootstrap() {
         return;
       }
 
-      // Не кидаем Error — иначе ошибка пробрасывается дальше и превращается в 500.
-      // Просто отказываем без CORS-заголовков: cross-origin браузер сам заблокирует,
-      // а нативные клиенты (Tauri http, curl) получат корректный ответ.
       callback(null, false);
     },
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],

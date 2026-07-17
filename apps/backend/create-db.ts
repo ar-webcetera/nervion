@@ -1,7 +1,5 @@
 import { createConnection } from 'typeorm';
 
-// Утилита первичного создания БД. Параметры подключения берутся из окружения
-// (см. apps/backend/.env.example). Секреты в коде не хранятся.
 async function createDatabase() {
   const connection = await createConnection({
     type: 'postgres',

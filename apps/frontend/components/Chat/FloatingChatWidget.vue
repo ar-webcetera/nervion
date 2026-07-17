@@ -122,7 +122,6 @@ const sendMessage = async () => {
   const message = newMessage.value;
   editorRef.value?.clearContent();
   editorRef.value?.focusEditor();
-  // Показываем своё сообщение сразу (дедуп по id в сторе заменит его при ws-эхе)
   const created = await chatStore.createMessage(selectedChatId.value, userStore.user.id, message);
   if (created) chatStore.addMessageToCache(selectedChatId.value, created);
 };
@@ -259,7 +258,6 @@ const getAuthorPhotoUrl = (message: Chat) => message.author?.photo_url ?? null;
           </button>
         </div>
 
-        <!-- Chat list -->
         <div v-if="!selectedChatId" class="floating-chat__list">
           <ul>
             <li v-for="chat in chatList" :key="String(chat.chatId)" class="floating-chat__item" @click="openChat(chat)">
@@ -304,7 +302,6 @@ const getAuthorPhotoUrl = (message: Chat) => message.author?.photo_url ?? null;
           </ul>
         </div>
 
-        <!-- Messages view -->
         <template v-else>
           <div v-if="pendingMessages" class="floating-chat__loader">
             <div class="loader"></div>

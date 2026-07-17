@@ -237,7 +237,6 @@ export const useVoiceRoom = () => {
         });
 
         socket.value.on('disconnect', () => {
-          // Закрываем транспорты, чтобы они не пытались переподключиться с устаревшими ID
           producer.value?.close();
           producer.value = null;
           screenProducer.value?.close();

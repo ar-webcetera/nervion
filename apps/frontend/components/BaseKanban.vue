@@ -70,9 +70,6 @@ const emit = defineEmits(['click-to-card', 'swap-priority-task', 'update-task', 
 
 const columns = computed<KanbanColumn[]>(() => props.columns);
 
-// Догрузка карточек колонки С БЭКА (колонка может содержать 500+ карточек — сразу грузим
-// первую страницу, остальное доливаем при появлении «маяка» внизу колонки в зоне видимости).
-// IntersectionObserver надёжнее @scroll: срабатывает, какой бы контейнер ни скроллился.
 const loadingColumns = ref<Set<string>>(new Set());
 const sentinelEls = new Map<number, HTMLElement>();
 let cardsObserver: IntersectionObserver | null = null;
@@ -137,8 +134,6 @@ const pluralDays = (n: number): string => {
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
-// planned_date приходит в разном виде: строка YYYY-MM-DD с бэка,
-// dd.MM.yyyy или объект Date — из датапикера при ручном выборе. Приводим к локальной полуночи.
 const parseDueDate = (raw: string | Date): Date | null => {
   if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : startOfDay(raw);
 
@@ -156,14 +151,11 @@ const parseDueDate = (raw: string | Date): Date | null => {
 const getDeadline = (card: KanbanCard): { text: string; cls: string } | null => {
   if (!card.planned_date) return null;
 
-  // planned_date — поле, которое в UI подписано как «Дедлайн» (дата без времени)
   const due = parseDueDate(card.planned_date as string | Date);
   if (!due) return null;
 
   const neutral = { text: `${due.getDate()} ${DEADLINE_MONTHS[due.getMonth()]}`, cls: 'far' };
 
-  // Закрытая задача: «просрочено» только если её закрыли позже дедлайна.
-  // Закрыта вовремя (или нет даты закрытия) — показываем нейтральную дату, без красного.
   if (card.status === TASK_STATUSES.closed) {
     if (!card.closed_date) return neutral;
     const closed = new Date(card.closed_date);

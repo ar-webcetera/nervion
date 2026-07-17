@@ -13,8 +13,6 @@ export class CreateMailAccountAccess1776700000000 implements MigrationInterface 
     `);
     await queryRunner.query(`CREATE INDEX IF NOT EXISTS idx_mail_account_access_user ON mail_account_access(user_id)`);
 
-    // Сидинг «сохранить видимость»: переносим старую модель доступа (personal/service) в явные гранты.
-    // Личный ящик — доступ владельцу.
     await queryRunner.query(`
       INSERT INTO mail_account_access (mail_account_id, user_id)
         SELECT a.id, a.user_id
@@ -23,7 +21,6 @@ export class CreateMailAccountAccess1776700000000 implements MigrationInterface 
       ON CONFLICT DO NOTHING;
     `);
 
-    // Общий ящик — доступ всем действующим сотрудникам (как и раньше «видят все»).
     await queryRunner.query(`
       INSERT INTO mail_account_access (mail_account_id, user_id)
         SELECT a.id, u.id

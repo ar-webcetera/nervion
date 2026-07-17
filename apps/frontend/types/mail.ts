@@ -23,7 +23,6 @@ export interface MailAccount {
   user_id: number | null;
   is_active: boolean;
   signature_html: string | null;
-  // Пользователи, которым открыт доступ к ящику (приходит на admin-эндпоинте управления)
   allowedUsers?: MailAccountUser[];
 }
 
@@ -94,6 +93,5 @@ export interface MailAccountPayload {
   user_id?: number | null;
   is_active?: boolean;
   signature_html?: string | null;
-  // ID пользователей с доступом к ящику
   allowedUserIds?: number[];
 }

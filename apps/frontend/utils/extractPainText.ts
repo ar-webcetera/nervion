@@ -45,12 +45,12 @@ export const extractPlainText = (doc: TiptapDoc, limit?: number): string => {
     }
 
     if (node.type === 'paragraph' && Array.isArray(node.content)) {
-      //@ts-expect-error
+      // @ts-expect-error
       node.content.forEach(walk);
     }
 
     if (node.type === 'doc' && Array.isArray(node.content)) {
-      //@ts-expect-error
+      // @ts-expect-error
       node.content.forEach(walk);
     }
   };

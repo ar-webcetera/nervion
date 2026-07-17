@@ -396,7 +396,6 @@ export class TasksController {
       example: {
         id: 'task_456',
         title: 'Сверстать форму обратной связи',
-        // ...остальные поля
       },
     },
   })

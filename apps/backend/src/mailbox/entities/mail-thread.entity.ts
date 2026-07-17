@@ -12,8 +12,6 @@ import { Tasks } from '../../tasks/entities/task.entity';
 import { MailAccounts } from './mail-account.entity';
 import { MailMessages } from './mail-message.entity';
 
-// Хранимая папка треда. Входящие/Отправленные/Черновики вычисляются по составу
-// сообщений, поэтому в БД держим только то, что нельзя вывести: корзину.
 export enum MAIL_FOLDERS {
   inbox = 'inbox',
   trash = 'trash',
@@ -44,7 +42,6 @@ export class MailThreads {
   @Column({ type: 'int', name: 'project_id', nullable: true })
   project_id: number | null;
 
-  // Адрес внешнего собеседника — для списка тредов без джойна сообщений
   @Column({ type: 'varchar', length: 255, nullable: true })
   counterparty_address: string | null;
 

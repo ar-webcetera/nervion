@@ -49,7 +49,6 @@ const accessNames = (account: MailAccount) => {
   return ids.map(userName).join(', ');
 };
 
-// грузим в SSR (useAsyncData), чтобы список ящиков был в первом рендере, а не после маунта
 await useAsyncData('mail-accounts-init', async () => {
   await Promise.all([mailStore.fetchManageAccounts(), userStore.fetchUsers()]);
   return true;

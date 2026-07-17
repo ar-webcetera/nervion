@@ -4,8 +4,6 @@ import { DataSource } from 'typeorm';
 import { randomBytes } from 'node:crypto';
 import { setJwtSecret } from './jwt-secret';
 
-// Загружает секрет подписи JWT один раз при старте и кладёт в память.
-// По умолчанию секрет хранится в БД (app_secrets) и переживает рестарты.
 @Injectable()
 export class JwtSecretService implements OnModuleInit {
   private readonly logger = new Logger('JwtSecret');
@@ -27,7 +25,6 @@ export class JwtSecretService implements OnModuleInit {
       setJwtSecret(secret);
       this.logger.log('JWT-секрет загружен из БД (переживает рестарты).');
     } catch (e) {
-      // Старт не валим: эфемерный секрет на время жизни процесса.
       setJwtSecret(randomBytes(48).toString('hex'));
       this.logger.warn(
         `Не удалось получить JWT-секрет из БД (${(e as Error).message}); ` + 'использую эфемерный (рестарт разлогинит сессии).',
@@ -52,7 +49,6 @@ export class JwtSecretService implements OnModuleInit {
        ON CONFLICT (key) DO NOTHING`,
       [generated],
     );
-    // на случай гонки нескольких инстансов — перечитать победителя
     const after = await this.dataSource.query(`SELECT value FROM app_secrets WHERE key = 'jwt_secret' LIMIT 1`);
     return (after[0]?.value as string) ?? generated;
   }

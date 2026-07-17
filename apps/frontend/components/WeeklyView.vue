@@ -64,13 +64,11 @@ const openTask = (taskId: number, date: string) => {
   taskStore.currentTaskDate = date;
 };
 
-// SSR: однократная загрузка для начального рендера без мерцания
 await callOnce('weekly-tasks-init', async () => {
   const data = await taskStore.fetchWeeklyTasks();
   if (data) currentWeekStart.value = data.week_start;
 });
 
-// Client: всегда обновляем данные при монтировании (переключение вида)
 onMounted(async () => {
   try {
     const data = await taskStore.fetchWeeklyTasks();
@@ -216,7 +214,6 @@ onMounted(async () => {
     }
   }
 
-  // ─── Идентично .kanban ───────────────────────────────
   &__columns {
     display: flex;
     flex-direction: row;
@@ -247,7 +244,6 @@ onMounted(async () => {
     }
   }
 
-  // ─── Идентично .kanban__column-header ────────────────
   &__column-header {
     @include flex(a-center);
     gap: 6px;
@@ -284,7 +280,6 @@ onMounted(async () => {
     text-align: center;
   }
 
-  // ─── Идентично .kanban__cards ─────────────────────────
   &__cards {
     display: flex;
     flex-direction: column;
@@ -295,7 +290,6 @@ onMounted(async () => {
     flex: 1;
   }
 
-  // ─── Идентично .kanban__card ──────────────────────────
   &__card {
     position: relative;
     cursor: pointer;
@@ -325,7 +319,6 @@ onMounted(async () => {
     }
   }
 
-  // ─── Идентично .kanban__card-header ──────────────────
   &__card-header {
     display: flex;
     justify-content: space-between;
@@ -363,7 +356,6 @@ onMounted(async () => {
     flex-shrink: 0;
   }
 
-  // ─── Идентично .kanban__card_title ───────────────────
   &__card-title {
     @extend %text-s-medium;
     color: var(--light-text-backgroung-primary);
@@ -379,7 +371,6 @@ onMounted(async () => {
     }
   }
 
-  // ─── Идентично .kanban__card-status ──────────────────
   &__card-type {
     display: flex;
     align-items: center;
@@ -402,7 +393,6 @@ onMounted(async () => {
     }
   }
 
-  // ─── Идентично .kanban__card_sp ──────────────────────
   &__card-sp {
     @extend %text-xs-medium;
     color: var(--primary);
@@ -412,7 +402,6 @@ onMounted(async () => {
     align-self: flex-start;
   }
 
-  // ─── Уникальная кнопка выполнения ────────────────────
   &__done-btn {
     display: inline-flex;
     align-items: center;

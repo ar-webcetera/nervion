@@ -96,7 +96,6 @@ await useAsyncData('changelogs', async () => { await changelogStore.fetchAll(); 
     </header>
     <hr />
 
-    <!-- Форма создания/редактирования -->
     <div v-if="isCreating" class="changelogs-form">
       <div class="changelogs-form__header">
         <h2>{{ editingId ? 'Редактировать' : 'Новое обновление' }}</h2>
@@ -138,7 +137,6 @@ await useAsyncData('changelogs', async () => { await changelogStore.fetchAll(); 
       </div>
     </div>
 
-    <!-- Список -->
     <div class="changelogs-list">
       <div v-if="!changelogStore.all.length" class="changelogs-list__empty">
         Нет ни одного changelog-а. Создайте первый!

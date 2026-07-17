@@ -54,9 +54,6 @@ const syncUnreadState = async (force = false) => {
   }
 };
 
-// Догрузка актуального состояния текущего экрана при возврате в приложение/реконнекте.
-// Закрывает рассинхрон, когда изменение пришло не от этой вкладки (десктоп-таймер,
-// другой девайс) или пока сокет был мёртв в фоне (мобильный браузер).
 let screenSyncInFlight = false;
 const syncScreenState = async () => {
   if (!import.meta.client || !userStore.user?.id || screenSyncInFlight) return;
@@ -64,18 +61,15 @@ const syncScreenState = async () => {
   try {
     const jobs: Promise<unknown>[] = [];
 
-    // Открытый чат — перезагрузить свежие сообщения (сбросив кэш, иначе вернёт старое)
     const openChatId = getSingleQueryValue(route.query.chatId);
     if (openChatId) {
       chatStore.messagesCache.delete(openChatId);
       jobs.push(fetchChatMessages(openChatId));
     }
 
-    // Список задач и канбан — могли измениться из другого клиента без дошедшего WS-события
     jobs.push(fetchTasks({ useSavedFilters: true }));
     jobs.push(getKanban({ useSavedFilters: true }));
 
-    // Активный таймлог — мог быть остановлен из десктопа или другого устройства
     jobs.push(
       timelogStore
         .findByFilter({
@@ -167,7 +161,6 @@ const updateTask = (updateTask: Task) => {
   }
 };
 
-// Удаление задачи другим клиентом — точечно убираем из списков и канбана (без «призрака»)
 const removeTaskLocally = (taskId: number) => {
   taskStore.tasks = taskStore.tasks.filter((t) => t.id !== taskId);
   taskStore.tasksWithTimelogs = taskStore.tasksWithTimelogs.filter((t) => t.id !== taskId);
@@ -176,8 +169,6 @@ const removeTaskLocally = (taskId: number) => {
   }
 };
 
-// Новая задача другим клиентом — НЕ вставляем вслепую (нарушит фильтры/порядок/может задвоить),
-// а делаем мягкий отложенный refetch, который корректно применит текущие фильтры.
 let taskRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 const scheduleTaskRefetch = () => {
   if (!import.meta.client) return;
@@ -262,7 +253,7 @@ const showPushEvent = async (newMessage: ChatMessage) => {
       });
       return;
     } catch {
-      // ignore and fallback to Notification API
+      // Fallback на Notification API ниже.
     }
   }
 
@@ -307,9 +298,6 @@ const addMessage = (newMessage: ChatMessage) => {
   }
 };
 
-// Правим сообщение прямо в кэше нужного чата по message.chat_id (не по маршруту).
-// Для открытого чата messages.value и messagesCache.get(chatId) — один и тот же
-// реактивный массив, поэтому обновляется и открытый чат, и кэш остальных чатов.
 const deleteMessage = (message: ChatMessage) => {
   const cached = chatStore.messagesCache.get(message.chat_id);
   if (!cached) return;
@@ -392,8 +380,6 @@ const initSocket = () => {
         break;
       }
       case SOCKET_EVENT_TYPE.timelog_updated: {
-        // Таймлог изменён извне (другая вкладка, десктоп, другое устройство) —
-        // апсертим в currentTimelogs; завершённый убираем. UI таймера отреагирует через computed.
         const tl = event.data as Timelog;
         if (Number(tl?.author_id) !== Number(userStore.user?.id)) break;
         const others = timelogStore.currentTimelogs.filter((t) => t.id !== tl.id);
@@ -575,7 +561,6 @@ const subscribeToPush = async () => {
   }
 };
 
-// Вызывается по клику пользователя (обязательно для iOS Safari)
 const requestNotificationPermission = async () => {
   if (!('Notification' in window)) return;
   showNotificationBanner.value = false;
@@ -628,8 +613,6 @@ onMounted(async () => {
   initSocket();
   if (userStore.user) {
     changelogStore.fetchUnseen().catch(console.error);
-    // «Телеграм-эффект»: фоном прогреваем кэш сообщений недавних чатов,
-    // чтобы первое открытие было мгновенным. Вебсокет затем держит кэш свежим.
     chatStore.prefetchChats().catch(console.error);
   }
   document.addEventListener('visibilitychange', handleDocumentVisibility);

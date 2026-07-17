@@ -23,7 +23,6 @@ const avatarCropper = ref<InstanceType<typeof AvatarCropperModal> | null>(null);
 const userStore = useUserStore();
 const { $toast } = useNuxtApp();
 
-// Настраиваемые пункты меню (без «Задач», по роли пользователя)
 const configurableMenuItems = computed(() =>
   MENU_ITEMS.filter((item) => !item.always && isMenuItemAllowedForRole(item, userInfo.value?.role)),
 );

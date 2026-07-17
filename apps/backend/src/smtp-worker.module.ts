@@ -3,8 +3,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MailboxCoreModule } from './mailbox/mailbox-core.module';
 
-// Урезанный модуль для SMTP-воркера: только БД, S3 и mailbox.
-// Миграции гоняет основной бэкенд (migrationsRun там), воркер — нет.
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -21,7 +19,6 @@ import { MailboxCoreModule } from './mailbox/mailbox-core.module';
         entities: [__dirname + '/**/*.entity{.js,.ts}'],
         synchronize: false,
         migrationsRun: false,
-        // Маленький пул: воркер обрабатывает почту нечасто, незачем держать много соединений
         extra: {
           max: Number(configService.get('SMTP_DB_POOL_MAX')) || 3,
           idleTimeoutMillis: 30000,
