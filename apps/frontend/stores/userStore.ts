@@ -2,7 +2,6 @@ import { defineStore } from 'pinia';
 import type { User } from '~/types/user';
 
 export const useUserStore = defineStore('user', () => {
-  const config = useRuntimeConfig();
   const user = ref<User | null>(null);
   const users = ref<User[]>([]);
 
@@ -13,7 +12,7 @@ export const useUserStore = defineStore('user', () => {
   const fetchUsersWidthCostByProject = async (groupId: string) => {
     const headers = useRequestHeaders(['cookie']);
     const { data } = await useFetch<User[]>(`/api/users/project/${encodeURIComponent(groupId)}`, {
-      baseURL: config.public.API_URL,
+      baseURL: useApiBaseUrl(),
       method: 'GET',
       credentials: 'include',
       headers,
@@ -25,7 +24,7 @@ export const useUserStore = defineStore('user', () => {
     const headers = useRequestHeaders(['cookie']);
 
     const response = await $fetch<User[]>('/api/users', {
-      baseURL: config.public.API_URL,
+      baseURL: useApiBaseUrl(),
       method: 'GET',
       credentials: 'include',
       headers,
@@ -35,7 +34,7 @@ export const useUserStore = defineStore('user', () => {
 
   const fetchMe = async () => {
     const { data } = await useFetch<User>(`/api/auth/me`, {
-      baseURL: config.public.API_URL,
+      baseURL: useApiBaseUrl(),
       method: 'GET',
       credentials: 'include',
     });
@@ -46,7 +45,7 @@ export const useUserStore = defineStore('user', () => {
   const createUser = async (user: User) => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<User>(`/api/users`, {
-      baseURL: config.public.API_URL,
+      baseURL: useApiBaseUrl(),
       method: 'POST',
       credentials: 'include',
       headers,
@@ -59,7 +58,7 @@ export const useUserStore = defineStore('user', () => {
   const updateUser = async (user: User, userId: number) => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<User>(`/api/users/${userId}`, {
-      baseURL: config.public.API_URL,
+      baseURL: useApiBaseUrl(),
       method: 'PATCH',
       credentials: 'include',
       headers,
@@ -75,7 +74,7 @@ export const useUserStore = defineStore('user', () => {
   const updateMenuSettings = async (hiddenMenuItems: string[]) => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<{ hidden_menu_items: string[] }>('/api/users/menu-settings', {
-      baseURL: config.public.API_URL,
+      baseURL: useApiBaseUrl(),
       method: 'PATCH',
       credentials: 'include',
       headers,
@@ -94,7 +93,7 @@ export const useUserStore = defineStore('user', () => {
   const fetchArchivedUsers = async () => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<User[]>('/api/users/archived', {
-      baseURL: config.public.API_URL,
+      baseURL: useApiBaseUrl(),
       method: 'GET',
       credentials: 'include',
       headers,
@@ -105,7 +104,7 @@ export const useUserStore = defineStore('user', () => {
   const archiveUser = async (id: number) => {
     const headers = useRequestHeaders(['cookie']);
     await $fetch(`/api/users/${id}`, {
-      baseURL: config.public.API_URL,
+      baseURL: useApiBaseUrl(),
       method: 'DELETE',
       credentials: 'include',
       headers,
@@ -118,7 +117,7 @@ export const useUserStore = defineStore('user', () => {
   const restoreUser = async (id: number) => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<User>(`/api/users/${id}/restore`, {
-      baseURL: config.public.API_URL,
+      baseURL: useApiBaseUrl(),
       method: 'PATCH',
       credentials: 'include',
       headers,

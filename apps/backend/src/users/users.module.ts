@@ -5,11 +5,12 @@ import { HttpModule } from '@nestjs/axios';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Users } from './entities/users.entity';
 import { ProjectMembers } from '../projects/entities/project.entity';
+import { InitialAdminService } from './initial-admin.service';
 
 @Module({
   imports: [HttpModule, TypeOrmModule.forFeature([Users, ProjectMembers])],
   controllers: [UsersController],
-  providers: [UsersService],
+  providers: [UsersService, InitialAdminService],
   exports: [UsersService],
 })
 export class UsersModule {}

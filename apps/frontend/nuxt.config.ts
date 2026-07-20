@@ -48,6 +48,7 @@ export default defineNuxtConfig({
   },
 
   runtimeConfig: {
+    apiInternalUrl: process.env.API_INTERNAL_URL || process.env.API_URL || 'http://localhost:3026',
     public: {
       AWS_ENDPOINT: process.env.AWS_ENDPOINT || "",
       API_URL: process.env.API_URL,

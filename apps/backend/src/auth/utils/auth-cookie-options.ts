@@ -25,8 +25,15 @@ export const clearAuthCookie = (configService: ConfigService, res: Response, hos
 
   res.clearCookie('authToken', base); // host-only (текущая схема)
 
-  const appDomain = configService.get<string>('APP_DOMAIN');
-  if (appDomain) res.clearCookie('authToken', { ...base, domain: appDomain });
+  const appDomain = (configService.get<string>('APP_DOMAIN') || '')
+    .trim()
+    .replace(/^https?:\/\//, '')
+    .split('/')[0]
+    .split(':')[0]
+    .replace(/\.$/, '');
+  if (appDomain && appDomain !== 'localhost' && !/^[0-9.]+$/.test(appDomain)) {
+    res.clearCookie('authToken', { ...base, domain: appDomain });
+  }
 
   const cleanHost = (host || '').split(':')[0].replace(/\.$/, '');
   if (cleanHost && !/^[0-9.]+$/.test(cleanHost)) {

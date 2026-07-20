@@ -65,7 +65,7 @@ export class Timelogs {
   @Column({
     name: 'change_status_at',
     type: 'bigint',
-    default: Date.now(),
+    default: 0,
   })
   change_status_at: number;
 

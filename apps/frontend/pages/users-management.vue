@@ -43,7 +43,7 @@ const handleRestoreUser = async (user: User) => {
   }
 };
 
-await useAsyncData('archived-users', () => userStore.fetchArchivedUsers());
+await useAsyncData('users-management', () => Promise.all([userStore.fetchUsers(), userStore.fetchArchivedUsers()]));
 
 definePageMeta({
   middleware: ['auth', 'role'],

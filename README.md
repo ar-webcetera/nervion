@@ -102,7 +102,7 @@ cp apps/backend/.env.example apps/backend/.env   # работает из кор�
 docker compose up --build
 ```
 
-Откройте http://localhost:3000 — фронтенд, API на http://localhost:3026, документация API на http://localhost:3026/api/docs. Миграции БД накатываются автоматически. Секрет подписи токенов генерируется сам при первом старте, отдельно настраивать ничего не нужно.
+Откройте http://localhost:3000 — фронтенд, API на http://localhost:3026, документация API на http://localhost:3026/api/docs. Чистая БД создаётся штатной initial migration, последующие миграции накатываются при старте. Секрет подписи токенов генерируется сам, отдельно настраивать его не нужно.
 
 ## Запуск без Docker
 
@@ -114,6 +114,13 @@ cp apps/frontend/.env.example apps/frontend/.env
 pnpm --filter backend dev
 pnpm --filter frontend dev
 ```
+
+Для production без Docker собирайте приложения и запускайте
+`apps/backend/dist/main.js` и `apps/frontend/.output/server/index.mjs`. Nuxt SSR
+может обращаться к локальному backend через
+`NUXT_API_INTERNAL_URL=http://127.0.0.1:3026`, а браузер — через публичный
+`NUXT_PUBLIC_API_URL`. Backend также нужен исполняемый mediasoup-worker,
+указанный абсолютным путём в `MEDIASOUP_WORKER_BIN`.
 
 Подробнее — в [`docs/development.md`](./docs/development.md).
 

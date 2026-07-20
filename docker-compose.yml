@@ -63,6 +63,8 @@ services:
       PORT: 3012
       # URL, по которому браузер обращается к API
       NUXT_PUBLIC_API_URL: ${NUXT_PUBLIC_API_URL:-http://localhost:3026}
+      # URL backend внутри compose-сети для Nuxt SSR
+      NUXT_API_INTERNAL_URL: http://backend:3026
     ports:
       - "3000:3012"
     depends_on:
