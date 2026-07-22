@@ -10,6 +10,7 @@ import IconPen from './Icons/IconPen.vue';
 import IconTrash from './Icons/IconTrash.vue';
 import { hasTiptapContent } from '~/utils/tiptap/content';
 import { useNotificationStore } from '~/stores/notificationStore';
+import type { Notification } from '~/types/notification';
 
 defineOptions({ name: 'BaseComment' });
 
@@ -29,6 +30,7 @@ const messageCopy = ref(props.comment.message);
 const isEditableComment = ref(false);
 const isOpenNewThread = ref(false);
 const threadEditorRef = ref<{ focusEditor: () => void; clearContent: () => void } | null>(null);
+const notificationStore = useNotificationStore();
 
 const newComments = ref({
   message: {
@@ -125,25 +127,58 @@ const toggleResolve = () => {
 };
 
 const root = ref<HTMLElement | null>(null);
+const isVisible = ref(false);
 let observer: IntersectionObserver | null = null;
 let notificationMarked = false;
+let notificationMarkInFlight = false;
 
-const markNotificationAsRead = async () => {
-  if (notificationMarked) return;
-  
-  const notificationStore = useNotificationStore();
-  const notification = notificationStore.notifications.find((n) => n.link.includes(`comment-id=${props.comment.id}`));
-  if (notification && !notification.is_read) {
-    try {
-      await notificationStore.updateNotifications(notification.id, { is_read: true });
-      notificationMarked = true;
-    } catch (e) {
-      console.error('Ошибка при отметке уведомления как прочитанного:', e);
-    }
-  } else {
-    notificationMarked = true;
+const getLinkParam = (link: string, param: string): string | null => {
+  try {
+    return new URL(link, 'http://localhost').searchParams.get(param);
+  } catch {
+    return null;
   }
 };
+
+const isCurrentCommentNotification = (notification: Notification): boolean => {
+  const commentId = getLinkParam(notification.link, 'comment-id');
+  const taskId = getLinkParam(notification.link, 'task-id');
+
+  return commentId === String(props.comment.id) && taskId === String(props.currentTaskId);
+};
+
+const markNotificationAsRead = async () => {
+  if (notificationMarked || notificationMarkInFlight || !isVisible.value) return;
+
+  const notifications = notificationStore.notifications.filter(
+    (notification) => !notification.is_read && isCurrentCommentNotification(notification),
+  );
+  if (!notifications.length) return;
+
+  notificationMarkInFlight = true;
+  try {
+    await Promise.all(
+      notifications.map((notification) => notificationStore.updateNotifications(notification.id, { is_read: true })),
+    );
+    notificationMarked = true;
+    observer?.disconnect();
+  } catch (e) {
+    console.error('Ошибка при отметке уведомления как прочитанного:', e);
+  } finally {
+    notificationMarkInFlight = false;
+  }
+};
+
+watch(
+  () =>
+    notificationStore.notifications
+      .filter((notification) => !notification.is_read && isCurrentCommentNotification(notification))
+      .map((notification) => notification.id)
+      .join(','),
+  () => {
+    void markNotificationAsRead();
+  },
+);
 
 onMounted(() => {
   if (!root.value) return;
@@ -151,13 +186,12 @@ onMounted(() => {
   observer = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          markNotificationAsRead();
-        }
+        isVisible.value = entry.isIntersecting;
+        if (entry.isIntersecting) void markNotificationAsRead();
       });
     },
     {
-      threshold: 0.5,
+      threshold: 0,
     },
   );
 

@@ -38,7 +38,6 @@ const taskStore = useTaskStore();
 const commentStore = useCommentStore();
 const userStore = useUserStore();
 const route = useRoute();
-const notificationStore = useNotificationStore();
 const { $toast } = useNuxtApp();
 
 const props = defineProps<{ currentTaskId: number | null }>();
@@ -244,17 +243,6 @@ watch(
     }
   },
 );
-onMounted(async () => {
-  const commentId = route.query['comment-id'];
-  const notification = notificationStore.notifications.find((n) => n.link.includes(`comment-id=${commentId}`));
-  if (notification && !notification.is_read) {
-    try {
-      await notificationStore.updateNotifications(notification.id, { is_read: true });
-    } catch (e) {
-      console.error('Ошибка при отметке уведомления как прочитанного:', e);
-    }
-  }
-});
 
 onUnmounted(() => {
   taskStore.currentTask = null;
