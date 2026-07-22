@@ -234,7 +234,6 @@ const cancelReply = () => {
 
 const messageMenu = ref<{ message: Chat; x: number; y: number } | null>(null);
 let msgLongPressTimer: ReturnType<typeof setTimeout> | null = null;
-let msgLongPressFired = false;
 
 const clearMessageLongPress = () => {
   if (msgLongPressTimer) {
@@ -244,11 +243,9 @@ const clearMessageLongPress = () => {
 };
 
 const onMessageTouchStart = (event: TouchEvent, message: Chat) => {
-  msgLongPressFired = false;
   const touch = event.touches[0];
   clearMessageLongPress();
   msgLongPressTimer = setTimeout(() => {
-    msgLongPressFired = true;
     navigator.vibrate?.(10);
     window.getSelection?.()?.removeAllRanges();
     const x = Math.min(touch.clientX, window.innerWidth - 180);

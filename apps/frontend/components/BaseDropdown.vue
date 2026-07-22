@@ -76,7 +76,11 @@ const selectOption = (option: SelectOption) => {
 
   if (props.multiselect && tempValue.value) {
     const set = new Set(selectedValues.value);
-    set.has(tempValue.value) ? set.delete(tempValue.value) : set.add(tempValue.value);
+    if (set.has(tempValue.value)) {
+      set.delete(tempValue.value);
+    } else {
+      set.add(tempValue.value);
+    }
     emit('update:modelValue', Array.from(set));
   }
 

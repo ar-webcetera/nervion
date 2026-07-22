@@ -4,7 +4,7 @@
  * Все пробелы и другие знаки удаляются.
  */
 
-function slugify(text: string): string {
+const slugify = (text: string): string => {
   const transliterationMap: Record<string, string> = {
     а: 'a',
     б: 'b',
@@ -67,6 +67,6 @@ function slugify(text: string): string {
   }
 
   return slug;
-}
+};
 
 export default slugify;

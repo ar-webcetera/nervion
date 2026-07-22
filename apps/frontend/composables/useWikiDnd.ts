@@ -10,7 +10,7 @@ export interface WikiDndContext {
 
 export const WikiDndKey: InjectionKey<WikiDndContext> = Symbol('WikiDnd');
 
-export function createWikiDnd(): WikiDndContext {
+export const createWikiDnd = (): WikiDndContext => {
   const wikiStore = useWikiStore();
 
   const draggingId = ref<number | null>(null);
@@ -26,42 +26,42 @@ export function createWikiDnd(): WikiDndContext {
   let pending: { id: number; x0: number; y0: number; el: HTMLElement } | null = null;
 
 
-  function find(nodes: WikiTreeNode[], id: number): WikiTreeNode | null {
+  const find = (nodes: WikiTreeNode[], id: number): WikiTreeNode | null => {
     for (const n of nodes) {
       if (n.id === id) return n;
       const f = find(n.children, id);
       if (f) return f;
     }
     return null;
-  }
+  };
 
   /** Returns true if candidateId is a descendant of ancestorId */
-  function isDescendant(ancestorId: number, candidateId: number): boolean {
+  const isDescendant = (ancestorId: number, candidateId: number): boolean => {
     const a = find(wikiStore.wikiTree, ancestorId);
     return a ? !!find(a.children, candidateId) : false;
-  }
+  };
 
   /** Remove node by id from the tree, return it */
-  function excise(nodes: WikiTreeNode[], id: number): WikiTreeNode | null {
+  const excise = (nodes: WikiTreeNode[], id: number): WikiTreeNode | null => {
     for (let i = 0; i < nodes.length; i++) {
       if (nodes[i].id === id) return nodes.splice(i, 1)[0];
       const r = excise(nodes[i].children, id);
       if (r) return r;
     }
     return null;
-  }
+  };
 
   /**
    * Insert node relative to targetId.
    * pid — parent_page_id of the current level (null = root).
    */
-  function place(
+  const place = (
     nodes: WikiTreeNode[],
     node: WikiTreeNode,
     targetId: number,
     zone: 'before' | 'into' | 'after',
     pid: number | null = null,
-  ): boolean {
+  ): boolean => {
     for (let i = 0; i < nodes.length; i++) {
       const cur = nodes[i];
       if (cur.id === targetId) {
@@ -87,10 +87,10 @@ export function createWikiDnd(): WikiDndContext {
       if (place(cur.children, node, targetId, zone, cur.id)) return true;
     }
     return false;
-  }
+  };
 
 
-  function spawnGhost(itemEl: HTMLElement, e: PointerEvent) {
+  const spawnGhost = (itemEl: HTMLElement, e: PointerEvent) => {
     const lbl = itemEl.querySelector<HTMLElement>('.wiki-menu-item__label') ?? itemEl;
     const r = lbl.getBoundingClientRect();
     offsetX = e.clientX - r.left;
@@ -116,10 +116,10 @@ export function createWikiDnd(): WikiDndContext {
       willChange: 'left, top',
     });
     document.body.appendChild(ghost);
-  }
+  };
 
 
-  function findScrollParent(el: HTMLElement): HTMLElement | null {
+  const findScrollParent = (el: HTMLElement): HTMLElement | null => {
     let p = el.parentElement;
     while (p && p !== document.body) {
       const ov = getComputedStyle(p).overflowY;
@@ -127,10 +127,10 @@ export function createWikiDnd(): WikiDndContext {
       p = p.parentElement;
     }
     return null;
-  }
+  };
 
 
-  function onMove(e: PointerEvent) {
+  const onMove = (e: PointerEvent) => {
     if (pending) {
       if (Math.hypot(e.clientX - pending.x0, e.clientY - pending.y0) < 4) return;
       const { id, el } = pending;
@@ -187,9 +187,9 @@ export function createWikiDnd(): WikiDndContext {
     else if (zone !== 'into') killExpand();
 
     dropTarget.value = { id: tid, zone };
-  }
+  };
 
-  async function onUp(_e: PointerEvent) {
+  const onUp = async (_e: PointerEvent) => {
     if (pending) {
       pending = null;
       reset();
@@ -214,26 +214,26 @@ export function createWikiDnd(): WikiDndContext {
       const pid = wikiStore.selectedProjectId;
       if (pid) void wikiStore.fetchPages(pid);
     }
-  }
+  };
 
 
-  function scheduleExpand(id: number) {
+  const scheduleExpand = (id: number) => {
     killExpand();
     expandTimer = setTimeout(() => {
       expandTargetId.value = id;
     }, 650);
-  }
+  };
 
-  function killExpand() {
+  const killExpand = () => {
     if (expandTimer) {
       clearTimeout(expandTimer);
       expandTimer = null;
     }
     expandTargetId.value = null;
-  }
+  };
 
 
-  function reset() {
+  const reset = () => {
     draggingId.value = null;
     dropTarget.value = null;
     pending = null;
@@ -248,16 +248,16 @@ export function createWikiDnd(): WikiDndContext {
       rafId = null;
     }
     scrollEl = null;
-  }
+  };
 
 
-  function initDrag(e: PointerEvent, pageId: number, itemEl: HTMLElement) {
+  const initDrag = (e: PointerEvent, pageId: number, itemEl: HTMLElement) => {
     if (e.button !== 0) return;
     e.preventDefault();
     pending = { id: pageId, x0: e.clientX, y0: e.clientY, el: itemEl };
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
-  }
+  };
 
   return { draggingId, dropTarget, expandTargetId, initDrag };
-}
+};

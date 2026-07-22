@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// @ts-nocheck
-
+import type { Editor } from '@tiptap/core';
+import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import { NodeViewContent, NodeViewWrapper } from '@tiptap/vue-3';
 import IconTableColumnAdd from '../../../components/icons/IconTableColumnAdd.vue';
 import IconTableColumnDelete from '../../../components/icons/IconTableColumnDelete.vue';
@@ -10,34 +10,23 @@ import IconTableDelete from '../../../components/icons/IconTableDelete.vue';
 
 const editorStore = useEditorStore();
 
-const props = defineProps({
-  deleteNode: {
-    type: Function,
-    default: () => null,
-  },
-  getPos: {
-    type: Function,
-    required: true,
-    default: () => ({}),
-  },
-  node: {
-    type: Object,
-    required: true,
-  },
-  editor: {
-    type: Object,
-    required: true,
-  },
-  extension: {
-    type: Object,
-    required: true,
-  },
-});
+defineOptions({ name: 'TiptapTableNodeView' });
+
+const props = defineProps<{
+  deleteNode?: () => void;
+  getPos: () => number | undefined;
+  node: ProseMirrorNode;
+  editor: Editor;
+  extension: object;
+}>();
 
 const isCursorInTable = computed(() => {
+  const nodePosition = props.getPos();
+  if (nodePosition === undefined) return false;
+
   const selection = props.editor.state.selection;
   const currentPosCursor = selection.$from.start();
-  return props.getPos() <= currentPosCursor && currentPosCursor <= props.getPos() + props.node.nodeSize;
+  return nodePosition <= currentPosCursor && currentPosCursor <= nodePosition + props.node.nodeSize;
 });
 </script>
 

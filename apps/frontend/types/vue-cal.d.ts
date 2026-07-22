@@ -3,6 +3,6 @@ declare module 'vue-cal' {
 
   export function addDatePrototypes(): void;
 
-  const VueCal: DefineComponent<any, any, any>;
+  const VueCal: DefineComponent<object, object, object>;
   export default VueCal;
 }

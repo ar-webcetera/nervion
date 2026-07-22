@@ -34,7 +34,7 @@ export interface TextNode {
   text: string;
 }
 
-export type AnyTiptapNode = TiptapDoc | ParagraphNode | MentionNode | TextNode;
+export type AnyTiptapNode = TiptapDoc | TiptapNode;
 
 export const extractPlainText = (doc: TiptapDoc, limit?: number): string => {
   let result = '';
@@ -45,12 +45,10 @@ export const extractPlainText = (doc: TiptapDoc, limit?: number): string => {
     }
 
     if (node.type === 'paragraph' && Array.isArray(node.content)) {
-      // @ts-expect-error
       node.content.forEach(walk);
     }
 
     if (node.type === 'doc' && Array.isArray(node.content)) {
-      // @ts-expect-error
       node.content.forEach(walk);
     }
   };

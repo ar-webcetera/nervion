@@ -8,8 +8,6 @@ import IconAlignJustify from '~/components/Icons/IconAlignJustify.vue';
 import IconNumberList from '~/components/Icons/IconNumberList.vue';
 import IconList from '~/components/Icons/IconList.vue';
 import type { Editor as TiptapCoreEditor } from '@tiptap/core';
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type TiptapEditor = Omit<TiptapCoreEditor, 'chain'> & { chain: () => any };
 import IconH2 from '~/components/Icons/IconH2.vue';
 import IconH3 from '~/components/Icons/IconH3.vue';
 import IconH4 from '~/components/Icons/IconH4.vue';
@@ -27,7 +25,7 @@ import IconImportMd from '../Icons/IconImportMd.vue';
 import IconExportMd from '../Icons/IconExportMd.vue';
 
 const props = defineProps<{
-  editor: TiptapEditor | null;
+  editor: TiptapCoreEditor | null;
   shortMenu?: boolean;
 }>();
 

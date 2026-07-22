@@ -6,7 +6,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   if (userStore.user?.role !== ROLES.admin) {
     try {
-      await $fetch<void>(`/api/projects/${projectId}/access`, {
+      await $fetch(`/api/projects/${projectId}/access`, {
         baseURL: useApiBaseUrl(),
         credentials: 'include',
         headers,

@@ -9,7 +9,7 @@ import type { DOMOutputSpec, Node as ProseMirrorNode } from '@tiptap/pm/model';
  * @param overrideValue - (Optional) The width value to use for the overridden column.
  * @returns An object containing the colgroup element, the total width of the table, and the minimum width of the table.
  */
-export function createColGroup(node: ProseMirrorNode, cellMinWidth: number, overrideCol?: number, overrideValue?: never) {
+export const createColGroup = (node: ProseMirrorNode, cellMinWidth: number, overrideCol?: number, overrideValue?: number) => {
   let totalWidth = 0;
   let fixedWidth = true;
   const cols: DOMOutputSpec[] = [];
@@ -42,4 +42,4 @@ export function createColGroup(node: ProseMirrorNode, cellMinWidth: number, over
   const colgroup: DOMOutputSpec = ['colgroup', {}, ...cols];
 
   return { colgroup, tableWidth, tableMinWidth };
-}
+};

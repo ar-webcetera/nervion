@@ -1,8 +1,8 @@
-export const debounce = (fn: Function, wait: number) => {
-  let timeout: NodeJS.Timeout;
-  return function (this: any, ...args: any[]) {
-    const context = this;
+export const debounce = <Args extends object[]>(fn: (...args: Args) => void, wait: number): ((...args: Args) => void) => {
+  let timeout: ReturnType<typeof setTimeout>;
+
+  return (...args: Args) => {
     clearTimeout(timeout);
-    timeout = setTimeout(() => fn.apply(context, args), wait);
+    timeout = setTimeout(() => fn(...args), wait);
   };
 };

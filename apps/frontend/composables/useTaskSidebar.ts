@@ -182,7 +182,7 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
       if (!taskId.value) return;
       const story_points = value;
       await taskStore.updateTask(taskId.value, { story_points });
-      updateTaskInCollections(taskId.value, { story_points } as any);
+      updateTaskInCollections(taskId.value, { story_points });
     } catch (e) {
       $toast.error(getErrorMessage(e));
     }

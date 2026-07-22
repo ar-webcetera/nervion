@@ -13,8 +13,7 @@ const props = defineProps<{
 
 const { joinRoom, leaveRoom, activeProjectId, isConnecting } = useVoiceRoom();
 
-const activeCount = computed(() => props.rooms.filter((r) => r.participants.length > 0).length);
-const inactiveCount = computed(() => props.rooms.length - activeCount.value);
+const activeCount = computed(() => props.rooms.filter((room) => room.participants.length > 0).length);
 const orderedRooms = computed(() => [...props.rooms].sort((a, b) => b.participants.length - a.participants.length));
 const isExpanded = ref(false);
 

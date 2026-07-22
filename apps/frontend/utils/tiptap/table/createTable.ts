@@ -3,13 +3,13 @@ import type { Fragment, Node as ProsemirrorNode, Schema } from '@tiptap/pm/model
 import { createCell } from './createCell.js';
 import { getTableNodeTypes } from './getTableNodeTypes.js';
 
-export function createTable(
+export const createTable = (
   schema: Schema,
   rowsCount: number,
   colsCount: number,
   withHeaderRow: boolean,
   cellContent?: Fragment | ProsemirrorNode | Array<ProsemirrorNode>,
-): ProsemirrorNode {
+): ProsemirrorNode => {
   const types = getTableNodeTypes(schema);
   const headerCells: ProsemirrorNode[] = [];
   const cells: ProsemirrorNode[] = [];
@@ -32,4 +32,4 @@ export function createTable(
   }
 
   return types.table.createChecked(null, rows);
-}
+};

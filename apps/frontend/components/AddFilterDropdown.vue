@@ -112,8 +112,10 @@ const selectDate = (isNegative: boolean = false) => {
     formattedDates = (selectedDate.value as (Date | null)[])
       .filter((d): d is Date => d != null)
       .map((d) => format(d, 'yyyy-MM-dd'));
+  } else if (selectedDate.value) {
+    formattedDates = [format(new Date(selectedDate.value), 'yyyy-MM-dd')];
   } else {
-    formattedDates = [format(new Date(selectedDate.value as any), 'yyyy-MM-dd')];
+    return;
   }
 
   emit('add-filter', {

@@ -1,5 +1,5 @@
 import { CellSelection } from '@tiptap/pm/tables';
 
-export function isCellSelection(value: unknown): value is CellSelection {
+export const isCellSelection = (value: object): value is CellSelection => {
   return value instanceof CellSelection;
-}
+};

@@ -9,6 +9,10 @@
   </main>
 </template>
 
+<script setup lang="ts">
+import { PAGE_NAMES } from '~/constants/pages.constants';
+</script>
+
 <style scoped lang="scss">
 .error-page {
   &__content {
@@ -48,7 +52,3 @@
   }
 }
 </style>
-
-<script setup lang="ts">
-import { PAGE_NAMES } from '~/constants/pages.constants';
-</script>

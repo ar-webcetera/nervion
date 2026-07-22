@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { WorkSchedule, CreateWorkScheduleDto } from '~/types/work-schedule';
 import type { User } from '~/types/user';
-import { ROLES } from '~/types/user';
 
 interface Props {
   schedule?: WorkSchedule | null;

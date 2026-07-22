@@ -216,7 +216,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const currentSha = () => branches.value.find((b) => b.name === branch.value)?.sha ?? null;
 
-async function checkGitUpdates() {
+const checkGitUpdates = async () => {
   if (!repoId.value || !branch.value) return;
   if (typeof document !== "undefined" && document.hidden) return;
   try {
@@ -229,7 +229,7 @@ async function checkGitUpdates() {
   } catch {
     /* тихо игнорируем сетевые сбои опроса */
   }
-}
+};
 
 watch([repoId, branch], () => { knownSha.value = currentSha(); });
 
@@ -377,8 +377,8 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
             <GitDiffView
               v-if="detail.kind === 'diff'"
               :diff="detail.data"
-              :repoId="diffRepoId"
-              :headRef="diffHeadRef"
+              :repo-id="diffRepoId"
+              :head-ref="diffHeadRef"
             />
             <GitFileView v-else :file="detail.data" :repo-id="repoId" :git-ref="branch" />
           </div>
