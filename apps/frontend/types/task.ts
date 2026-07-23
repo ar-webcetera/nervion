@@ -43,7 +43,6 @@ export interface Task {
   responsible: User | null;
   current_timelog: Timelog | null;
   isTimerRunning?: boolean;
-  parent_task: Task | null;
   planned_date: Date | null | string;
   participants: User[];
   related_tasks: Task[];

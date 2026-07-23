@@ -11,10 +11,6 @@ export const CreateTaskResponseDto = {
       type: 'number',
       example: 2,
     },
-    parent_task_id: {
-      type: 'number',
-      example: 3,
-    },
     responsible_id: {
       type: 'number',
       example: 3,

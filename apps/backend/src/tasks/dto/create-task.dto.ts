@@ -39,15 +39,6 @@ export class CreateTaskDto {
   })
   responsible_id: number | null;
 
-  @IsOptional()
-  @ApiProperty({
-    isArray: true,
-    description: 'ID родительской задачи',
-    example: 1,
-    required: false,
-  })
-  parent_task_id: number;
-
   @IsEnum(TASK_STATUSES)
   @IsOptional()
   @ApiProperty({

@@ -510,16 +510,8 @@ const submitComment = async () => {
               <div class="task-sidebar__value">Не указана</div>
             </div>
           </template>
-          <template v-if="taskStore.currentTask?.parent_task">
-            <div class="task-sidebar__field task-sidebar__field_parent">
-              <div class="task-sidebar__label">Родитель</div>
-              <div class="task-sidebar__value">
-                {{ taskStore.currentTask.parent_task.title }}
-              </div>
-            </div>
-          </template>
           <template v-if="taskStore.currentTask">
-            <div class="task-sidebar__field task-sidebar__field_parent">
+            <div class="task-sidebar__field task-sidebar__field_deadline">
               <div class="task-sidebar__label">Дедлайн</div>
               <div>
                 <BaseDatePicker

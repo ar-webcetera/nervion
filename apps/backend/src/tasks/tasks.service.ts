@@ -142,7 +142,6 @@ export class TasksService {
       .createQueryBuilder('task')
       .leftJoinAndSelect('task.responsible', 'responsible')
       .leftJoinAndSelect('task.project', 'project')
-      .leftJoinAndSelect('task.parent_task', 'parent_task')
       .leftJoinAndSelect('task.participants', 'participants');
 
     if (!existTimelog) {
@@ -477,7 +476,6 @@ export class TasksService {
       .createQueryBuilder('task')
       .leftJoinAndSelect('task.responsible', 'responsible')
       .leftJoinAndSelect('task.project', 'project')
-      .leftJoinAndSelect('task.parent_task', 'parent_task')
       .leftJoinAndSelect('task.participants', 'participants')
       .leftJoinAndSelect('task.related_tasks', 'related_tasks')
       .leftJoinAndSelect('related_tasks.responsible', 'related_tasks_responsible')
@@ -549,21 +547,6 @@ export class TasksService {
       }
     }
 
-    let parent_task: Tasks | null = null;
-    if (createTaskDto.parent_task_id) {
-      parent_task = await this.tasksRepository.findOne({
-        where: { id: createTaskDto.parent_task_id },
-      });
-      if (!parent_task) {
-        throw new HttpException(
-          {
-            message: [`Родительская задача с id=${createTaskDto.parent_task_id} не найдена`],
-          },
-          HttpStatus.NOT_FOUND,
-        );
-      }
-    }
-
     const last = await this.tasksRepository.findOne({
       select: ['priority'],
       order: { priority: 'DESC' },
@@ -586,7 +569,6 @@ export class TasksService {
       data.responsible = responsible;
       data.participants = [responsible];
     }
-    if (parent_task) data.parent_task = parent_task;
     if (createTaskDto.planned_date) data.planned_date = createTaskDto.planned_date;
     const task = this.tasksRepository.create(data);
     const createdTask = await this.tasksRepository.save(task);
@@ -631,7 +613,7 @@ export class TasksService {
   async duplicateTask(task_id: number, currentUser?: AuthenticatedUser) {
     const source = await this.tasksRepository.findOne({
       where: { id: task_id },
-      relations: ['project', 'responsible', 'parent_task', 'participants', 'related_tasks'],
+      relations: ['project', 'responsible', 'participants', 'related_tasks'],
     });
 
     if (!source) {
@@ -674,7 +656,6 @@ export class TasksService {
       recurrence_since: source.recurrence_since,
       project_id: source.project_id ?? source.project?.id ?? null,
       responsible_id: source.responsible_id ?? source.responsible?.id ?? null,
-      parent_task_id: source.parent_task_id ?? source.parent_task?.id ?? null,
     };
 
     if (source.participants?.length) data.participants = source.participants;

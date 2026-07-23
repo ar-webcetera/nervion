@@ -55,19 +55,6 @@ export class Tasks {
   @JoinColumn({ name: 'project_id' })
   project: Projects | null;
 
-  @ManyToOne(() => Tasks, (task) => task.child_task, {
-    nullable: true,
-    onDelete: 'SET NULL',
-  })
-  @JoinColumn({ name: 'parent_task_id' })
-  parent_task: Tasks | null;
-
-  @Column({ name: 'parent_task_id', nullable: true })
-  parent_task_id: number | null;
-
-  @OneToMany(() => Tasks, (task) => task.parent_task)
-  child_task: Tasks[];
-
   @Column({
     type: 'enum',
     enum: TASK_STATUSES,
