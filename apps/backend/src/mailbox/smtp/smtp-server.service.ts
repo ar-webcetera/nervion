@@ -109,9 +109,13 @@ export class SmtpServerService {
     const parsed = await simpleParser(raw);
 
     const rawS3Key = await this.uploadRaw(raw);
+    const notificationHeader = parsed.headers.get('x-nervion-notification-id');
+    const notificationId =
+      typeof notificationHeader === 'string' && /^\d+$/.test(notificationHeader.trim()) ? Number(notificationHeader) : null;
 
     const data: InboundMailData = {
       messageId: normalizeMessageId(parsed.messageId),
+      notificationId,
       inReplyTo: normalizeMessageId(parsed.inReplyTo),
       referencesHeader: Array.isArray(parsed.references) ? parsed.references.join(' ') : (parsed.references ?? null),
       from: flattenAddresses(parsed.from)[0] ?? {

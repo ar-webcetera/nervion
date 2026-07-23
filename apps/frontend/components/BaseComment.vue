@@ -148,18 +148,16 @@ const isCurrentCommentNotification = (notification: Notification): boolean => {
 };
 
 const markNotificationAsRead = async () => {
-  if (notificationMarked || notificationMarkInFlight || !isVisible.value) return;
-
-  const notifications = notificationStore.notifications.filter(
-    (notification) => !notification.is_read && isCurrentCommentNotification(notification),
-  );
-  if (!notifications.length) return;
+  if (notificationMarked || notificationMarkInFlight || !isVisible.value || !props.currentTaskId) return;
 
   notificationMarkInFlight = true;
   try {
-    await Promise.all(
-      notifications.map((notification) => notificationStore.updateNotifications(notification.id, { is_read: true })),
-    );
+    const notificationIds = await notificationStore.markContextAsRead({
+      task_id: props.currentTaskId,
+      comment_id: props.comment.id,
+    });
+    if (notificationIds.length === 0) return;
+
     notificationMarked = true;
     observer?.disconnect();
   } catch (e) {

@@ -28,6 +28,7 @@ import * as XLSX from 'xlsx';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ConfigService } from '@nestjs/config';
 
 interface TaskAuditPayload extends JsonObject {
   title: string | null;
@@ -72,6 +73,7 @@ export class TasksService {
     private readonly userTaskFilterRepository: Repository<UserTaskFilter>,
     private readonly auditLogsService: AuditLogsService,
     private readonly notificationsService: NotificationsService,
+    private readonly configService: ConfigService,
   ) {}
 
   async findTasksByFilter(findTasksByFilterDto: FindTasksByFilterDto, currentUser: AuthenticatedUser) {
@@ -116,13 +118,22 @@ export class TasksService {
   private notifyResponsibleAssigned({ taskId, taskTitle, responsibleId, actorId }: ResponsibleAssignedNotificationPayload): void {
     if (actorId === responsibleId) return;
 
+    const subject = `Вам назначена задача: ${taskTitle}`;
+    const message = `Вы назначены ответственным за задачу «${taskTitle}».`;
+    const link = `?task-id=${taskId}`;
+    const domain = this.configService.get<string>('APP_DOMAIN');
+    const absoluteLink = `https://tracker.${domain}${link}`;
+
     void this.notificationsService
-      .create({
-        name: `Вам назначена задача: ${taskTitle}`,
-        message: `Вы назначены ответственным за задачу «${taskTitle}».`,
-        recipient_id: responsibleId,
-        link: `?task-id=${taskId}`,
-      })
+      .createWithEmail(
+        {
+          name: subject,
+          message,
+          recipient_id: responsibleId,
+          link,
+        },
+        `<p>Вы назначены ответственным за новую задачу.</p><p><a href="${absoluteLink}" target="_blank" rel="noopener noreferrer">Перейти к задаче</a></p>`,
+      )
       .catch((err) => console.error('Ошибка создания уведомления о назначении ответственного', err));
   }
 

@@ -1,9 +1,15 @@
 import { defineStore } from 'pinia';
+import type { ReadNotificationContextRequest, ReadNotificationContextResponse } from '@tracker/contracts';
 import type { Notification } from '~/types/notification';
 
 export const useNotificationStore = defineStore('notification', () => {
   const config = useRuntimeConfig();
   const notifications = ref<Notification[]>([]);
+
+  const syncMailUnreadCount = async () => {
+    const mailStore = useMailStore();
+    await mailStore.fetchUnreadCount().catch(() => {});
+  };
 
   const getAllNotifications = async () => {
     const headers = useRequestHeaders(['cookie']);
@@ -46,6 +52,27 @@ export const useNotificationStore = defineStore('notification', () => {
     });
 
     updateLocaleNotification(id, params);
+    if (params.is_read) {
+      await syncMailUnreadCount();
+    }
+  };
+
+  const markContextAsRead = async (context: ReadNotificationContextRequest): Promise<number[]> => {
+    const response = await $fetch<ReadNotificationContextResponse>(`/api/notifications/read-context`, {
+      method: 'PATCH',
+      credentials: 'include',
+      baseURL: config.public.API_URL,
+      body: context,
+    });
+
+    response.notification_ids.forEach((id) => {
+      updateLocaleNotification(id, { is_read: true });
+    });
+    if (response.notification_ids.length > 0) {
+      await syncMailUnreadCount();
+    }
+
+    return response.notification_ids;
   };
 
   const markAllAsRead = async () => {
@@ -54,6 +81,14 @@ export const useNotificationStore = defineStore('notification', () => {
       credentials: 'include',
       baseURL: config.public.API_URL,
     });
+    await syncMailUnreadCount();
   };
-  return { getAllNotifications, notifications, updateNotifications, markAllAsRead, updateLocaleNotification };
+  return {
+    getAllNotifications,
+    notifications,
+    updateNotifications,
+    markContextAsRead,
+    markAllAsRead,
+    updateLocaleNotification,
+  };
 });

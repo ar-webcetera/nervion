@@ -21,6 +21,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateNotificationDto } from '../notifications/dto/create-notification.dto';
 import { Notifications } from '../notifications/entities/notification.entity';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { ConfigService } from '@nestjs/config';
 
 type QueryParamValue = string | number | boolean | null | undefined | Date | string[] | number[] | Date[];
 type QueryParams = Record<string, QueryParamValue>;
@@ -88,7 +89,10 @@ describe('TasksService', () => {
     record: jest.fn(),
   };
   const mockNotificationsService = {
-    create: jest.fn<Promise<Notifications>, [CreateNotificationDto]>().mockResolvedValue({} as Notifications),
+    createWithEmail: jest.fn<Promise<Notifications>, [CreateNotificationDto, string]>().mockResolvedValue({} as Notifications),
+  };
+  const mockConfigService = {
+    get: jest.fn<string | undefined, [string]>().mockReturnValue('webcetera.test'),
   };
 
   beforeEach(async () => {
@@ -142,6 +146,10 @@ describe('TasksService', () => {
         {
           provide: NotificationsService,
           useValue: mockNotificationsService,
+        },
+        {
+          provide: ConfigService,
+          useValue: mockConfigService,
         },
       ],
     }).compile();
@@ -244,12 +252,15 @@ describe('TasksService', () => {
 
       await service.createTask(createTaskDto, createAuthenticatedUser(1));
 
-      expect(mockNotificationsService.create).toHaveBeenCalledWith({
-        name: 'Вам назначена задача: Тестовая задача',
-        message: 'Вы назначены ответственным за задачу «Тестовая задача».',
-        recipient_id: 5,
-        link: '?task-id=1',
-      });
+      expect(mockNotificationsService.createWithEmail).toHaveBeenCalledWith(
+        {
+          name: 'Вам назначена задача: Тестовая задача',
+          message: 'Вы назначены ответственным за задачу «Тестовая задача».',
+          recipient_id: 5,
+          link: '?task-id=1',
+        },
+        expect.stringContaining('https://tracker.webcetera.test?task-id=1'),
+      );
     });
 
     it('должен выбрасывать 404, если проект не найден', async () => {
@@ -347,12 +358,15 @@ describe('TasksService', () => {
 
       await service.updateTask('1', updateTaskDto, createAuthenticatedUser(1));
 
-      expect(mockNotificationsService.create).toHaveBeenCalledWith({
-        name: 'Вам назначена задача: Тестовая задача',
-        message: 'Вы назначены ответственным за задачу «Тестовая задача».',
-        recipient_id: 42,
-        link: '?task-id=1',
-      });
+      expect(mockNotificationsService.createWithEmail).toHaveBeenCalledWith(
+        {
+          name: 'Вам назначена задача: Тестовая задача',
+          message: 'Вы назначены ответственным за задачу «Тестовая задача».',
+          recipient_id: 42,
+          link: '?task-id=1',
+        },
+        expect.stringContaining('https://tracker.webcetera.test?task-id=1'),
+      );
     });
 
     it('не должен отправлять уведомление, если ответственный не изменился', async () => {
@@ -379,7 +393,7 @@ describe('TasksService', () => {
 
       await service.updateTask('1', updateTaskDto, createAuthenticatedUser(1));
 
-      expect(mockNotificationsService.create).not.toHaveBeenCalled();
+      expect(mockNotificationsService.createWithEmail).not.toHaveBeenCalled();
     });
 
     it('должен выбрасывать 404, если новый ответственный не найден', async () => {

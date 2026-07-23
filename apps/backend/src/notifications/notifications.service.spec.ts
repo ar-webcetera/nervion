@@ -8,6 +8,9 @@ import { CreateNotificationDto } from './dto/create-notification.dto';
 import { UpdateNotificationDto } from './dto/update-notification.dto';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { PushService } from '../push/push.service';
+import { MailService } from '../mail/mail.service';
+import { MailboxService } from '../mailbox/mailbox.service';
+import { ReadNotificationContextDto } from './dto/read-notification-context.dto';
 
 type NotificationsUpdateQueryBuilderMock = {
   update: jest.Mock<NotificationsUpdateQueryBuilderMock, [typeof Notifications]>;
@@ -32,7 +35,7 @@ describe('NotificationsService', () => {
   let updateQueryBuilder: NotificationsUpdateQueryBuilderMock;
 
   const mockNotificationsRepository = {
-    save: jest.fn<Promise<Notifications>, [Partial<Notifications>]>(),
+    save: jest.fn<Promise<Notifications | Notifications[]>, [Partial<Notifications> | Partial<Notifications>[]]>(),
     find: jest.fn<Promise<Notifications[]>, [object]>(),
     findOne: jest.fn<Promise<Notifications | null>, [object]>(),
     delete: jest.fn<Promise<{ affected: number }>, [number]>(),
@@ -51,6 +54,12 @@ describe('NotificationsService', () => {
   const mockPushService = {
     sendToUser: jest.fn<Promise<void>, [number, object]>().mockResolvedValue(),
   };
+  const mockMailService = {
+    sendMail: jest.fn<Promise<void>, [string, string, string, { notificationId: number }]>().mockResolvedValue(),
+  };
+  const mockMailboxService = {
+    moveNotificationThreadsToTrash: jest.fn<Promise<number[]>, [number, number[]]>().mockResolvedValue([]),
+  };
 
   beforeEach(async () => {
     updateQueryBuilder = createNotificationsUpdateQueryBuilderMock();
@@ -61,12 +70,16 @@ describe('NotificationsService', () => {
         { provide: getRepositoryToken(Users), useValue: mockUsersRepository },
         { provide: WebsocketGateway, useValue: mockWebsocketGateway },
         { provide: PushService, useValue: mockPushService },
+        { provide: MailService, useValue: mockMailService },
+        { provide: MailboxService, useValue: mockMailboxService },
       ],
     }).compile();
 
     service = module.get<NotificationsService>(NotificationsService);
     jest.clearAllMocks();
     mockPushService.sendToUser.mockResolvedValue();
+    mockMailService.sendMail.mockResolvedValue();
+    mockMailboxService.moveNotificationThreadsToTrash.mockResolvedValue([]);
     mockNotificationsRepository.createQueryBuilder.mockReturnValue(updateQueryBuilder);
   });
 
@@ -123,15 +136,95 @@ describe('NotificationsService', () => {
     });
   });
 
+  describe('createWithEmail', () => {
+    it('должен отправлять email с X-Nervion-Notification-Id через notificationId', async () => {
+      const recipient = { id: 4, email: 'user@webcetera.test' } as Users;
+      const saved = { id: 42, is_read: false, name: 'Вам назначена задача', recipient } as Notifications;
+
+      mockUsersRepository.findOne.mockResolvedValue(recipient);
+      mockNotificationsRepository.save.mockResolvedValue(saved);
+
+      const result = await service.createWithEmail(
+        Object.assign(new CreateNotificationDto(), {
+          name: 'Вам назначена задача',
+          message: 'Текст',
+          recipient_id: 4,
+          link: '?task-id=12',
+        }),
+        '<p>HTML</p>',
+      );
+
+      expect(mockMailService.sendMail).toHaveBeenCalledWith('user@webcetera.test', 'Вам назначена задача', '<p>HTML</p>', {
+        notificationId: 42,
+      });
+      expect(result).toBe(saved);
+    });
+
+    it('не должен отправлять email, если у получателя нет адреса', async () => {
+      const recipient = { id: 4 } as Users;
+      const saved = { id: 42, is_read: false, name: 'Уведомление', recipient } as Notifications;
+
+      mockUsersRepository.findOne.mockResolvedValue(recipient);
+      mockNotificationsRepository.save.mockResolvedValue(saved);
+
+      await service.createWithEmail(
+        Object.assign(new CreateNotificationDto(), {
+          name: 'Уведомление',
+          recipient_id: 4,
+        }),
+        '<p>HTML</p>',
+      );
+
+      expect(mockMailService.sendMail).not.toHaveBeenCalled();
+    });
+  });
+
   describe('markAllAsRead', () => {
     it('должен обновлять только непрочитанные уведомления конкретного пользователя', async () => {
+      mockNotificationsRepository.find.mockResolvedValue([{ id: 2 }, { id: 3 }] as Notifications[]);
+
       const result = await service.markAllAsRead(10);
 
       expect(updateQueryBuilder.update).toHaveBeenCalledWith(Notifications);
       expect(updateQueryBuilder.set).toHaveBeenCalledWith({ is_read: true });
       expect(updateQueryBuilder.where).toHaveBeenCalledWith('recipient_id = :userId', { userId: 10 });
       expect(updateQueryBuilder.andWhere).toHaveBeenCalledWith('is_read = false');
+      expect(mockMailboxService.moveNotificationThreadsToTrash).toHaveBeenCalledWith(10, [2, 3]);
       expect(result).toEqual({ affected: 3 });
+    });
+  });
+
+  describe('markContextAsRead', () => {
+    it('должен читать только уведомление открытой задачи без comment-id', async () => {
+      const taskNotification = { id: 1, link: '?task-id=12', is_read: false } as Notifications;
+      const commentNotification = { id: 2, link: '?task-id=12&comment-id=5', is_read: false } as Notifications;
+      const otherTaskNotification = { id: 3, link: '?task-id=123', is_read: false } as Notifications;
+      mockNotificationsRepository.find.mockResolvedValue([taskNotification, commentNotification, otherTaskNotification]);
+      mockNotificationsRepository.save.mockResolvedValue([taskNotification]);
+
+      const result = await service.markContextAsRead(10, Object.assign(new ReadNotificationContextDto(), { task_id: 12 }));
+
+      expect(mockNotificationsRepository.save).toHaveBeenCalledWith([expect.objectContaining({ id: 1, is_read: true })]);
+      expect(mockMailboxService.moveNotificationThreadsToTrash).toHaveBeenCalledWith(10, [1]);
+      expect(result).toEqual({ notification_ids: [1] });
+    });
+
+    it('должен читать только точный комментарий указанной задачи', async () => {
+      const expected = { id: 4, link: '?task-id=12&comment-id=5', is_read: false } as Notifications;
+      mockNotificationsRepository.find.mockResolvedValue([
+        expected,
+        { id: 5, link: '?task-id=12&comment-id=50', is_read: false } as Notifications,
+        { id: 6, link: '?task-id=120&comment-id=5', is_read: false } as Notifications,
+      ]);
+      mockNotificationsRepository.save.mockResolvedValue([expected]);
+
+      const result = await service.markContextAsRead(
+        10,
+        Object.assign(new ReadNotificationContextDto(), { task_id: 12, comment_id: 5 }),
+      );
+
+      expect(result).toEqual({ notification_ids: [4] });
+      expect(mockNotificationsRepository.save).toHaveBeenCalledWith([expect.objectContaining({ id: 4, is_read: true })]);
     });
   });
 
@@ -165,7 +258,27 @@ describe('NotificationsService', () => {
         }),
       );
       expect(mockWebsocketGateway.sendNotificationUpdated).toHaveBeenCalledWith(updatedNotification);
+      expect(mockMailboxService.moveNotificationThreadsToTrash).not.toHaveBeenCalled();
       expect(result).toBe(updatedNotification);
+    });
+
+    it('должен перемещать связанные письма в корзину при прочтении', async () => {
+      const notification = {
+        id: 7,
+        is_read: false,
+        recipient: { id: 10 },
+      } as Notifications;
+      const updatedNotification = {
+        ...notification,
+        is_read: true,
+      } as Notifications;
+
+      mockNotificationsRepository.findOne.mockResolvedValue(notification);
+      mockNotificationsRepository.save.mockResolvedValue(updatedNotification);
+
+      await service.updateForUser(7, 10, Object.assign(new UpdateNotificationDto(), { is_read: true }));
+
+      expect(mockMailboxService.moveNotificationThreadsToTrash).toHaveBeenCalledWith(10, [7]);
     });
 
     it('должен выбрасывать 404, если уведомление не найдено', async () => {

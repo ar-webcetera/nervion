@@ -1,5 +1,7 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import type { ReadNotificationContextResponse } from '@tracker/contracts';
 import { CreateNotificationDto } from './dto/create-notification.dto';
+import { ReadNotificationContextDto } from './dto/read-notification-context.dto';
 import { UpdateNotificationDto } from './dto/update-notification.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, DeleteResult, Repository, UpdateResult } from 'typeorm';
@@ -7,9 +9,13 @@ import { Notifications } from './entities/notification.entity';
 import { Users } from '../users/entities/users.entity';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { PushService } from '../push/push.service';
+import { MailService } from '../mail/mail.service';
+import { MailboxService } from '../mailbox/mailbox.service';
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     @InjectRepository(Notifications)
     private readonly notificationsRepository: Repository<Notifications>,
@@ -17,6 +23,8 @@ export class NotificationsService {
     private readonly usersRepository: Repository<Users>,
     private readonly websocketGateway: WebsocketGateway,
     private readonly pushService: PushService,
+    private readonly mailService: MailService,
+    private readonly mailboxService: MailboxService,
   ) {}
   async create(createNotificationDto: CreateNotificationDto) {
     const recipient = await this.usersRepository.findOne({
@@ -47,6 +55,23 @@ export class NotificationsService {
     return newNotification;
   }
 
+  async createWithEmail(createNotificationDto: CreateNotificationDto, html: string): Promise<Notifications> {
+    const notification = await this.create(createNotificationDto);
+    const recipientEmail = notification.recipient?.email;
+
+    if (!recipientEmail) return notification;
+
+    try {
+      await this.mailService.sendMail(recipientEmail, notification.name, html, {
+        notificationId: notification.id,
+      });
+    } catch (error) {
+      this.logger.error(`Не удалось отправить email для уведомления ${notification.id}: ${String(error)}`);
+    }
+
+    return notification;
+  }
+
   findByFilter(user_id: number) {
     return this.notificationsRepository.find({
       where: { recipient: { id: user_id } },
@@ -74,17 +99,56 @@ export class NotificationsService {
   }
 
   async markAllAsRead(userId: number): Promise<UpdateResult> {
-    return this.notificationsRepository
+    const unreadNotifications = await this.notificationsRepository.find({
+      where: { recipient: { id: userId }, is_read: false },
+      select: { id: true },
+    });
+    const result = await this.notificationsRepository
       .createQueryBuilder()
       .update(Notifications)
       .set({ is_read: true })
       .where('recipient_id = :userId', { userId })
       .andWhere('is_read = false')
       .execute();
+
+    await this.mailboxService.moveNotificationThreadsToTrash(
+      userId,
+      unreadNotifications.map((notification) => notification.id),
+    );
+
+    return result;
+  }
+
+  async markContextAsRead(userId: number, dto: ReadNotificationContextDto): Promise<ReadNotificationContextResponse> {
+    const unreadNotifications = await this.notificationsRepository.find({
+      where: { recipient: { id: userId }, is_read: false },
+    });
+    const matchedNotifications = unreadNotifications.filter((notification) =>
+      this.matchesContext(notification.link, dto.task_id, dto.comment_id),
+    );
+
+    if (matchedNotifications.length === 0) {
+      return { notification_ids: [] };
+    }
+
+    matchedNotifications.forEach((notification) => {
+      notification.is_read = true;
+    });
+    const updatedNotifications = await this.notificationsRepository.save(matchedNotifications);
+
+    updatedNotifications.forEach((notification) => {
+      this.websocketGateway.sendNotificationUpdated(notification);
+    });
+
+    const notificationIds = updatedNotifications.map((notification) => notification.id);
+    await this.mailboxService.moveNotificationThreadsToTrash(userId, notificationIds);
+
+    return { notification_ids: notificationIds };
   }
 
   async updateForUser(id: number, userId: number, updateNotificationDto: UpdateNotificationDto): Promise<Notifications> {
     const notification = await this.findOneForUser(id, userId);
+    const wasRead = notification.is_read;
 
     if (updateNotificationDto.is_read || updateNotificationDto.is_read === false) {
       notification.is_read = updateNotificationDto.is_read;
@@ -94,7 +158,20 @@ export class NotificationsService {
     if (updatedNotification) {
       this.websocketGateway.sendNotificationUpdated(updatedNotification);
     }
+    if (!wasRead && updatedNotification.is_read) {
+      await this.mailboxService.moveNotificationThreadsToTrash(userId, [updatedNotification.id]);
+    }
     return updatedNotification;
+  }
+
+  private matchesContext(link: string, taskId: number, commentId?: number): boolean {
+    const query = link.includes('?') ? link.slice(link.indexOf('?') + 1) : link;
+    const params = new URLSearchParams(query);
+
+    if (params.get('task-id') !== String(taskId)) return false;
+
+    const linkedCommentId = params.get('comment-id');
+    return commentId === undefined ? linkedCommentId === null : linkedCommentId === String(commentId);
   }
 
   async removeForUser(id: number, userId: number): Promise<DeleteResult> {

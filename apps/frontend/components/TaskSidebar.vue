@@ -38,6 +38,7 @@ const taskStore = useTaskStore();
 const commentStore = useCommentStore();
 const userStore = useUserStore();
 const route = useRoute();
+const notificationStore = useNotificationStore();
 const { $toast } = useNuxtApp();
 
 const props = defineProps<{ currentTaskId: number | null }>();
@@ -202,12 +203,31 @@ const sidebarStyle = computed(() => ({
   width: `${sidebarWidth.value}px`,
 }));
 
+let taskNotificationMarkInFlight = false;
+const markOpenedTaskNotificationsAsRead = async (taskId: number) => {
+  if (taskNotificationMarkInFlight) return;
+
+  taskNotificationMarkInFlight = true;
+  try {
+    await notificationStore.markContextAsRead({ task_id: taskId });
+  } finally {
+    taskNotificationMarkInFlight = false;
+  }
+};
+
 const useFetchAllData = async () => {
+  const openedTaskId = currentTaskIdRef.value;
+
   try {
     pending.value = true;
     await Promise.all([fetchTask(), fetchComments(), fetchData()]);
     responsibleId.value = taskStore.currentTask?.responsible?.id || null;
     editableDescription.value = taskStore.currentTask?.description || {};
+    if (!hasError.value && openedTaskId && taskStore.currentTask?.id === openedTaskId) {
+      await markOpenedTaskNotificationsAsRead(openedTaskId);
+    }
+  } catch (e) {
+    console.error('Ошибка загрузки задачи или синхронизации уведомлений:', e);
   } finally {
     pending.value = false;
     await nextTick();
@@ -240,6 +260,23 @@ watch(
     if (newCommentId && !pending.value) {
       await nextTick();
       scrollToComment(commentsContainer.value, sidebarRef.value);
+    }
+  },
+);
+
+watch(
+  () =>
+    notificationStore.notifications
+      .filter((notification) => {
+        if (notification.is_read) return false;
+        const params = new URL(notification.link, 'http://localhost').searchParams;
+        return params.get('task-id') === String(currentTaskIdRef.value) && !params.has('comment-id');
+      })
+      .map((notification) => notification.id)
+      .join(','),
+  () => {
+    if (!pending.value && currentTaskIdRef.value) {
+      void markOpenedTaskNotificationsAsRead(currentTaskIdRef.value);
     }
   },
 );

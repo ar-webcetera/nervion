@@ -7,7 +7,7 @@ import { Comments } from './entities/comment.entity';
 import { Users } from '../users/entities/users.entity';
 import { Tasks } from '../tasks/entities/task.entity';
 import { NotificationsService } from '../notifications/notifications.service';
-import { MailService } from '../mail/mail.service';
+import { Notifications } from '../notifications/entities/notification.entity';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
@@ -34,11 +34,7 @@ describe('CommentsService', () => {
   };
 
   const mockNotifications = {
-    create: jest.fn<Promise<void>, [object]>().mockResolvedValue(),
-  };
-
-  const mockMailService = {
-    sendMail: jest.fn<Promise<void>, [string, string, string]>().mockResolvedValue(),
+    createWithEmail: jest.fn<Promise<Notifications>, [object, string]>().mockResolvedValue({} as Notifications),
   };
 
   const mockConfig = {
@@ -70,7 +66,6 @@ describe('CommentsService', () => {
         { provide: getRepositoryToken(Users), useValue: mockUsersRepository },
         { provide: getRepositoryToken(Tasks), useValue: mockTasksRepository },
         { provide: NotificationsService, useValue: mockNotifications },
-        { provide: MailService, useValue: mockMailService },
         { provide: ConfigService, useValue: mockConfig },
         { provide: WebsocketGateway, useValue: mockWebsocketGateway },
       ],
@@ -79,8 +74,7 @@ describe('CommentsService', () => {
     service = module.get<CommentsService>(CommentsService);
     jest.clearAllMocks();
     mockConfig.get.mockReturnValue('webcetera.test');
-    mockNotifications.create.mockResolvedValue();
-    mockMailService.sendMail.mockResolvedValue();
+    mockNotifications.createWithEmail.mockResolvedValue({} as Notifications);
   });
 
   describe('create', () => {

@@ -38,6 +38,10 @@ export class MailMessages {
   @JoinColumn({ name: 'thread_id' })
   thread: MailThreads;
 
+  @Index()
+  @Column({ type: 'int', name: 'notification_id', nullable: true })
+  notification_id: number | null;
+
   @Column({
     type: 'enum',
     enum: MAIL_DIRECTIONS,

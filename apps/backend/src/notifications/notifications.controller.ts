@@ -8,6 +8,7 @@ import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ROLES } from '../common/enums/roles.enum';
+import { ReadNotificationContextDto } from './dto/read-notification-context.dto';
 
 @Controller('notifications')
 @ApiTags('Уведомления')
@@ -52,6 +53,14 @@ export class NotificationsController {
   @ApiResponse({ status: 401, description: 'Пользователь не авторизован' })
   markAllAsRead(@Req() req: RequestWithCookies) {
     return this.notificationsService.markAllAsRead(req.user.id);
+  }
+
+  @Patch('/read-context')
+  @ApiOperation({ summary: 'Отметить уведомления прочитанными по открытой задаче или просмотренному комментарию' })
+  @ApiResponse({ status: 200, description: 'Подходящие уведомления отмечены прочитанными' })
+  @ApiResponse({ status: 401, description: 'Пользователь не авторизован' })
+  markContextAsRead(@Req() req: RequestWithCookies, @Body() dto: ReadNotificationContextDto) {
+    return this.notificationsService.markContextAsRead(req.user.id, dto);
   }
 
   @Patch(':id')

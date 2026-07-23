@@ -7,11 +7,10 @@ import { Users } from '../users/entities/users.entity';
 import { Tasks } from '../tasks/entities/task.entity';
 import { CommentsGateway } from './comments.gateway';
 import { NotificationsModule } from '../notifications/notifications.module';
-import { MailModule } from '../mail/mail.module';
 import { WebsocketModule } from '../websocket/websocket.module';
 
 @Module({
-  imports: [WebsocketModule, NotificationsModule, TypeOrmModule.forFeature([Comments, Users, Tasks]), MailModule],
+  imports: [WebsocketModule, NotificationsModule, TypeOrmModule.forFeature([Comments, Users, Tasks])],
   controllers: [CommentsController],
   providers: [CommentsService, CommentsGateway],
 })

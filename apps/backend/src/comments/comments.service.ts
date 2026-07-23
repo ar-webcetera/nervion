@@ -8,7 +8,6 @@ import { Comments } from './entities/comment.entity';
 import { Users } from '../users/entities/users.entity';
 import { FindCommentsByFilterDto, SortOrder } from './dto/find-comments-by-filter.dto';
 import { NotificationsService } from '../notifications/notifications.service';
-import { MailService } from '../mail/mail.service';
 import { ConfigService } from '@nestjs/config';
 import { AnyTiptapNode, TiptapDoc } from '../common/types/tiptap';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
@@ -24,7 +23,6 @@ export class CommentsService {
     @InjectRepository(Tasks)
     private readonly tasksRepository: Repository<Tasks>,
     private notifications: NotificationsService,
-    private readonly mailService: MailService,
     private readonly config: ConfigService,
     private readonly websocketGateway: WebsocketGateway,
   ) {}
@@ -173,25 +171,17 @@ export class CommentsService {
         if (mentionUser.id === author?.id) continue;
         const subject = `${authorName} отметил вас в задаче: ${task.title}`;
         void this.notifications
-          .create({ name: subject, message, recipient_id: mentionUser.id, link })
+          .createWithEmail({ name: subject, message, recipient_id: mentionUser.id, link }, `<p>${message}</p>${commentLink}`)
           .catch((err) => console.error('Ошибка создания уведомления', err));
-        void this.mailService
-          .sendMail(mentionUser.email, subject, `<p>${message}</p>${commentLink}`)
-          .catch((err) => console.error('Ошибка отправки письма', err));
       }
     }
 
     await Promise.all(
-      recipients.flatMap((recipient) => {
+      recipients.map((recipient) => {
         const subject = `${authorName} комментирует задачу: ${task.title}`;
-        return [
-          this.notifications
-            .create({ name: subject, message, recipient_id: recipient.id, link })
-            .catch((err) => console.error('Ошибка создания уведомления', err)),
-          this.mailService
-            .sendMail(recipient.email, subject, `<p>${message}</p>${commentLink}`)
-            .catch((err) => console.error('Ошибка отправки письма', err)),
-        ];
+        return this.notifications
+          .createWithEmail({ name: subject, message, recipient_id: recipient.id, link }, `<p>${message}</p>${commentLink}`)
+          .catch((err) => console.error('Ошибка создания уведомления', err));
       }),
     );
   }

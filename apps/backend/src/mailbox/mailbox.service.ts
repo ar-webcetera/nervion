@@ -10,8 +10,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, IsNull, Repository } from 'typeorm';
+import { Brackets, In, IsNull, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { Notifications } from '../notifications/entities/notification.entity';
 import { PushService } from '../push/push.service';
 import { StorageService } from '../storage/storage.service';
 import { CreateMailAccountDto } from './dto/create-mail-account.dto';
@@ -45,6 +46,8 @@ export class MailboxService {
     private readonly messagesRepository: Repository<MailMessages>,
     @InjectRepository(MailAttachments)
     private readonly attachmentsRepository: Repository<MailAttachments>,
+    @InjectRepository(Notifications)
+    private readonly notificationsRepository: Repository<Notifications>,
     private readonly storageService: StorageService,
     private readonly postboxService: PostboxService,
     private readonly configService: ConfigService,
@@ -196,10 +199,13 @@ export class MailboxService {
     }
 
     const thread = await this.resolveInboundThread(account, data);
+    const linkedNotification = await this.findLinkedNotification(account.address, data.notificationId);
+    const notificationAlreadyRead = linkedNotification?.is_read === true;
 
     const message = await this.messagesRepository.save(
       this.messagesRepository.create({
         thread_id: thread.id,
+        notification_id: linkedNotification?.id ?? null,
         direction: MAIL_DIRECTIONS.inbound,
         message_id: data.messageId,
         in_reply_to: data.inReplyTo,
@@ -213,6 +219,7 @@ export class MailboxService {
         html_body: data.html,
         raw_s3_key: data.rawS3Key,
         auth_results: data.authResults,
+        is_read: notificationAlreadyRead,
         status: MAIL_MESSAGE_STATUSES.received,
       }),
     );
@@ -220,6 +227,9 @@ export class MailboxService {
     await this.saveAttachments(account, thread, message, data);
 
     thread.last_message_at = new Date();
+    if (notificationAlreadyRead) {
+      thread.folder = MAIL_FOLDERS.trash;
+    }
     if (!thread.counterparty_address) {
       thread.counterparty_address = data.from.address;
     }
@@ -228,6 +238,45 @@ export class MailboxService {
     await this.notifyInboundMessage(account.id, thread.id, message.id, data);
 
     return message;
+  }
+
+  private findLinkedNotification(accountAddress: string, notificationId: number | null): Promise<Notifications | null> {
+    if (!notificationId) return Promise.resolve(null);
+
+    return this.notificationsRepository
+      .createQueryBuilder('notification')
+      .innerJoinAndSelect('notification.recipient', 'recipient')
+      .where('notification.id = :notificationId', { notificationId })
+      .andWhere('LOWER(recipient.email) = :accountAddress', { accountAddress: accountAddress.toLowerCase() })
+      .getOne();
+  }
+
+  async moveNotificationThreadsToTrash(userId: number, notificationIds: number[]): Promise<number[]> {
+    if (notificationIds.length === 0) return [];
+
+    const rows = await this.messagesRepository
+      .createQueryBuilder('message')
+      .select('DISTINCT message.thread_id', 'thread_id')
+      .innerJoin(Notifications, 'notification', 'notification.id = message.notification_id')
+      .innerJoin('notification.recipient', 'recipient')
+      .where('message.notification_id IN (:...notificationIds)', { notificationIds })
+      .andWhere('recipient.id = :userId', { userId })
+      .getRawMany<{ thread_id: number | string }>();
+    const threadIds = rows.map((row) => Number(row.thread_id)).filter((id) => Number.isInteger(id) && id > 0);
+
+    if (threadIds.length === 0) return [];
+
+    await this.messagesRepository.update(
+      {
+        thread_id: In(threadIds),
+        direction: MAIL_DIRECTIONS.inbound,
+        is_read: false,
+      },
+      { is_read: true },
+    );
+    await this.threadsRepository.update({ id: In(threadIds) }, { folder: MAIL_FOLDERS.trash });
+
+    return threadIds;
   }
 
   private async notifyInboundMessage(

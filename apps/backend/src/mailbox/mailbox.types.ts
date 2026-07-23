@@ -11,6 +11,7 @@ export interface InboundAttachment {
 
 export interface InboundMailData {
   messageId: string | null;
+  notificationId: number | null;
   inReplyTo: string | null;
   referencesHeader: string | null;
   from: MailAddress;
