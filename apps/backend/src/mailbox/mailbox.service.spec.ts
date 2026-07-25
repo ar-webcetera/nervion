@@ -60,6 +60,7 @@ describe('MailboxService', () => {
 
   const mockMessagesRepository = {
     create: jest.fn((value: Partial<MailMessages>) => value),
+    findOne: jest.fn(),
     save: jest.fn(),
     update: jest.fn(),
     createQueryBuilder: jest.fn(),
@@ -67,6 +68,7 @@ describe('MailboxService', () => {
 
   const mockAttachmentsRepository = {
     create: jest.fn((value: Partial<MailAttachments>) => value),
+    delete: jest.fn(),
     save: jest.fn(),
   };
 
@@ -78,7 +80,9 @@ describe('MailboxService', () => {
     uploadObject: jest.fn(),
   };
 
-  const mockPostboxService = {};
+  const mockPostboxService = {
+    send: jest.fn(),
+  };
   const mockConfigService = {
     get: jest.fn(),
   };
@@ -232,6 +236,65 @@ describe('MailboxService', () => {
       expect(threadIds).toEqual([]);
       expect(mockMessagesRepository.createQueryBuilder).not.toHaveBeenCalled();
       expect(mockThreadsRepository.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('drafts', () => {
+    it('должен обновлять заголовок треда при сохранении черновика', async () => {
+      const thread = {
+        id: 3,
+        subject: '(черновик)',
+        counterparty_address: null,
+        account: { id: 1, allowedUsers: [{ id: 10 }] },
+      } as MailThreads;
+      mockMessagesRepository.findOne.mockResolvedValue({
+        id: 9,
+        status: MAIL_MESSAGE_STATUSES.draft,
+        thread,
+      });
+
+      await service.saveDraft({ id: 10, role: 'employee' } as never, {
+        account_id: 1,
+        draft_id: 9,
+        to: ['client@example.com'],
+        subject: 'Тема письма',
+      });
+
+      expect(mockThreadsRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ subject: 'Тема письма', counterparty_address: 'client@example.com' }),
+      );
+    });
+
+    it('должен заменить временный заголовок треда после отправки черновика', async () => {
+      const thread = {
+        id: 3,
+        subject: '(черновик)',
+        account: {
+          id: 1,
+          address: 'user@webcetera.test',
+          display_name: 'User',
+          allowedUsers: [{ id: 10 }],
+        },
+      } as MailThreads;
+      mockMessagesRepository.findOne.mockResolvedValue({
+        id: 9,
+        status: MAIL_MESSAGE_STATUSES.draft,
+        subject: 'Итоговая тема',
+        text_body: 'Текст',
+        html_body: null,
+        to_addresses: [{ address: 'client@example.com' }],
+        cc_addresses: [],
+        attachments: [],
+        thread,
+      });
+      mockPostboxService.send.mockResolvedValue('<sent@test>');
+
+      await service.sendDraft({ id: 10, role: 'employee' } as never, 9);
+
+      expect(mockThreadsRepository.save).toHaveBeenCalledWith(expect.objectContaining({ subject: 'Итоговая тема' }));
+      expect(mockMessagesRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: MAIL_MESSAGE_STATUSES.sent, message_id: '<sent@test>' }),
+      );
     });
   });
 

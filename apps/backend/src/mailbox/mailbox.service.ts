@@ -676,6 +676,7 @@ export class MailboxService {
       draft.subject = dto.subject ?? null;
       draft.text_body = dto.text ?? null;
       draft.html_body = dto.html ?? null;
+      draft.thread.subject = dto.subject || '(черновик)';
       draft.thread.counterparty_address = dto.to?.[0] ?? draft.thread.counterparty_address;
       await this.threadsRepository.save(draft.thread);
 
@@ -765,6 +766,7 @@ export class MailboxService {
 
     draft.message_id = sentMessageId;
     draft.status = MAIL_MESSAGE_STATUSES.sent;
+    draft.thread.subject = draft.subject || '(без темы)';
     draft.thread.last_message_at = new Date();
     await this.threadsRepository.save(draft.thread);
 

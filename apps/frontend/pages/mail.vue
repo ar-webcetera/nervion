@@ -223,13 +223,32 @@ const autosaveDraft = async () => {
 };
 
 let draftDebounce: ReturnType<typeof setTimeout> | null = null;
+let draftAutosavePromise: Promise<void> | null = null;
+
+const runDraftAutosave = () => {
+  const autosavePromise = autosaveDraft().then(syncUrl);
+  draftAutosavePromise = autosavePromise;
+  void autosavePromise.finally(() => {
+    if (draftAutosavePromise === autosavePromise) draftAutosavePromise = null;
+  });
+};
+
+const flushDraftAutosave = async () => {
+  if (draftDebounce) {
+    clearTimeout(draftDebounce);
+    draftDebounce = null;
+  }
+  if (draftAutosavePromise) await draftAutosavePromise;
+};
+
 watch(
   () => [composeForm.to, composeForm.cc, composeForm.subject, composeForm.text, composeForm.attachments.length],
   () => {
     if (!composeMode.value) return;
     if (draftDebounce) clearTimeout(draftDebounce);
     draftDebounce = setTimeout(() => {
-      void autosaveDraft().then(syncUrl);
+      draftDebounce = null;
+      runDraftAutosave();
     }, 1500);
   },
 );
@@ -533,6 +552,7 @@ const sendCompose = async () => {
 
   sendingCompose.value = true;
   try {
+    await flushDraftAutosave();
     if (composeDraftId.value) {
       await mailStore.saveDraft({
         account_id: composeForm.account_id,
@@ -556,9 +576,9 @@ const sendCompose = async () => {
         attachments: composeForm.attachments.length ? composeForm.attachments : undefined,
       });
     }
+    composeMode.value = false;
     composeDraftId.value = null;
     composeThreadId.value = null;
-    composeMode.value = false;
     await loadThreads();
   } catch (e) {
     $toast.error(getErrorMessage(e));
