@@ -197,6 +197,7 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
         taskStore.currentTask.recurrence_days = recurrence_days;
       }
       taskStore.applyRecurrenceChangeToWeeklyView(taskId.value, recurrence_days);
+      await taskStore.fetchMyTodayTasksCount();
     } catch (e) {
       $toast.error(getErrorMessage(e));
     }

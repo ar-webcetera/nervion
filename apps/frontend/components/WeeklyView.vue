@@ -65,16 +65,17 @@ const openTask = (taskId: number, date: string) => {
 };
 
 await callOnce('weekly-tasks-init', async () => {
+  if (taskStore.weeklyTasks) {
+    currentWeekStart.value = taskStore.weeklyTasks.week_start;
+    return;
+  }
   const data = await taskStore.fetchWeeklyTasks();
   if (data) currentWeekStart.value = data.week_start;
 });
 
-onMounted(async () => {
-  try {
-    const data = await taskStore.fetchWeeklyTasks();
-    if (data) currentWeekStart.value = data.week_start;
-  } catch (e) {
-    $toast.error(getErrorMessage(e));
+onMounted(() => {
+  if (taskStore.weeklyTasks) {
+    currentWeekStart.value = taskStore.weeklyTasks.week_start;
   }
 });
 </script>

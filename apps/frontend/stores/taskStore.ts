@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import { format } from 'date-fns';
 import type { Task, TaskParams, WeeklyTasksResponse } from '~/types/task';
 import type { Project } from '~/types/project';
 import type { User } from '~/types/user';
@@ -7,6 +8,7 @@ import type { TASK_STATUSES } from '~/constants/task.constants';
 import type { JSONContent } from '@tiptap/core';
 import type { TaskType } from '~/enums/task.enums';
 import { useTimelogStore } from './timelogStore';
+import { useUserStore } from './userStore';
 
 interface ExportTasksParams {
   statuses?: string[];
@@ -116,6 +118,7 @@ export const useTaskStore = defineStore('task', () => {
   const currentTaskDate = ref<string | null>(null);
   const kanban = ref<KanbanColumn[]>([]);
   const viewType = ref<TaskViewType>('list');
+  const tasksPageHydrated = ref(false);
   const filter = ref<Filter>({
     statuses: [],
     projects: [],
@@ -442,6 +445,7 @@ export const useTaskStore = defineStore('task', () => {
 
   const weeklyTasks = ref<WeeklyTasksResponse | null>(null);
   const currentViewingWeekStart = ref<string | null>(null);
+  const myTodayTasksCount = ref(0);
 
   const fetchWeeklyTasks = async (weekStart?: string, useSavedFilters = true) => {
     const headers = useRequestHeaders(['cookie']);
@@ -462,6 +466,37 @@ export const useTaskStore = defineStore('task', () => {
   };
 
   const refreshWeeklyTasks = () => fetchWeeklyTasks(currentViewingWeekStart.value ?? undefined);
+
+  const fetchMyTodayTasksCount = async (userId?: number) => {
+    const responsibleId = userId ?? useUserStore().user?.id;
+    if (!responsibleId) {
+      myTodayTasksCount.value = 0;
+      return 0;
+    }
+
+    const headers = useRequestHeaders(['cookie']);
+    const response = await $fetch<WeeklyTasksResponse>(`/api/tasks/weekly`, {
+      baseURL: config.public.API_URL,
+      method: 'GET',
+      credentials: 'include',
+      headers,
+      params: {
+        responsibles: [responsibleId],
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+    });
+
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const todayColumn = response.columns.find((column) => column.date === today);
+    myTodayTasksCount.value =
+      todayColumn?.cards.filter((card) => !card.completed && card.responsible?.id === responsibleId).length ?? 0;
+    return myTodayTasksCount.value;
+  };
+
+  const refreshMyTodayTasksCountIfNeeded = async (date: string) => {
+    if (date !== format(new Date(), 'yyyy-MM-dd')) return;
+    await fetchMyTodayTasksCount();
+  };
 
   const applyRecurrenceChangeToWeeklyView = (taskId: number, newRecurrenceDays: number[] | null) => {
     if (!weeklyTasks.value || !currentTask.value) return;
@@ -520,11 +555,13 @@ export const useTaskStore = defineStore('task', () => {
       credentials: 'include',
       baseURL: config.public.API_URL,
       body: { date },
-    }).catch((e) => {
-      setCardCompleted(taskId, date, false);
-      if (currentTask.value?.id === taskId) currentTask.value.is_completed_today = false;
-      throw e;
-    });
+    })
+      .then(() => refreshMyTodayTasksCountIfNeeded(date))
+      .catch((e) => {
+        setCardCompleted(taskId, date, false);
+        if (currentTask.value?.id === taskId) currentTask.value.is_completed_today = false;
+        throw e;
+      });
   };
 
   const uncompleteRecurringTask = async (taskId: number, date: string) => {
@@ -536,11 +573,13 @@ export const useTaskStore = defineStore('task', () => {
       credentials: 'include',
       baseURL: config.public.API_URL,
       body: { date },
-    }).catch((e) => {
-      setCardCompleted(taskId, date, true);
-      if (currentTask.value?.id === taskId) currentTask.value.is_completed_today = true;
-      throw e;
-    });
+    })
+      .then(() => refreshMyTodayTasksCountIfNeeded(date))
+      .catch((e) => {
+        setCardCompleted(taskId, date, true);
+        if (currentTask.value?.id === taskId) currentTask.value.is_completed_today = true;
+        throw e;
+      });
   };
 
   const exportTasks = async (params: ExportTasksParams) => {
@@ -595,6 +634,7 @@ export const useTaskStore = defineStore('task', () => {
     loadMoreColumn,
     kanban,
     viewType,
+    tasksPageHydrated,
     setColumnCollapsed,
     saveViewType,
     linkExistingTask,
@@ -607,6 +647,8 @@ export const useTaskStore = defineStore('task', () => {
     weeklyTasks,
     fetchWeeklyTasks,
     refreshWeeklyTasks,
+    myTodayTasksCount,
+    fetchMyTodayTasksCount,
     applyRecurrenceChangeToWeeklyView,
     completeRecurringTask,
     uncompleteRecurringTask,

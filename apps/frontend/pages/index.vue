@@ -79,6 +79,46 @@ const fetchWeekly = async () => {
   }
 };
 
+const loadTasksPageData = async () => {
+  if (taskStore.tasksPageHydrated) {
+    return {
+      viewType: viewType.value,
+      myTodayTasksCount: taskStore.myTodayTasksCount,
+    };
+  }
+
+  await taskStore.getFilterState();
+
+  const jobs: Promise<unknown>[] = [taskStore.fetchMyTodayTasksCount(userStore.user?.id)];
+  if (viewType.value === ViewType.LIST) jobs.push(taskStore.fetchTasks({ useSavedFilters: true }));
+  if (viewType.value === ViewType.KANBAN) jobs.push(getKanban({ useSavedFilters: true }));
+  if (viewType.value === ViewType.WEEKLY) jobs.push(taskStore.fetchWeeklyTasks());
+
+  await Promise.all(jobs);
+  taskStore.tasksPageHydrated = true;
+
+  return {
+    viewType: viewType.value,
+    myTodayTasksCount: taskStore.myTodayTasksCount,
+  };
+};
+
+await useAsyncData(
+  'tasks-page-data',
+  async () => {
+    try {
+      return await loadTasksPageData();
+    } catch (e) {
+      console.log(e);
+      $toast.error(getErrorMessage(e));
+      return null;
+    }
+  },
+  {
+    getCachedData: (key, nuxtApp) => nuxtApp.payload.data[key] ?? nuxtApp.static.data[key],
+  },
+);
+
 interface NewTask {
   title: string;
   project_id: number | null;
@@ -514,6 +554,65 @@ const addFilter = async (filter: { type: FilterType; value: string | number | st
   if (viewType.value === ViewType.WEEKLY) fetchWeekly();
 };
 
+const getTodayDate = () => format(new Date(), 'yyyy-MM-dd');
+
+const hasNoExtraFilters = () => {
+  const { statuses, projects, closed_date, taskTypes, title, negativeFilters } = taskStore.filter;
+  const hasProjects = Array.isArray(projects) ? projects.length > 0 : projects === 'null';
+  const hasNegative = negativeFilters ? Object.values(negativeFilters).some(Boolean) : false;
+
+  return !statuses.length && !hasProjects && !closed_date?.length && !taskTypes.length && !title?.trim() && !hasNegative;
+};
+
+const isTodayFilterActive = computed(() => {
+  const me = userStore.user?.id;
+  if (!me) return false;
+
+  const dates = taskStore.filter.planned_date;
+  const today = getTodayDate();
+  const isTodayDate = !!dates && dates.length === 2 && dates[0] === today && dates[1] === today;
+  const isOnlyMe = taskStore.filter.responsibles.length === 1 && taskStore.filter.responsibles[0] === me;
+
+  return isTodayDate && isOnlyMe && hasNoExtraFilters();
+});
+
+const refreshCurrentView = () => {
+  if (viewType.value === ViewType.LIST) fetchTasks();
+  if (viewType.value === ViewType.KANBAN) fetchKanban();
+  if (viewType.value === ViewType.WEEKLY) fetchWeekly();
+};
+
+const resetFiltersLocal = () => {
+  taskStore.filter.statuses = [];
+  taskStore.filter.projects = [];
+  taskStore.filter.responsibles = [];
+  taskStore.filter.planned_date = [];
+  taskStore.filter.closed_date = [];
+  taskStore.filter.taskTypes = [];
+  taskStore.filter.negativeFilters = {};
+  taskStore.filter.title = undefined;
+  filterPanelRef.value?.clearSearch();
+};
+
+const toggleTodayFilter = async () => {
+  if (isTodayFilterActive.value) {
+    resetFiltersLocal();
+    await taskStore.saveFilterState();
+    refreshCurrentView();
+    return;
+  }
+
+  const me = userStore.user?.id;
+  if (!me) return;
+
+  const today = getTodayDate();
+  resetFiltersLocal();
+  taskStore.filter.responsibles = [me];
+  taskStore.filter.planned_date = [today, today];
+  await taskStore.saveFilterState();
+  refreshCurrentView();
+};
+
 const swapPriorityTask = async (taskIds: number[]) => {
   try {
     await taskStore.swapPriorityTask(taskIds);
@@ -615,6 +714,11 @@ useHead({
         @export="handleExport"
       />
 
+      <label class="home__today-filter" :class="{ 'home__today-filter_active': isTodayFilterActive }">
+        <input type="checkbox" :checked="isTodayFilterActive" @change="toggleTodayFilter" />
+        <span>Мои сегодня</span>
+      </label>
+
       <div v-if="filterChips && filterChips.length" class="home__filter-chips home__filter-chips_mob">
         <div v-for="chip in filterChips" :key="chip.id" class="home__filter-chip">
           <button
@@ -681,6 +785,9 @@ useHead({
           </svg>
 
           Неделя
+          <span v-if="taskStore.myTodayTasksCount > 0" class="toggle-view-type__badge">
+            {{ taskStore.myTodayTasksCount }}
+          </span>
         </span>
       </div>
     </div>
@@ -918,6 +1025,45 @@ useHead({
     }
   }
 
+  &__today-filter {
+    @include flex(a-center);
+    gap: 8px;
+    flex-shrink: 0;
+    cursor: pointer;
+    user-select: none;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-medium;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--primary-50);
+    transition:
+      color 0.2s,
+      background 0.2s,
+      border-color 0.2s;
+
+    input {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    &:hover {
+      color: var(--light-text-backgroung-primary);
+      background: var(--primary-5);
+    }
+
+    &_active {
+      color: var(--light-text-backgroung-primary);
+      background: var(--primary-10);
+      border-color: var(--primary);
+    }
+
+    @media (max-width: $screen-mobile-l) {
+      margin-top: 8px;
+    }
+  }
+
   &__task-filters {
     display: flex;
     align-items: flex-start;
@@ -1096,6 +1242,19 @@ useHead({
         stroke-opacity: 1;
       }
     }
+  }
+
+  &__badge {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--primary);
+    color: var(--light-text-backgroung-primary);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    @include flex(center);
+    @extend %text-xs-medium;
   }
 }
 </style>

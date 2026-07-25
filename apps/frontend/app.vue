@@ -17,7 +17,7 @@ const notificationStore = useNotificationStore();
 const projectStore = useProjectStore();
 const { fetchUsers } = userStore;
 const { fetchProjects } = projectStore;
-const { getKanban, fetchTasks, getFilterState } = taskStore;
+const { getKanban, fetchTasks } = taskStore;
 const { getAllNotifications } = notificationStore;
 const chatStore = useChatStore();
 const { fetchChatList, fetchChatMessages } = chatStore;
@@ -67,9 +67,6 @@ const syncScreenState = async () => {
       jobs.push(fetchChatMessages(openChatId));
     }
 
-    jobs.push(fetchTasks({ useSavedFilters: true }));
-    jobs.push(getKanban({ useSavedFilters: true }));
-
     jobs.push(
       timelogStore
         .findByFilter({
@@ -108,25 +105,20 @@ watchEffect(() => {
 });
 
 if (userStore.user) {
-  await useAsyncData('initial-data', async () => {
-    try {
-      return Promise.all([
-        getKanban({
-          useSavedFilters: true,
-        }),
-        fetchTasks({
-          useSavedFilters: true,
-        }),
-        fetchUsers(),
-        fetchProjects(),
-        getFilterState(),
-        getAllNotifications(),
-        fetchChatList(),
-      ]);
-    } catch (e) {
-      console.log(e);
-    }
-  });
+  await useAsyncData(
+    'initial-data',
+    async () => {
+      try {
+        return await Promise.all([fetchUsers(), fetchProjects(), getAllNotifications(), fetchChatList()]);
+      } catch (e) {
+        console.log(e);
+        return null;
+      }
+    },
+    {
+      getCachedData: (key, nuxtApp) => nuxtApp.payload.data[key] ?? nuxtApp.static.data[key],
+    },
+  );
 }
 
 const { $webSocket } = useNuxtApp();
@@ -171,7 +163,7 @@ const removeTaskLocally = (taskId: number) => {
 
 let taskRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 const scheduleTaskRefetch = () => {
-  if (!import.meta.client) return;
+  if (!import.meta.client || route.name !== 'home') return;
   if (taskRefetchTimer) clearTimeout(taskRefetchTimer);
   taskRefetchTimer = setTimeout(() => {
     Promise.allSettled([fetchTasks({ useSavedFilters: true }), getKanban({ useSavedFilters: true })]).catch(() => {});
@@ -427,7 +419,6 @@ const initSocket = () => {
 
   $webSocket.on('connect', () => {
     syncUnreadState(true).catch(() => {});
-    syncScreenState().catch(() => {});
   });
 };
 
@@ -438,29 +429,27 @@ const destroySocket = () => {
   }
 };
 
-const ensureRealtimeSync = () => {
+const ensureSocketConnected = () => {
   if (!import.meta.client || !$webSocket || !userStore.user?.id) return;
 
   if (!$webSocket.connected) {
     $webSocket.connect();
   }
 
-  syncUnreadState().catch(() => {});
-  syncScreenState().catch(() => {});
   syncPushState();
 };
 
 const handleDocumentVisibility = () => {
   if (document.visibilityState !== 'visible') return;
-  ensureRealtimeSync();
+  ensureSocketConnected();
 };
 
 const handlePageFocus = () => {
-  ensureRealtimeSync();
+  ensureSocketConnected();
 };
 
 const handlePageShow = () => {
-  ensureRealtimeSync();
+  ensureSocketConnected();
 };
 const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -620,11 +609,11 @@ onMounted(async () => {
   window.addEventListener('pageshow', handlePageShow);
   window.addEventListener('online', handlePageFocus);
   syncIntervalId = setInterval(() => {
-    if (document.visibilityState === 'visible') {
-      ensureRealtimeSync();
-    }
+    if (document.visibilityState !== 'visible') return;
+    syncUnreadState().catch(() => {});
+    syncScreenState().catch(() => {});
   }, 30000);
-  ensureRealtimeSync();
+  ensureSocketConnected();
   syncPushState();
 });
 onBeforeUnmount(() => {

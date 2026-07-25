@@ -5,17 +5,18 @@ import { TASK_STATUSES } from '../../common/enums/statuses.enum';
 import { TaskType } from '../entities/task.entity';
 
 const normalizeToNumberArray = (value: unknown): number[] | undefined => {
-  if (!Array.isArray(value) && !Number.isFinite(value)) {
+  if (value == null || value === '') {
     return undefined;
   }
-  if (!Array.isArray(value) && Number.isFinite(value)) {
-    return [Number(value)];
-  }
   if (Array.isArray(value)) {
-    const result = value.map((item) => Number(item));
-    return result.filter((item) => !Number.isNaN(item));
+    const result = value.map((item) => Number(item)).filter((item) => !Number.isNaN(item));
+    return result.length ? result : undefined;
   }
-  return undefined;
+  const single = Number(value);
+  if (Number.isNaN(single)) {
+    return undefined;
+  }
+  return [single];
 };
 
 export class FindTasksByFilterDto {
