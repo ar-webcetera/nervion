@@ -1,64 +1,86 @@
 %p12-semi {
+  font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-weight: 500;
+  line-height: 16px;
+  letter-spacing: 0;
 }
 
 %p12-regular {
+  font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-style: normal;
   font-weight: 400;
   line-height: 16px;
+  letter-spacing: 0;
 }
 
 %p12-bold {
+  font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-style: normal;
   font-weight: 700;
   line-height: 140%; /* 16.8px */
+  letter-spacing: 0;
 }
 
 %p12-medium {
+  font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-style: normal;
   font-weight: 500;
   line-height: 140%;
+  letter-spacing: 0;
 }
 
 %p12-light {
+  font-family: 'Inter', sans-serif;
   font-size: 12px;
   font-style: normal;
   font-weight: 300;
   line-height: 16px;
+  letter-spacing: 0;
 }
 
 %p14-bold {
+  font-family: 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 700;
-  line-height: 18px;
+  line-height: 20px;
+  letter-spacing: 0;
 }
 
 %p14-medium {
+  font-family: 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 500;
-  line-height: 18px;
+  line-height: 20px;
+  letter-spacing: 0;
 }
 
 %p16-bold {
+  font-family: 'Inter', sans-serif;
   font-size: 16px;
   font-weight: 700;
+  line-height: 22px;
+  letter-spacing: 0;
 }
 
 %p18-bold {
+  font-family: 'Inter', sans-serif;
   font-size: 18px;
   font-style: normal;
   font-weight: 700;
-  line-height: 120%;
+  line-height: 24px;
+  letter-spacing: 0;
 }
 
 %h1 {
+  font-family: 'Inter', sans-serif;
   font-size: 20px;
   font-weight: 700;
-  line-height: 120%;
+  line-height: 24px;
+  letter-spacing: 0;
 }
 
 

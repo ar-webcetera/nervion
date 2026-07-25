@@ -36,7 +36,9 @@ html {
   font-style: normal;
   font-weight: 400;
   line-height: 140%;
+  letter-spacing: 0;
   font-size: 16px;
+  text-rendering: optimizeLegibility;
 
   @media (max-width: $screen-desktop-s) {
     font-size: calc(-0.001rem + 1.34vw);

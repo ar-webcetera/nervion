@@ -27,6 +27,7 @@ const {
   threadsLimit,
   currentThread,
   messages,
+  unreadCount,
   pendingThreads,
   pendingMessages,
 } = storeToRefs(mailStore);
@@ -766,9 +767,13 @@ watch(
           v-for="folder in FOLDERS"
           :key="folder.key"
           :class="['mail-page__folder', { 'mail-page__folder_active': currentFolder === folder.key }]"
+          :aria-label="folder.key === 'inbox' && unreadCount ? `${folder.label}, непрочитанных: ${unreadCount}` : folder.label"
           @click="selectFolder(folder.key)"
         >
-          {{ folder.label }}
+          <span>{{ folder.label }}</span>
+          <span v-if="folder.key === 'inbox' && unreadCount" class="mail-page__folder-badge">
+            {{ unreadCount }}
+          </span>
         </button>
       </nav>
     </div>
@@ -1131,7 +1136,6 @@ watch(
   }
 
   &__folder {
-    display: block;
     width: 100%;
     padding: 10px 12px;
     border: none;
@@ -1140,6 +1144,8 @@ watch(
     color: var(--light-text-backgroung-primary);
     text-align: left;
     cursor: pointer;
+    @include flex(rn between a-center);
+    gap: 8px;
     @extend %text-s-regular;
 
     &:hover {
@@ -1155,6 +1161,18 @@ watch(
       flex-shrink: 0;
       width: auto;
     }
+  }
+
+  &__folder-badge {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: var(--primary);
+    color: var(--light-text-backgroung-primary);
+    font-variant-numeric: tabular-nums;
+    @include flex(center);
+    @extend %p12-medium;
   }
 
   &__list {

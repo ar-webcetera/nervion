@@ -729,7 +729,6 @@ const scrollToMessage = (id: string) => {
   p,
   span {
     margin: 0;
-    line-height: 1.2;
   }
 
   :deep(.tiptap) {

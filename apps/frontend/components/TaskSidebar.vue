@@ -1213,7 +1213,6 @@ input {
       padding: 3px 6px;
       @extend %display-s-bold;
       color: var(--light-text-backgroung-primary);
-      line-height: normal;
 
       &::placeholder {
         color: var(--light-text-backgroung-primary-50);
