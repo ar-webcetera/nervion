@@ -10,12 +10,13 @@ import { MailboxService } from './mailbox.service';
 import { PostboxService } from './postbox.service';
 import { SmtpServerService } from './smtp/smtp-server.service';
 import { Notifications } from '../notifications/entities/notification.entity';
+import { Users } from '../users/entities/users.entity';
 
 @Module({
   imports: [
     PushModule,
     StorageModule,
-    TypeOrmModule.forFeature([MailAccounts, MailThreads, MailMessages, MailAttachments, Notifications]),
+    TypeOrmModule.forFeature([MailAccounts, MailThreads, MailMessages, MailAttachments, Notifications, Users]),
   ],
   providers: [MailboxService, PostboxService, SmtpServerService],
   exports: [MailboxService, PostboxService, SmtpServerService],

@@ -49,6 +49,8 @@ export class MailboxService {
     private readonly attachmentsRepository: Repository<MailAttachments>,
     @InjectRepository(Notifications)
     private readonly notificationsRepository: Repository<Notifications>,
+    @InjectRepository(Users)
+    private readonly usersRepository: Repository<Users>,
     private readonly storageService: StorageService,
     private readonly postboxService: PostboxService,
     private readonly configService: ConfigService,
@@ -594,8 +596,17 @@ export class MailboxService {
     }
 
     const [threads, total] = await query.getManyAndCount();
+    const avatarByAddress = await this.getUserAvatarMap(threads.map((thread) => thread.counterparty_address));
 
-    return { threads, total, page, limit };
+    return {
+      threads: threads.map((thread) => ({
+        ...thread,
+        counterparty_avatar_url: avatarByAddress.get(this.normalizeEmail(thread.counterparty_address)) ?? null,
+      })),
+      total,
+      page,
+      limit,
+    };
   }
 
   async getThreadWithMessages(user: AuthenticatedUser, threadId: number) {
@@ -617,8 +628,43 @@ export class MailboxService {
       relations: { attachments: true },
       order: { id: 'ASC' },
     });
+    const avatarByAddress = await this.getUserAvatarMap([
+      thread.counterparty_address,
+      ...messages.map((message) => message.from_address),
+    ]);
 
-    return { thread, messages };
+    return {
+      thread: {
+        ...thread,
+        counterparty_avatar_url: avatarByAddress.get(this.normalizeEmail(thread.counterparty_address)) ?? null,
+      },
+      messages: messages.map((message) => ({
+        ...message,
+        sender_avatar_url: avatarByAddress.get(this.normalizeEmail(message.from_address)) ?? null,
+      })),
+    };
+  }
+
+  private normalizeEmail(address: string | null): string {
+    return (address ?? '').trim().toLowerCase();
+  }
+
+  private async getUserAvatarMap(addresses: (string | null)[]): Promise<Map<string, string>> {
+    const normalizedAddresses = [...new Set(addresses.map((address) => this.normalizeEmail(address)).filter(Boolean))];
+    if (normalizedAddresses.length === 0) {
+      return new Map();
+    }
+
+    const users = await this.usersRepository
+      .createQueryBuilder('user')
+      .select(['user.email', 'user.photo_url'])
+      .where('LOWER(user.email) IN (:...addresses)', { addresses: normalizedAddresses })
+      .andWhere('user.photo_url IS NOT NULL')
+      .getMany();
+
+    return new Map(
+      users.filter((user) => user.email && user.photo_url).map((user) => [this.normalizeEmail(user.email), user.photo_url]),
+    );
   }
 
   async moveThreadToFolder(user: AuthenticatedUser, threadId: number, folder: MAIL_FOLDERS): Promise<MailThreads> {

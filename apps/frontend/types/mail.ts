@@ -55,6 +55,7 @@ export interface MailMessage {
   is_read: boolean;
   status: 'received' | 'sent' | 'failed' | 'draft';
   createdAt: string;
+  sender_avatar_url?: string | null;
   attachments?: MailAttachment[];
 }
 
@@ -64,6 +65,7 @@ export interface MailThread {
   account_id: number;
   folder: 'inbox' | 'trash';
   counterparty_address: string | null;
+  counterparty_avatar_url?: string | null;
   last_message_at: string;
   account?: MailAccount;
   unread_count?: number;

@@ -13,8 +13,21 @@ const emit = defineEmits<{
 const config = useRuntimeConfig();
 const iframeRef = ref<HTMLIFrameElement | null>(null);
 const iframeHeight = ref(120);
+const avatarFailed = ref(false);
 
 const isInbound = computed(() => props.message.direction === MAIL_DIRECTIONS.inbound);
+const senderInitials = computed(() => {
+  const name = props.message.from_name?.trim();
+  if (name) {
+    const parts = name.split(/\s+/).filter(Boolean);
+    return parts
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase();
+  }
+  return props.message.from_address.split('@')[0].slice(0, 2).toUpperCase();
+});
 
 const senderLabel = computed(() => {
   if (props.message.from_name) {
@@ -72,9 +85,21 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
 <template>
   <div :class="['mail-message', { 'mail-message_outbound': !isInbound }]">
     <div class="mail-message__header">
-      <div class="mail-message__meta">
-        <span class="mail-message__sender">{{ senderLabel }}</span>
-        <span class="mail-message__recipients">кому: {{ recipientsLabel }}</span>
+      <div class="mail-message__identity">
+        <span class="mail-message__avatar">
+          <img
+            v-if="message.sender_avatar_url && !avatarFailed"
+            :src="message.sender_avatar_url"
+            class="mail-message__avatar-image"
+            alt=""
+            @error="avatarFailed = true"
+          />
+          <template v-else>{{ senderInitials }}</template>
+        </span>
+        <div class="mail-message__meta">
+          <span class="mail-message__sender">{{ senderLabel }}</span>
+          <span class="mail-message__recipients">кому: {{ recipientsLabel }}</span>
+        </div>
       </div>
       <div class="mail-message__info">
         <span v-if="message.status === 'failed'" class="mail-message__failed">не отправлено</span>
@@ -147,6 +172,30 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
     @include flex(cn);
     gap: 2px;
     min-width: 0;
+  }
+
+  &__identity {
+    @include flex(rn, a-center);
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__avatar {
+    @include flex(rn, center, center);
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--primary-25);
+    color: var(--light-text-backgroung-primary);
+    @extend %text-xs-medium;
+  }
+
+  &__avatar-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   &__sender {

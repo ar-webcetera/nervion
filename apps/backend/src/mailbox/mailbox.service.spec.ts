@@ -12,6 +12,7 @@ import { StorageService } from '../storage/storage.service';
 import { PostboxService } from './postbox.service';
 import { PushService } from '../push/push.service';
 import { InboundMailData } from './mailbox.types';
+import { Users } from '../users/entities/users.entity';
 
 type MessagesQueryBuilderMock = {
   createQueryBuilder: jest.Mock;
@@ -23,6 +24,7 @@ type MessagesQueryBuilderMock = {
   andWhere: jest.Mock;
   orderBy: jest.Mock;
   groupBy: jest.Mock;
+  getMany: jest.Mock;
   getOne: jest.Mock;
   getRawMany: jest.Mock;
 };
@@ -38,6 +40,7 @@ const createMessagesQueryBuilderMock = (): MessagesQueryBuilderMock => {
   qb.andWhere = jest.fn(() => qb);
   qb.orderBy = jest.fn(() => qb);
   qb.groupBy = jest.fn(() => qb);
+  qb.getMany = jest.fn().mockResolvedValue([]);
   qb.getOne = jest.fn().mockResolvedValue(null);
   qb.getRawMany = jest.fn().mockResolvedValue([]);
   return qb;
@@ -47,6 +50,7 @@ describe('MailboxService', () => {
   let service: MailboxService;
   let messagesQueryBuilder: MessagesQueryBuilderMock;
   let notificationsQueryBuilder: MessagesQueryBuilderMock;
+  let usersQueryBuilder: MessagesQueryBuilderMock;
 
   const mockAccountsRepository = {
     findOne: jest.fn(),
@@ -54,12 +58,14 @@ describe('MailboxService', () => {
 
   const mockThreadsRepository = {
     create: jest.fn((value: Partial<MailThreads>) => value),
+    findOne: jest.fn(),
     save: jest.fn(),
     update: jest.fn(),
   };
 
   const mockMessagesRepository = {
     create: jest.fn((value: Partial<MailMessages>) => value),
+    find: jest.fn(),
     findOne: jest.fn(),
     save: jest.fn(),
     update: jest.fn(),
@@ -73,6 +79,10 @@ describe('MailboxService', () => {
   };
 
   const mockNotificationsRepository = {
+    createQueryBuilder: jest.fn(),
+  };
+
+  const mockUsersRepository = {
     createQueryBuilder: jest.fn(),
   };
 
@@ -109,6 +119,7 @@ describe('MailboxService', () => {
   beforeEach(async () => {
     messagesQueryBuilder = createMessagesQueryBuilderMock();
     notificationsQueryBuilder = createMessagesQueryBuilderMock();
+    usersQueryBuilder = createMessagesQueryBuilderMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -118,6 +129,7 @@ describe('MailboxService', () => {
         { provide: getRepositoryToken(MailMessages), useValue: mockMessagesRepository },
         { provide: getRepositoryToken(MailAttachments), useValue: mockAttachmentsRepository },
         { provide: getRepositoryToken(Notifications), useValue: mockNotificationsRepository },
+        { provide: getRepositoryToken(Users), useValue: mockUsersRepository },
         { provide: StorageService, useValue: mockStorageService },
         { provide: PostboxService, useValue: mockPostboxService },
         { provide: ConfigService, useValue: mockConfigService },
@@ -130,6 +142,7 @@ describe('MailboxService', () => {
 
     mockMessagesRepository.createQueryBuilder.mockImplementation(() => messagesQueryBuilder);
     mockNotificationsRepository.createQueryBuilder.mockImplementation(() => notificationsQueryBuilder);
+    mockUsersRepository.createQueryBuilder.mockImplementation(() => usersQueryBuilder);
     mockThreadsRepository.create.mockImplementation((value: Partial<MailThreads>) => value);
     mockMessagesRepository.create.mockImplementation((value: Partial<MailMessages>) => value);
     mockThreadsRepository.save.mockImplementation((value: Partial<MailThreads>) =>
@@ -295,6 +308,37 @@ describe('MailboxService', () => {
       expect(mockMessagesRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({ status: MAIL_MESSAGE_STATUSES.sent, message_id: '<sent@test>' }),
       );
+    });
+  });
+
+  describe('avatars', () => {
+    it('должен добавлять аватар пользователя при совпадении email без учёта регистра', async () => {
+      mockThreadsRepository.findOne.mockResolvedValue({
+        id: 3,
+        counterparty_address: 'L.Pavlova@Example.com',
+        account: { id: 1, allowedUsers: [{ id: 10 }] },
+      });
+      mockMessagesRepository.find.mockResolvedValue([
+        {
+          id: 9,
+          thread_id: 3,
+          from_address: 'l.pavlova@example.com',
+        },
+      ]);
+      usersQueryBuilder.getMany.mockResolvedValue([
+        {
+          email: 'l.pavlova@example.com',
+          photo_url: 'https://cdn.test/lilia.jpg',
+        },
+      ]);
+
+      const result = await service.getThreadWithMessages({ id: 10, role: 'employee' } as never, 3);
+
+      expect(usersQueryBuilder.where).toHaveBeenCalledWith('LOWER(user.email) IN (:...addresses)', {
+        addresses: ['l.pavlova@example.com'],
+      });
+      expect(result.thread.counterparty_avatar_url).toBe('https://cdn.test/lilia.jpg');
+      expect(result.messages[0].sender_avatar_url).toBe('https://cdn.test/lilia.jpg');
     });
   });
 

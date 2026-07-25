@@ -627,6 +627,7 @@ type DeleteTarget =
   | { kind: 'thread' | 'message'; permanent: boolean; id: number; label: string }
   | { kind: 'threads'; permanent: boolean; ids: number[] };
 const deleteTarget = ref<DeleteTarget | null>(null);
+const isDeleting = ref(false);
 const isTrashFolder = computed(() => currentFolder.value === 'trash');
 
 const askDeleteThread = () => {
@@ -661,7 +662,8 @@ const askDeleteSelectedThreads = () => {
 };
 
 const confirmDelete = async () => {
-  if (!deleteTarget.value) return;
+  if (!deleteTarget.value || isDeleting.value) return;
+  isDeleting.value = true;
   try {
     if (deleteTarget.value.kind === 'threads') {
       const selectedIds = deleteTarget.value.ids;
@@ -685,6 +687,8 @@ const confirmDelete = async () => {
     deleteTarget.value = null;
   } catch (e) {
     $toast.error(getErrorMessage(e));
+  } finally {
+    isDeleting.value = false;
   }
 };
 
@@ -763,6 +767,14 @@ const avatarUrl = (address: string | null) => {
   const hash = gravatarHash.value[key];
   if (!hash || brokenAvatars.value.has(key)) return '';
   return `https://www.gravatar.com/avatar/${hash}?d=404&s=80`;
+};
+
+const threadAvatarUrl = (thread: MailThread) => {
+  const key = normalizeAddress(thread.counterparty_address);
+  if (thread.counterparty_avatar_url && !brokenAvatars.value.has(key)) {
+    return thread.counterparty_avatar_url;
+  }
+  return avatarUrl(thread.counterparty_address);
 };
 
 const onAvatarError = (address: string | null) => {
@@ -845,7 +857,7 @@ watch(
           <button
             type="button"
             class="mail-page__thread-avatar"
-            :style="avatarUrl(thread.counterparty_address) ? {} : { backgroundColor: avatarColor(thread.counterparty_address) }"
+            :style="threadAvatarUrl(thread) ? {} : { backgroundColor: avatarColor(thread.counterparty_address) }"
             :aria-label="selectedThreadIds.has(thread.id) ? 'Снять выбор' : 'Выбрать письмо'"
             :aria-pressed="selectedThreadIds.has(thread.id)"
             @click.stop="toggleThreadSelection(thread.id)"
@@ -854,8 +866,8 @@ watch(
               <path d="M5 12.5l4 4L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
             <img
-              v-else-if="avatarUrl(thread.counterparty_address)"
-              :src="avatarUrl(thread.counterparty_address)"
+              v-else-if="threadAvatarUrl(thread)"
+              :src="threadAvatarUrl(thread)"
               class="mail-page__thread-avatar-img"
               alt=""
               loading="lazy"
@@ -1059,8 +1071,8 @@ watch(
       </template>
     </div>
 
-    <BaseModal ref="confirmModal">
-      <div class="mail-confirm">
+    <BaseModal ref="confirmModal" :dismissible="!isDeleting">
+      <div class="mail-confirm" :aria-busy="isDeleting">
         <h2 class="mail-confirm__title">
           {{ deleteTarget?.kind === 'message' ? 'Удалить письмо?' : deleteTarget?.kind === 'threads' ? 'Удалить выбранные?' : 'Удалить переписку?' }}
         </h2>
@@ -1079,10 +1091,31 @@ watch(
           </template>
           <template v-else> Цепочка «{{ deleteTarget?.label }}» переедет в Корзину. </template>
         </p>
+        <div v-if="isDeleting" class="mail-confirm__progress" role="status" aria-live="polite">
+          <span class="mail-confirm__spinner" aria-hidden="true" />
+          <span>
+            {{
+              deleteTarget?.kind === 'threads'
+                ? `Удаляем выбранные письма: ${deleteTarget.ids.length}`
+                : 'Удаляем письмо…'
+            }}
+          </span>
+        </div>
         <div class="mail-confirm__actions">
-          <button class="mail-page__icon-btn" @click="confirmModal?.close()">Отмена</button>
-          <button class="mail-page__icon-btn mail-page__icon-btn_danger" @click="confirmDelete">
-            {{ deleteTarget?.kind === 'message' || deleteTarget?.permanent ? 'Удалить' : 'В корзину' }}
+          <button class="mail-page__icon-btn" :disabled="isDeleting" @click="confirmModal?.close()">Отмена</button>
+          <button
+            class="mail-page__icon-btn mail-page__icon-btn_danger mail-confirm__submit"
+            :disabled="isDeleting"
+            @click="confirmDelete"
+          >
+            <span v-if="isDeleting" class="mail-confirm__spinner mail-confirm__spinner_small" aria-hidden="true" />
+            {{
+              isDeleting
+                ? 'Удаляем…'
+                : deleteTarget?.kind === 'message' || deleteTarget?.permanent
+                  ? 'Удалить'
+                  : 'В корзину'
+            }}
           </button>
         </div>
       </div>
@@ -1798,6 +1831,40 @@ watch(
   &__actions {
     @include flex(rn, j-end);
     gap: 12px;
+  }
+
+  &__progress {
+    @include flex(rn, a-center);
+    gap: 10px;
+    min-height: 24px;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+
+  &__submit {
+    @include flex(rn, a-center);
+    gap: 8px;
+  }
+
+  &__spinner {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    border: 2px solid var(--light-text-backgroung-primary-10);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: mail-confirm-spin 0.7s linear infinite;
+
+    &_small {
+      width: 14px;
+      height: 14px;
+    }
+  }
+}
+
+@keyframes mail-confirm-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 </style>

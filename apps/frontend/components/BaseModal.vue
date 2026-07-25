@@ -22,9 +22,15 @@ const closeModal = () => {
 <script setup lang="ts">
 import IconClose from '~/components/Icons/IconClose.vue';
 
-const props = defineProps<{
-  modelValue?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue?: boolean;
+    dismissible?: boolean;
+  }>(),
+  {
+    dismissible: true,
+  },
+);
 
 const emit = defineEmits(['close', 'update:modelValue']);
 const isOpen = ref(Boolean(props.modelValue));
@@ -45,6 +51,7 @@ const open = () => {
 };
 
 const close = () => {
+  if (!props.dismissible) return;
   isOpen.value = false;
   emit('update:modelValue', false);
   emit('close');
@@ -61,9 +68,15 @@ defineExpose({
     <div v-if="isOpen" class="base-modal__overlay" @click.self="close">
       <div class="base-modal">
         <div class="base-modal__header">
-          <div class="base-modal__header-close" @click="close">
+          <button
+            v-if="dismissible"
+            class="base-modal__header-close"
+            type="button"
+            aria-label="Закрыть"
+            @click="close"
+          >
             <IconClose />
-          </div>
+          </button>
         </div>
         <div class="base-modal__content">
           <slot />
@@ -106,6 +119,10 @@ defineExpose({
 
   &__header-close {
     display: flex;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
     cursor: pointer;
   }
 
