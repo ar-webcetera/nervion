@@ -7,6 +7,7 @@
 
 ## [Unreleased]
 
+- Добавлены индексы под list/kanban и unread чатов: `tasks(responsible_id)`, `tasks(status, priority DESC)`, `tasks(project_id)`, `chat_message_read_status(message_id)`; `timelogs(task_id)` расширен до `(task_id, created_at)`.
 - Добавлены индексы под самые частые seq scan на проде: `notifications(recipient_id, is_read, created_at)`, `comments(task_id)` / `comments(comment_id)`, `timelogs(author_id, status)` / `timelogs(task_id)`.
 - Список и канбан задач больше не подгружаются глобально при старте приложения: данные запрашиваются только на странице задач, поэтому обновление других разделов проходит быстрее.
 - Фоновая синхронизация уведомлений и чатов выполняется по интервалу, а не при каждом фокусе вкладки; задачи и канбан из этого цикла убраны.
