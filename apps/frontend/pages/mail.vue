@@ -1152,7 +1152,7 @@ watch(
     color: var(--light-text-backgroung-primary);
     text-align: left;
     cursor: pointer;
-    @include flex(rn a-center);
+    @include flex(rn, j-start, a-center);
     gap: 8px;
     @extend %text-s-regular;
 
