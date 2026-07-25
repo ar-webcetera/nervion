@@ -30,7 +30,7 @@ const hideChrome = computed(
 const isMenuVisible = (key: string) => !(userStore.user?.hidden_menu_items ?? []).includes(key);
 
 const totalUnreadCount = computed(() => {
-  return chatStore.chatList.reduce((sum, chat) => sum + chat.unreadMessagesCount, 0);
+  return chatStore.chatList.filter((chat) => chat.unreadMessagesCount > 0).length;
 });
 const router = useRouter();
 const route = useRoute();
@@ -168,7 +168,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
           class="base-menu-left__item chat-icon-wrapper"
           active-class="base-menu-left__item_active"
         >
-          <div v-if="mailStore.unreadCount > 0" class="chat-unread-badge">{{ mailStore.unreadCount }}</div>
+          <div v-if="mailStore.inboxUnreadCount > 0" class="chat-unread-badge">{{ mailStore.inboxUnreadCount }}</div>
           <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect x="0.5" y="2.5" width="16" height="12" rx="1.5" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M1.5 4L8.5 9L15.5 4" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
@@ -342,7 +342,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
         class="base-menu-left__item base-menu-left__item_mob chat-icon-wrapper"
         active-class="base-menu-left__item_active base-menu-left__item_mob-active"
       >
-        <div v-if="mailStore.unreadCount > 0" class="chat-unread-badge">{{ mailStore.unreadCount }}</div>
+        <div v-if="mailStore.inboxUnreadCount > 0" class="chat-unread-badge">{{ mailStore.inboxUnreadCount }}</div>
         <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect x="0.5" y="2.5" width="16" height="12" rx="1.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
           <path d="M1.5 4L8.5 9L15.5 4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
