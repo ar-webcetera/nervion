@@ -27,7 +27,8 @@ const {
   threadsLimit,
   currentThread,
   messages,
-  unreadCount,
+  inboxUnreadCount,
+  trashUnreadCount,
   pendingThreads,
   pendingMessages,
 } = storeToRefs(mailStore);
@@ -83,6 +84,11 @@ const FOLDERS = [
 type FolderKey = (typeof FOLDERS)[number]['key'];
 const initialFolder = FOLDERS.find((item) => item.key === route.query.folder)?.key ?? 'inbox';
 const currentFolder = ref<FolderKey>(initialFolder);
+const folderUnreadCount = (folder: FolderKey) => {
+  if (folder === 'inbox') return inboxUnreadCount.value;
+  if (folder === 'trash') return trashUnreadCount.value;
+  return 0;
+};
 
 const composeParam = String(route.query.compose ?? '');
 const composeMode = ref(composeParam !== '');
@@ -767,12 +773,14 @@ watch(
           v-for="folder in FOLDERS"
           :key="folder.key"
           :class="['mail-page__folder', { 'mail-page__folder_active': currentFolder === folder.key }]"
-          :aria-label="folder.key === 'inbox' && unreadCount ? `${folder.label}, непрочитанных: ${unreadCount}` : folder.label"
+          :aria-label="
+            folderUnreadCount(folder.key) ? `${folder.label}, непрочитанных: ${folderUnreadCount(folder.key)}` : folder.label
+          "
           @click="selectFolder(folder.key)"
         >
           <span>{{ folder.label }}</span>
-          <span v-if="folder.key === 'inbox' && unreadCount" class="mail-page__folder-badge">
-            {{ unreadCount }}
+          <span v-if="folderUnreadCount(folder.key)" class="mail-page__folder-badge">
+            {{ folderUnreadCount(folder.key) }}
           </span>
         </button>
       </nav>
@@ -1144,7 +1152,7 @@ watch(
     color: var(--light-text-backgroung-primary);
     text-align: left;
     cursor: pointer;
-    @include flex(rn between a-center);
+    @include flex(rn a-center);
     gap: 8px;
     @extend %text-s-regular;
 
@@ -1164,6 +1172,7 @@ watch(
   }
 
   &__folder-badge {
+    margin-left: auto;
     min-width: 20px;
     height: 20px;
     padding: 0 6px;
@@ -1173,6 +1182,10 @@ watch(
     font-variant-numeric: tabular-nums;
     @include flex(center);
     @extend %p12-medium;
+
+    @media (max-width: $screen-tablet) {
+      margin-left: 0;
+    }
   }
 
   &__list {

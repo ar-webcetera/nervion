@@ -216,11 +216,11 @@ export class MailboxController {
   }
 
   @Get('unread-count')
-  @ApiOperation({ summary: 'Количество непрочитанных писем' })
-  @ApiResponse({ status: 200, description: 'Число непрочитанных писем' })
+  @ApiOperation({ summary: 'Количество непрочитанных писем по папкам' })
+  @ApiResponse({ status: 200, description: 'Общее число непрочитанных писем и значения по папкам' })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  async getUnreadCount(@Req() req: RequestWithCookies) {
-    return { count: await this.mailboxService.getUnreadCount(req.user) };
+  getUnreadCount(@Req() req: RequestWithCookies) {
+    return this.mailboxService.getUnreadCounts(req.user);
   }
 
   @Get('contacts')

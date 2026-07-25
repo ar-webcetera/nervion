@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import type { MailUnreadCounts } from '@tracker/contracts';
 import type {
   MailAccount,
   MailAccountPayload,
@@ -31,6 +32,8 @@ export const useMailStore = defineStore('mail', () => {
   const currentThread = ref<MailThread | null>(null);
   const messages = ref<MailMessage[]>([]);
   const unreadCount = ref(0);
+  const inboxUnreadCount = ref(0);
+  const trashUnreadCount = ref(0);
   const pendingThreads = ref(false);
   const pendingMessages = ref(false);
   const threadsPage = ref(1);
@@ -106,17 +109,20 @@ export const useMailStore = defineStore('mail', () => {
     });
     threads.value = threads.value.filter((item) => item.id !== threadId);
     threadsTotal.value = Math.max(0, threadsTotal.value - 1);
+    await fetchUnreadCount();
   };
 
   const deleteThread = async (threadId: number) => {
     await $fetch(`/api/mailbox/threads/${threadId}`, { ...requestOptions(), method: 'DELETE' });
     threads.value = threads.value.filter((item) => item.id !== threadId);
     threadsTotal.value = Math.max(0, threadsTotal.value - 1);
+    await fetchUnreadCount();
   };
 
   const deleteMessage = async (messageId: number) => {
     await $fetch(`/api/mailbox/messages/${messageId}`, { ...requestOptions(), method: 'DELETE' });
     messages.value = messages.value.filter((item) => item.id !== messageId);
+    await fetchUnreadCount();
   };
 
   const saveDraft = async (payload: {
@@ -168,9 +174,16 @@ export const useMailStore = defineStore('mail', () => {
   const markThreadRead = async (threadId: number) => {
     await $fetch(`/api/mailbox/threads/${threadId}/read`, { ...requestOptions(), method: 'PATCH' });
 
-    const thread = threads.value.find((item) => item.id === threadId);
+    const thread =
+      threads.value.find((item) => item.id === threadId) ??
+      (currentThread.value?.id === threadId ? currentThread.value : null);
     if (thread?.unread_count) {
       unreadCount.value = Math.max(0, unreadCount.value - thread.unread_count);
+      if (thread.folder === 'trash') {
+        trashUnreadCount.value = Math.max(0, trashUnreadCount.value - thread.unread_count);
+      } else {
+        inboxUnreadCount.value = Math.max(0, inboxUnreadCount.value - thread.unread_count);
+      }
       thread.unread_count = 0;
     }
   };
@@ -190,9 +203,11 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const fetchUnreadCount = async () => {
-    const response = await $fetch<{ count: number }>('/api/mailbox/unread-count', requestOptions());
+    const response = await $fetch<MailUnreadCounts>('/api/mailbox/unread-count', requestOptions());
     unreadCount.value = response.count;
-    return response.count;
+    inboxUnreadCount.value = response.inbox;
+    trashUnreadCount.value = response.trash;
+    return response;
   };
 
   const createAccount = async (payload: MailAccountPayload) => {
@@ -226,6 +241,8 @@ export const useMailStore = defineStore('mail', () => {
     currentThread,
     messages,
     unreadCount,
+    inboxUnreadCount,
+    trashUnreadCount,
     pendingThreads,
     pendingMessages,
     fetchAccounts,

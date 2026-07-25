@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import type { MailUnreadCounts } from '@tracker/contracts';
 import { Brackets, In, IsNull, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { Notifications } from '../notifications/entities/notification.entity';
@@ -806,18 +807,31 @@ export class MailboxService {
     return { attachment, stream };
   }
 
-  async getUnreadCount(user: AuthenticatedUser): Promise<number> {
+  async getUnreadCounts(user: AuthenticatedUser): Promise<MailUnreadCounts> {
     const query = this.messagesRepository
       .createQueryBuilder('message')
+      .select('thread.folder', 'folder')
+      .addSelect('COUNT(message.id)', 'count')
       .innerJoin('message.thread', 'thread')
       .innerJoin('thread.account', 'account')
       .where('message.is_read = false')
-      .andWhere('message.direction = :inbound', { inbound: MAIL_DIRECTIONS.inbound });
+      .andWhere('message.direction = :inbound', { inbound: MAIL_DIRECTIONS.inbound })
+      .groupBy('thread.folder');
 
     query.andWhere('account.id IN (SELECT mail_account_id FROM mail_account_access WHERE user_id = :userId)', {
       userId: user.id,
     });
 
-    return query.getCount();
+    const rows = await query.getRawMany<{ folder: MAIL_FOLDERS; count: string }>();
+    const counts: MailUnreadCounts = { count: 0, inbox: 0, trash: 0 };
+
+    for (const row of rows) {
+      const count = Number(row.count) || 0;
+      if (row.folder === MAIL_FOLDERS.inbox) counts.inbox = count;
+      if (row.folder === MAIL_FOLDERS.trash) counts.trash = count;
+      counts.count += count;
+    }
+
+    return counts;
   }
 }

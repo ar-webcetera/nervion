@@ -16,11 +16,13 @@ import { InboundMailData } from './mailbox.types';
 type MessagesQueryBuilderMock = {
   createQueryBuilder: jest.Mock;
   select: jest.Mock;
+  addSelect: jest.Mock;
   innerJoin: jest.Mock;
   innerJoinAndSelect: jest.Mock;
   where: jest.Mock;
   andWhere: jest.Mock;
   orderBy: jest.Mock;
+  groupBy: jest.Mock;
   getOne: jest.Mock;
   getRawMany: jest.Mock;
 };
@@ -29,11 +31,13 @@ const createMessagesQueryBuilderMock = (): MessagesQueryBuilderMock => {
   const qb = {} as MessagesQueryBuilderMock;
   qb.createQueryBuilder = jest.fn(() => qb);
   qb.select = jest.fn(() => qb);
+  qb.addSelect = jest.fn(() => qb);
   qb.innerJoin = jest.fn(() => qb);
   qb.innerJoinAndSelect = jest.fn(() => qb);
   qb.where = jest.fn(() => qb);
   qb.andWhere = jest.fn(() => qb);
   qb.orderBy = jest.fn(() => qb);
+  qb.groupBy = jest.fn(() => qb);
   qb.getOne = jest.fn().mockResolvedValue(null);
   qb.getRawMany = jest.fn().mockResolvedValue([]);
   return qb;
@@ -228,6 +232,22 @@ describe('MailboxService', () => {
       expect(threadIds).toEqual([]);
       expect(mockMessagesRepository.createQueryBuilder).not.toHaveBeenCalled();
       expect(mockThreadsRepository.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getUnreadCounts', () => {
+    it('должен возвращать общее число и значения по папкам', async () => {
+      messagesQueryBuilder.getRawMany.mockResolvedValue([
+        { folder: MAIL_FOLDERS.inbox, count: '4' },
+        { folder: MAIL_FOLDERS.trash, count: '2' },
+      ]);
+
+      await expect(service.getUnreadCounts({ id: 10 } as never)).resolves.toEqual({
+        count: 6,
+        inbox: 4,
+        trash: 2,
+      });
+      expect(messagesQueryBuilder.groupBy).toHaveBeenCalledWith('thread.folder');
     });
   });
 });

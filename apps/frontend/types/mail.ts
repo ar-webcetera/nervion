@@ -62,6 +62,7 @@ export interface MailThread {
   id: number;
   subject: string;
   account_id: number;
+  folder: 'inbox' | 'trash';
   counterparty_address: string | null;
   last_message_at: string;
   account?: MailAccount;
