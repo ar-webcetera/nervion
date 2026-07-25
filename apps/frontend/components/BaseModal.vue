@@ -51,10 +51,14 @@ const open = () => {
 };
 
 const close = () => {
-  if (!props.dismissible) return;
   isOpen.value = false;
   emit('update:modelValue', false);
   emit('close');
+};
+
+const requestClose = () => {
+  if (!props.dismissible) return;
+  close();
 };
 
 defineExpose({
@@ -65,7 +69,7 @@ defineExpose({
 
 <template>
   <Transition name="modal">
-    <div v-if="isOpen" class="base-modal__overlay" @click.self="close">
+    <div v-if="isOpen" class="base-modal__overlay" @click.self="requestClose">
       <div class="base-modal">
         <div class="base-modal__header">
           <button
@@ -73,7 +77,7 @@ defineExpose({
             class="base-modal__header-close"
             type="button"
             aria-label="Закрыть"
-            @click="close"
+            @click="requestClose"
           >
             <IconClose />
           </button>
