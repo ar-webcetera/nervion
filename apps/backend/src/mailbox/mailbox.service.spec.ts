@@ -253,6 +253,47 @@ describe('MailboxService', () => {
   });
 
   describe('drafts', () => {
+    it('должен отправлять новое письмо именно с выбранного ящика', async () => {
+      const selectedAccount = {
+        id: 2,
+        address: 'l.pavlova@webcetera.test',
+        display_name: 'Лилия Павлова',
+        allowedUsers: [{ id: 10 }],
+      } as MailAccounts;
+      const thread = {
+        id: 3,
+        account_id: selectedAccount.id,
+        subject: 'Тема письма',
+      } as MailThreads;
+
+      mockAccountsRepository.findOne.mockResolvedValue(selectedAccount);
+      mockThreadsRepository.save.mockResolvedValue(thread);
+      mockMessagesRepository.save.mockImplementation((message: Partial<MailMessages>) => Promise.resolve(message));
+      mockPostboxService.send.mockResolvedValue('sent-message-id@webcetera.test');
+
+      await service.sendMail({ id: 10, role: 'employee' } as never, {
+        account_id: selectedAccount.id,
+        to: ['client@example.com'],
+        subject: 'Тема письма',
+        text: 'Текст',
+      });
+
+      expect(mockPostboxService.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from: {
+            address: selectedAccount.address,
+            name: selectedAccount.display_name,
+          },
+        }),
+      );
+      expect(mockMessagesRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from_address: selectedAccount.address,
+          from_name: selectedAccount.display_name,
+        }),
+      );
+    });
+
     it('должен обновлять заголовок треда при сохранении черновика', async () => {
       const thread = {
         id: 3,
@@ -275,6 +316,54 @@ describe('MailboxService', () => {
 
       expect(mockThreadsRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({ subject: 'Тема письма', counterparty_address: 'client@example.com' }),
+      );
+    });
+
+    it('должен менять ящик отправителя при обновлении черновика', async () => {
+      const previousAccount = {
+        id: 1,
+        address: 'info@webcetera.test',
+        display_name: 'Info',
+        allowedUsers: [{ id: 10 }],
+      } as MailAccounts;
+      const selectedAccount = {
+        id: 2,
+        address: 'l.pavlova@webcetera.test',
+        display_name: 'Лилия Павлова',
+        allowedUsers: [{ id: 10 }],
+      } as MailAccounts;
+      const thread = {
+        id: 3,
+        account_id: previousAccount.id,
+        account: previousAccount,
+        subject: '(черновик)',
+        counterparty_address: null,
+      } as MailThreads;
+      const draft = {
+        id: 9,
+        status: MAIL_MESSAGE_STATUSES.draft,
+        from_address: previousAccount.address,
+        from_name: previousAccount.display_name,
+        thread,
+      } as MailMessages;
+      mockAccountsRepository.findOne.mockResolvedValue(selectedAccount);
+      mockMessagesRepository.findOne.mockResolvedValue(draft);
+
+      await service.saveDraft({ id: 10, role: 'employee' } as never, {
+        account_id: selectedAccount.id,
+        draft_id: draft.id,
+        to: ['client@example.com'],
+        subject: 'Тема письма',
+      });
+
+      expect(mockThreadsRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ account_id: selectedAccount.id, account: selectedAccount }),
+      );
+      expect(mockMessagesRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from_address: selectedAccount.address,
+          from_name: selectedAccount.display_name,
+        }),
       );
     });
 

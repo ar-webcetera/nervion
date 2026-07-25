@@ -242,7 +242,14 @@ const flushDraftAutosave = async () => {
 };
 
 watch(
-  () => [composeForm.to, composeForm.cc, composeForm.subject, composeForm.text, composeForm.attachments.length],
+  () => [
+    composeForm.account_id,
+    composeForm.to,
+    composeForm.cc,
+    composeForm.subject,
+    composeForm.text,
+    composeForm.attachments.length,
+  ],
   () => {
     if (!composeMode.value) return;
     if (draftDebounce) clearTimeout(draftDebounce);

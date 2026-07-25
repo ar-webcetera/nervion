@@ -722,7 +722,11 @@ export class MailboxService {
       draft.subject = dto.subject ?? null;
       draft.text_body = dto.text ?? null;
       draft.html_body = dto.html ?? null;
+      draft.from_address = account.address;
+      draft.from_name = account.display_name;
       draft.thread.subject = dto.subject || '(черновик)';
+      draft.thread.account_id = account.id;
+      draft.thread.account = account;
       draft.thread.counterparty_address = dto.to?.[0] ?? draft.thread.counterparty_address;
       await this.threadsRepository.save(draft.thread);
 
