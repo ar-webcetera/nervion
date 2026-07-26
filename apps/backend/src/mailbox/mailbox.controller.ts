@@ -217,7 +217,10 @@ export class MailboxController {
 
   @Get('unread-count')
   @ApiOperation({ summary: 'Количество непрочитанных писем по папкам' })
-  @ApiResponse({ status: 200, description: 'Общее число непрочитанных писем и значения по папкам' })
+  @ApiResponse({
+    status: 200,
+    description: 'Непрочитанные во входящих (`count`/`inbox`) и отдельно в корзине (`trash`)',
+  })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
   getUnreadCount(@Req() req: RequestWithCookies) {
     return this.mailboxService.getUnreadCounts(req.user);

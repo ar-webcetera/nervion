@@ -881,8 +881,9 @@ export class MailboxService {
       const count = Number(row.count) || 0;
       if (row.folder === MAIL_FOLDERS.inbox) counts.inbox = count;
       if (row.folder === MAIL_FOLDERS.trash) counts.trash = count;
-      counts.count += count;
     }
+
+    counts.count = counts.inbox;
 
     return counts;
   }

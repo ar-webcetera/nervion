@@ -178,11 +178,12 @@ export const useMailStore = defineStore('mail', () => {
       threads.value.find((item) => item.id === threadId) ??
       (currentThread.value?.id === threadId ? currentThread.value : null);
     if (thread?.unread_count) {
-      unreadCount.value = Math.max(0, unreadCount.value - thread.unread_count);
       if (thread.folder === 'trash') {
         trashUnreadCount.value = Math.max(0, trashUnreadCount.value - thread.unread_count);
       } else {
-        inboxUnreadCount.value = Math.max(0, inboxUnreadCount.value - thread.unread_count);
+        const nextInbox = Math.max(0, inboxUnreadCount.value - thread.unread_count);
+        inboxUnreadCount.value = nextInbox;
+        unreadCount.value = nextInbox;
       }
       thread.unread_count = 0;
     }
@@ -204,9 +205,12 @@ export const useMailStore = defineStore('mail', () => {
 
   const fetchUnreadCount = async () => {
     const response = await $fetch<MailUnreadCounts>('/api/mailbox/unread-count', requestOptions());
-    unreadCount.value = response.count;
-    inboxUnreadCount.value = response.inbox;
-    trashUnreadCount.value = response.trash;
+    const inbox = Number(response.inbox ?? response.count) || 0;
+    const trash = Number(response.trash) || 0;
+    inboxUnreadCount.value = inbox;
+    trashUnreadCount.value = trash;
+    // count всегда = inbox, даже если бэкенд ещё отдаёт сумму по папкам
+    unreadCount.value = inbox;
     return response;
   };
 

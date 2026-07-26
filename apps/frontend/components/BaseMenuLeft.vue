@@ -29,17 +29,27 @@ const hideChrome = computed(
 
 const isMenuVisible = (key: string) => !(userStore.user?.hidden_menu_items ?? []).includes(key);
 
+const mailStore = useMailStore();
+
 const totalUnreadCount = computed(() => {
   return chatStore.chatList.filter((chat) => chat.unreadMessagesCount > 0).length;
 });
+const mailInboxUnreadCount = computed(() => Number(mailStore.inboxUnreadCount) || 0);
 const router = useRouter();
 const route = useRoute();
 const { $toast } = useNuxtApp();
 
 const { openPopup, closePopup, isPopupOpen } = useProfile();
 
-const mailStore = useMailStore();
 let mailUnreadTimer: ReturnType<typeof setInterval> | null = null;
+
+const refreshMailUnread = () => {
+  void mailStore.fetchUnreadCount().catch(() => {});
+};
+
+const handleMailPageShow = () => {
+  refreshMailUnread();
+};
 
 const navScrollRef = ref<HTMLElement | null>(null);
 const canScrollUp = ref(false);
@@ -55,16 +65,16 @@ const updateNavScroll = () => {
 };
 
 onMounted(() => {
-  void mailStore.fetchUnreadCount().catch(() => {});
-  mailUnreadTimer = setInterval(() => {
-    void mailStore.fetchUnreadCount().catch(() => {});
-  }, 120000);
+  refreshMailUnread();
+  mailUnreadTimer = setInterval(refreshMailUnread, 120000);
+  window.addEventListener('pageshow', handleMailPageShow);
   void nextTick(updateNavScroll);
   window.addEventListener('resize', updateNavScroll);
 });
 
 onUnmounted(() => {
   if (mailUnreadTimer) clearInterval(mailUnreadTimer);
+  window.removeEventListener('pageshow', handleMailPageShow);
   window.removeEventListener('resize', updateNavScroll);
 });
 
@@ -168,7 +178,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
           class="base-menu-left__item chat-icon-wrapper"
           active-class="base-menu-left__item_active"
         >
-          <div v-if="mailStore.inboxUnreadCount > 0" class="chat-unread-badge">{{ mailStore.inboxUnreadCount }}</div>
+          <div v-if="mailInboxUnreadCount > 0" class="chat-unread-badge">{{ mailInboxUnreadCount }}</div>
           <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect x="0.5" y="2.5" width="16" height="12" rx="1.5" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
             <path d="M1.5 4L8.5 9L15.5 4" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
@@ -342,7 +352,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
         class="base-menu-left__item base-menu-left__item_mob chat-icon-wrapper"
         active-class="base-menu-left__item_active base-menu-left__item_mob-active"
       >
-        <div v-if="mailStore.inboxUnreadCount > 0" class="chat-unread-badge">{{ mailStore.inboxUnreadCount }}</div>
+        <div v-if="mailInboxUnreadCount > 0" class="chat-unread-badge">{{ mailInboxUnreadCount }}</div>
         <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect x="0.5" y="2.5" width="16" height="12" rx="1.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
           <path d="M1.5 4L8.5 9L15.5 4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />

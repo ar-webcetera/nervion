@@ -47,7 +47,8 @@ const syncUnreadState = async (force = false) => {
   syncUnreadInFlight.value = true;
 
   try {
-    await Promise.allSettled([getAllNotifications(), fetchChatList()]);
+    const mailStore = useMailStore();
+    await Promise.allSettled([getAllNotifications(), fetchChatList(), mailStore.fetchUnreadCount()]);
   } finally {
     lastSyncAt = Date.now();
     syncUnreadInFlight.value = false;
@@ -448,8 +449,12 @@ const handlePageFocus = () => {
   ensureSocketConnected();
 };
 
-const handlePageShow = () => {
+const handlePageShow = (event: PageTransitionEvent) => {
   ensureSocketConnected();
+  // bfcache: после «Назад» onMounted не вызывается — обновляем unread принудительно
+  if (event.persisted) {
+    syncUnreadState(true).catch(() => {});
+  }
 };
 const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);

@@ -432,14 +432,14 @@ describe('MailboxService', () => {
   });
 
   describe('getUnreadCounts', () => {
-    it('должен возвращать общее число и значения по папкам', async () => {
+    it('должен возвращать count как входящие и значения по папкам', async () => {
       messagesQueryBuilder.getRawMany.mockResolvedValue([
         { folder: MAIL_FOLDERS.inbox, count: '4' },
         { folder: MAIL_FOLDERS.trash, count: '2' },
       ]);
 
       await expect(service.getUnreadCounts({ id: 10 } as never)).resolves.toEqual({
-        count: 6,
+        count: 4,
         inbox: 4,
         trash: 2,
       });
