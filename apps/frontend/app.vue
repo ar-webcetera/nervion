@@ -420,6 +420,7 @@ const initSocket = () => {
 
   $webSocket.on('connect', () => {
     syncUnreadState(true).catch(() => {});
+    syncScreenState().catch(() => {});
   });
 };
 
@@ -440,21 +441,24 @@ const ensureSocketConnected = () => {
   syncPushState();
 };
 
+const syncAfterResume = (forceUnread = false) => {
+  ensureSocketConnected();
+  syncUnreadState(forceUnread).catch(() => {});
+  syncScreenState().catch(() => {});
+};
+
 const handleDocumentVisibility = () => {
   if (document.visibilityState !== 'visible') return;
-  ensureSocketConnected();
+  syncAfterResume();
 };
 
 const handlePageFocus = () => {
-  ensureSocketConnected();
+  syncAfterResume();
 };
 
 const handlePageShow = (event: PageTransitionEvent) => {
-  ensureSocketConnected();
-  // bfcache: после «Назад» onMounted не вызывается — обновляем unread принудительно
-  if (event.persisted) {
-    syncUnreadState(true).catch(() => {});
-  }
+  // bfcache: после «Назад» onMounted не вызывается — обновляем unread принудительно.
+  syncAfterResume(event.persisted);
 };
 const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
