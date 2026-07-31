@@ -2,8 +2,9 @@
 import { computed, onMounted, ref } from 'vue';
 import { addDays, subDays, format, parseISO, isToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
-import type { WeeklyColumn } from '~/types/task';
+import type { WeeklyCard, WeeklyColumn } from '~/types/task';
 import { TaskType } from '~/types/task';
+import { TASK_STATUSES } from '~/constants/task.constants';
 import IconRecurrence from '~/components/Icons/IconRecurrence.vue';
 
 const taskStore = useTaskStore();
@@ -15,6 +16,9 @@ const currentWeekStart = ref<string>('');
 const DAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'] as const;
 
 const columns = computed<WeeklyColumn[]>(() => taskStore.weeklyTasks?.columns ?? []);
+
+const isCardDone = (card: WeeklyCard) =>
+  card.completed || (!card.recurrence_days?.length && card.status === TASK_STATUSES.closed);
 
 const weekLabel = computed(() => {
   if (!taskStore.weeklyTasks) return '';
@@ -115,7 +119,7 @@ onMounted(() => {
             v-for="card in column.cards"
             :key="card.id"
             class="weekly-view__card"
-            :class="{ 'weekly-view__card_done': card.completed }"
+            :class="{ 'weekly-view__card_done': isCardDone(card) }"
             @click="openTask(card.id, column.date, !!card.recurrence_days?.length)"
           >
             <div class="weekly-view__card-header">
