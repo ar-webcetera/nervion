@@ -55,13 +55,28 @@ const initialAccount = Number(route.query.account);
 const selectedAccountId = ref(Number.isInteger(initialAccount) && initialAccount > 0 ? initialAccount : 0);
 const search = ref('');
 const initialThread = Number(route.query.thread);
-const selectedThreadId = ref<number | null>(
-  Number.isInteger(initialThread) && initialThread > 0 ? initialThread : null,
-);
+const selectedThreadId = ref<number | null>(Number.isInteger(initialThread) && initialThread > 0 ? initialThread : null);
 const replyText = ref('');
 const sendingReply = ref(false);
 const replyInput = ref<HTMLTextAreaElement | null>(null);
 const replyOpen = ref(false);
+const replyAttachInput = ref<HTMLInputElement | null>(null);
+const uploadingReplyAttach = ref(false);
+let replyAttachmentSession = 0;
+
+interface ReplyAttachment extends MailAttachmentDescriptor {
+  previewUrl: string | null;
+}
+
+const replyAttachments = ref<ReplyAttachment[]>([]);
+
+const clearReplyAttachments = () => {
+  replyAttachmentSession += 1;
+  for (const attachment of replyAttachments.value) {
+    if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+  }
+  replyAttachments.value = [];
+};
 
 const openReply = async () => {
   replyOpen.value = true;
@@ -73,6 +88,7 @@ const openReply = async () => {
 const cancelReply = () => {
   replyOpen.value = false;
   replyText.value = '';
+  clearReplyAttachments();
 };
 
 const FOLDERS = [
@@ -102,9 +118,7 @@ const backToList = () => {
   else selectedThreadId.value = null;
 };
 const composeDraftId = ref<number | null>(null);
-const composeThreadId = ref<number | null>(
-  composeParam !== '1' && Number(composeParam) > 0 ? Number(composeParam) : null,
-);
+const composeThreadId = ref<number | null>(composeParam !== '1' && Number(composeParam) > 0 ? Number(composeParam) : null);
 
 const activeRecipientField = ref<'to' | 'cc' | null>(null);
 const recipientSuggestions = computed(() => {
@@ -181,13 +195,50 @@ const formatAttachSize = (size: number) => {
   return `${(size / 1048576).toFixed(1)} МБ`;
 };
 
+const triggerReplyAttach = () => replyAttachInput.value?.click();
+
+const onReplyFilesPicked = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  if (!files.length) return;
+
+  const session = replyAttachmentSession;
+  uploadingReplyAttach.value = true;
+  try {
+    for (const file of files) {
+      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : null;
+      try {
+        const descriptor = await mailStore.uploadAttachment(file);
+        if (session !== replyAttachmentSession) {
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          continue;
+        }
+        replyAttachments.value.push({ ...descriptor, previewUrl });
+      } catch (error) {
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        throw error;
+      }
+    }
+  } catch (e) {
+    $toast.error(getErrorMessage(e));
+  } finally {
+    uploadingReplyAttach.value = false;
+    input.value = '';
+  }
+};
+
+const removeReplyAttachment = (index: number) => {
+  const [attachment] = replyAttachments.value.splice(index, 1);
+  if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
+};
+
 const composeIsDirty = () =>
   Boolean(
     composeForm.to.trim() ||
-      composeForm.cc.trim() ||
-      composeForm.subject.trim() ||
-      composeForm.text.trim() ||
-      composeForm.attachments.length,
+    composeForm.cc.trim() ||
+    composeForm.subject.trim() ||
+    composeForm.text.trim() ||
+    composeForm.attachments.length,
   );
 
 const autosaveDraft = async () => {
@@ -198,11 +249,7 @@ const autosaveDraft = async () => {
       .map((item) => item.trim())
       .filter(Boolean);
   const html = composeForm.text
-    ? `<div>${composeForm.text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/\n/g, '<br>')}</div>`
+    ? `<div>${composeForm.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</div>`
     : undefined;
   try {
     const message = await mailStore.saveDraft({
@@ -428,12 +475,12 @@ onMounted(() => {
     }
   }
 
-
   pollTimer = setInterval(pollThreads, POLL_INTERVAL_MS);
 });
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);
+  clearReplyAttachments();
   void autosaveDraft();
 });
 
@@ -458,7 +505,8 @@ const escapeHtml = (value: string) =>
 const textToHtml = (value: string) => `<div>${escapeHtml(value).replace(/\n/g, '<br>')}</div>`;
 
 const sendReply = async () => {
-  if (!replyText.value.trim() || !currentThread.value || !replyRecipient.value) return;
+  const text = replyText.value.trim();
+  if ((!text && !replyAttachments.value.length) || !currentThread.value || !replyRecipient.value) return;
 
   sendingReply.value = true;
   try {
@@ -470,12 +518,14 @@ const sendReply = async () => {
       account_id: currentThread.value.account_id,
       to: [replyRecipient.value],
       subject,
-      text: replyText.value,
-      html: textToHtml(replyText.value),
+      text: text || undefined,
+      html: text ? textToHtml(text) : undefined,
       thread_id: currentThread.value.id,
+      attachments: replyAttachments.value.map(({ previewUrl: _previewUrl, ...attachment }) => attachment),
     });
     replyText.value = '';
     replyOpen.value = false;
+    clearReplyAttachments();
   } catch (e) {
     $toast.error(getErrorMessage(e));
   } finally {
@@ -486,6 +536,7 @@ const sendReply = async () => {
 watch(selectedThreadId, () => {
   replyOpen.value = false;
   replyText.value = '';
+  clearReplyAttachments();
 });
 
 const openComposer = async () => {
@@ -532,7 +583,13 @@ const deleteDraft = async () => {
   }
 };
 
-const forwardMessage = async (message: { from_address: string; subject: string | null; createdAt: string; text_body: string | null; html_body: string | null }) => {
+const forwardMessage = async (message: {
+  from_address: string;
+  subject: string | null;
+  createdAt: string;
+  text_body: string | null;
+  html_body: string | null;
+}) => {
   await autosaveDraft();
   composeDraftId.value = null;
   composeThreadId.value = null;
@@ -869,8 +926,21 @@ watch(
             :aria-pressed="selectedThreadIds.has(thread.id)"
             @click.stop="toggleThreadSelection(thread.id)"
           >
-            <svg v-if="selectedThreadIds.has(thread.id)" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M5 12.5l4 4L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
+            <svg
+              v-if="selectedThreadIds.has(thread.id)"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M5 12.5l4 4L19 7"
+                stroke="currentColor"
+                stroke-width="2.2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
             </svg>
             <img
               v-else-if="threadAvatarUrl(thread)"
@@ -931,10 +1001,7 @@ watch(
                 @input="openRecipientList('to')"
                 @blur="closeRecipientList"
               />
-              <ul
-                v-if="activeRecipientField === 'to' && recipientSuggestions.length"
-                class="mail-page__combobox-list"
-              >
+              <ul v-if="activeRecipientField === 'to' && recipientSuggestions.length" class="mail-page__combobox-list">
                 <li
                   v-for="contact in recipientSuggestions"
                   :key="contact"
@@ -959,10 +1026,7 @@ watch(
                 @input="openRecipientList('cc')"
                 @blur="closeRecipientList"
               />
-              <ul
-                v-if="activeRecipientField === 'cc' && recipientSuggestions.length"
-                class="mail-page__combobox-list"
-              >
+              <ul v-if="activeRecipientField === 'cc' && recipientSuggestions.length" class="mail-page__combobox-list">
                 <li
                   v-for="contact in recipientSuggestions"
                   :key="contact"
@@ -999,11 +1063,7 @@ watch(
             <button class="mail-page__icon-btn" :disabled="savingDraft" @click="saveDraftAction">
               {{ savingDraft ? 'Сохранение…' : 'Сохранить черновик' }}
             </button>
-            <button
-              v-if="composeDraftId !== null"
-              class="mail-page__icon-btn mail-page__icon-btn_danger"
-              @click="deleteDraft"
-            >
+            <button v-if="composeDraftId !== null" class="mail-page__icon-btn mail-page__icon-btn_danger" @click="deleteDraft">
               Удалить
             </button>
             <button class="mail-page__compose-btn" :disabled="sendingCompose" @click="sendCompose">
@@ -1068,11 +1128,60 @@ watch(
             rows="4"
             @keydown.ctrl.enter="sendReply"
           />
+          <div v-if="replyAttachments.length" class="mail-page__reply-attachments">
+            <div v-for="(attachment, index) in replyAttachments" :key="attachment.s3_key" class="mail-page__reply-attachment">
+              <img
+                v-if="attachment.previewUrl"
+                class="mail-page__reply-attachment-preview"
+                :src="attachment.previewUrl"
+                :alt="`Превью файла ${attachment.filename}`"
+              />
+              <div v-else class="mail-page__reply-attachment-file" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                  <path d="M7 3.75h6.6L18 8.15v12.1H7V3.75Z" />
+                  <path d="M13.5 3.75v4.5H18" />
+                </svg>
+              </div>
+              <div class="mail-page__reply-attachment-meta">
+                <span class="mail-page__attach-name">{{ attachment.filename }}</span>
+                <span class="mail-page__attach-size">{{ formatAttachSize(attachment.size) }}</span>
+              </div>
+              <button
+                type="button"
+                class="mail-page__attach-remove mail-page__reply-attachment-remove"
+                :aria-label="`Убрать файл ${attachment.filename}`"
+                :disabled="sendingReply"
+                @click="removeReplyAttachment(index)"
+              >
+                ×
+              </button>
+            </div>
+          </div>
           <div class="mail-page__reply-actions">
-            <button class="mail-page__icon-btn" @click="cancelReply">Отмена</button>
-            <button class="mail-page__compose-btn" :disabled="sendingReply || !replyText.trim()" @click="sendReply">
-              {{ sendingReply ? 'Отправка…' : 'Отправить' }}
+            <input ref="replyAttachInput" type="file" multiple hidden @change="onReplyFilesPicked" />
+            <button
+              type="button"
+              class="mail-page__icon-btn mail-page__reply-attach-btn"
+              :disabled="uploadingReplyAttach || sendingReply"
+              @click="triggerReplyAttach"
+            >
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="m8.5 12.5 5.8-5.8a3.1 3.1 0 0 1 4.4 4.4l-7.5 7.5a5 5 0 0 1-7.1-7.1l7.2-7.2" />
+              </svg>
+              {{ uploadingReplyAttach ? 'Загрузка…' : 'Прикрепить файл' }}
             </button>
+            <div class="mail-page__reply-actions-main">
+              <button class="mail-page__icon-btn" :disabled="uploadingReplyAttach || sendingReply" @click="cancelReply">
+                Отмена
+              </button>
+              <button
+                class="mail-page__compose-btn"
+                :disabled="sendingReply || uploadingReplyAttach || (!replyText.trim() && !replyAttachments.length)"
+                @click="sendReply"
+              >
+                {{ sendingReply ? 'Отправка…' : 'Отправить' }}
+              </button>
+            </div>
           </div>
         </div>
       </template>
@@ -1081,7 +1190,13 @@ watch(
     <BaseModal ref="confirmModal" :dismissible="!isDeleting">
       <div class="mail-confirm" :aria-busy="isDeleting">
         <h2 class="mail-confirm__title">
-          {{ deleteTarget?.kind === 'message' ? 'Удалить письмо?' : deleteTarget?.kind === 'threads' ? 'Удалить выбранные?' : 'Удалить переписку?' }}
+          {{
+            deleteTarget?.kind === 'message'
+              ? 'Удалить письмо?'
+              : deleteTarget?.kind === 'threads'
+                ? 'Удалить выбранные?'
+                : 'Удалить переписку?'
+          }}
         </h2>
         <p class="mail-confirm__text">
           <template v-if="deleteTarget?.kind === 'message'">
@@ -1101,11 +1216,7 @@ watch(
         <div v-if="isDeleting" class="mail-confirm__progress" role="status" aria-live="polite">
           <span class="mail-confirm__spinner" aria-hidden="true" />
           <span>
-            {{
-              deleteTarget?.kind === 'threads'
-                ? `Удаляем выбранные письма: ${deleteTarget.ids.length}`
-                : 'Удаляем письмо…'
-            }}
+            {{ deleteTarget?.kind === 'threads' ? `Удаляем выбранные письма: ${deleteTarget.ids.length}` : 'Удаляем письмо…' }}
           </span>
         </div>
         <div class="mail-confirm__actions">
@@ -1116,13 +1227,7 @@ watch(
             @click="confirmDelete"
           >
             <span v-if="isDeleting" class="mail-confirm__spinner mail-confirm__spinner_small" aria-hidden="true" />
-            {{
-              isDeleting
-                ? 'Удаляем…'
-                : deleteTarget?.kind === 'message' || deleteTarget?.permanent
-                  ? 'Удалить'
-                  : 'В корзину'
-            }}
+            {{ isDeleting ? 'Удаляем…' : deleteTarget?.kind === 'message' || deleteTarget?.permanent ? 'Удалить' : 'В корзину' }}
           </button>
         </div>
       </div>
@@ -1739,8 +1844,99 @@ watch(
   }
 
   &__reply-actions {
+    @include flex(rn, between, a-center);
+    gap: 8px;
+
+    @media (max-width: $screen-mobile-l) {
+      align-items: stretch;
+      flex-direction: column;
+    }
+  }
+
+  &__reply-actions-main {
     @include flex(rn, j-end);
     gap: 8px;
+  }
+
+  &__reply-attach-btn {
+    @include flex(rn, a-center);
+    gap: 8px;
+
+    svg {
+      width: 18px;
+      height: 18px;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  }
+
+  &__reply-attachments {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+  }
+
+  &__reply-attachment {
+    position: relative;
+    min-width: 0;
+    min-height: 64px;
+    padding: 8px 40px 8px 8px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+    background: var(--light-text-backgroung-primary-5);
+    @include flex(rn, a-center);
+    gap: 10px;
+  }
+
+  &__reply-attachment-preview,
+  &__reply-attachment-file {
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+    border-radius: 6px;
+  }
+
+  &__reply-attachment-preview {
+    display: block;
+    object-fit: cover;
+    background: var(--dark-text-background-primary);
+  }
+
+  &__reply-attachment-file {
+    background: var(--primary-25);
+    color: var(--primary-75);
+    @include flex(center);
+
+    svg {
+      width: 24px;
+      height: 24px;
+      stroke: currentColor;
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  }
+
+  &__reply-attachment-meta {
+    min-width: 0;
+    @include flex(cn);
+    gap: 2px;
+  }
+
+  &__reply-attachment-remove {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
   }
 
   &__reply-input {
