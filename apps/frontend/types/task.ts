@@ -57,6 +57,7 @@ export interface Task {
 export interface WeeklyCard {
   id: number;
   title: string;
+  description: string;
   taskType: TaskType;
   status: TASK_STATUSES;
   priority: number;

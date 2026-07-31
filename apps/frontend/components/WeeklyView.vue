@@ -142,6 +142,8 @@ onMounted(() => {
               <span>{{ card.title }}</span>
             </div>
 
+            <div v-if="card.description" class="weekly-view__card-description">{{ card.description }}</div>
+
             <div v-if="card.story_points != null" class="weekly-view__card-sp">{{ card.story_points }} SP</div>
 
             <button
@@ -393,6 +395,18 @@ onMounted(() => {
       border: 1px solid var(--accent);
       background: var(--accent-50);
     }
+  }
+
+  &__card-description {
+    width: 100%;
+    color: var(--light-text-backgroung-primary-50);
+    overflow: hidden;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    @extend %text-xs-regular;
   }
 
   &__card-sp {

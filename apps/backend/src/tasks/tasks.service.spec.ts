@@ -659,9 +659,13 @@ describe('TasksService', () => {
         {
           id: 42,
           title: 'Разовая задача',
+          description: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Короткое описание задачи' }] }],
+          },
           planned_date: new Date('2026-04-30'),
           recurrence_days: null,
-        } as Tasks,
+        } as Partial<Tasks> as Tasks,
       ]);
 
       mockTasksRepository.createQueryBuilder.mockReturnValueOnce(recurringQb).mockReturnValueOnce(plannedQb);
@@ -670,7 +674,7 @@ describe('TasksService', () => {
       const result = await service.getWeeklyTasks('2026-04-27', user);
 
       expect(result.columns.find((column) => column.date === '2026-04-30')?.cards).toEqual([
-        expect.objectContaining({ id: 42, recurrence_days: null }),
+        expect.objectContaining({ id: 42, description: 'Короткое описание задачи', recurrence_days: null }),
       ]);
     });
 

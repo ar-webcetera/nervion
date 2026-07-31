@@ -7,6 +7,7 @@ import type { User } from '~/types/user';
 import type { TASK_STATUSES } from '~/constants/task.constants';
 import type { JSONContent } from '@tiptap/core';
 import type { TaskType } from '~/enums/task.enums';
+import { extractPlainText, type TiptapDoc } from '~/utils/extractPainText';
 import { useTimelogStore } from './timelogStore';
 import { useUserStore } from './userStore';
 
@@ -511,6 +512,7 @@ export const useTaskStore = defineStore('task', () => {
         column.cards.push({
           id: currentTask.value!.id,
           title: currentTask.value!.title,
+          description: extractPlainText(currentTask.value!.description as TiptapDoc, 80),
           taskType: currentTask.value!.taskType,
           status: currentTask.value!.status,
           priority: currentTask.value!.priority,

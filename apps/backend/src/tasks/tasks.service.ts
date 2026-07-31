@@ -1191,6 +1191,7 @@ export class TasksService {
       id: task.id,
       title: task.title,
       taskType: task.taskType,
+      description: extractPlainText(task.description as TiptapDoc, 80),
       status: task.status,
       priority: task.priority,
       recurrence_days: task.recurrence_days,
