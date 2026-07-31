@@ -583,6 +583,31 @@ const deleteDraft = async () => {
   }
 };
 
+const htmlToPlainText = (html: string) => {
+  const document = new DOMParser().parseFromString(html, 'text/html');
+
+  document.querySelectorAll('script, style, noscript, template').forEach((element) => element.remove());
+  document.querySelectorAll('a[href]').forEach((element) => {
+    const href = element.getAttribute('href')?.trim() ?? '';
+    const label = element.textContent?.trim() ?? '';
+    if (/^(https?:|mailto:)/i.test(href) && !label.includes(href)) {
+      element.append(` (${href})`);
+    }
+  });
+  document.querySelectorAll('br').forEach((element) => element.replaceWith('\n'));
+  document
+    .querySelectorAll('address, article, blockquote, div, footer, h1, h2, h3, h4, h5, h6, header, li, p, section, tr')
+    .forEach((element) => element.append('\n'));
+  document.querySelectorAll('td, th').forEach((element) => element.append('\t'));
+
+  return (document.body.textContent ?? '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
 const forwardMessage = async (message: {
   from_address: string;
   subject: string | null;
@@ -598,7 +623,7 @@ const forwardMessage = async (message: {
   composeForm.cc = '';
   const subject = message.subject || '';
   composeForm.subject = subject.startsWith('Fwd:') ? subject : `Fwd: ${subject}`;
-  const body = message.text_body || (message.html_body ? '(исходное письмо в HTML)' : '');
+  const body = message.text_body?.trim() || (message.html_body ? htmlToPlainText(message.html_body) : '');
   composeForm.text = `\n\n---------- Пересланное письмо ----------\nОт: ${message.from_address}\nТема: ${subject}\n\n${body}`;
   composeForm.attachments = [];
   selectedThreadId.value = null;
