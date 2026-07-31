@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class MailAttachmentInputDto {
@@ -22,4 +22,15 @@ export class MailAttachmentInputDto {
   @IsInt()
   @Type(() => Number)
   size: number;
+
+  @ApiProperty({ description: 'Content-ID встроенного ресурса', required: false, nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  content_id?: string | null;
+
+  @ApiProperty({ description: 'Вложение отображается внутри HTML-письма', required: false, default: false })
+  @IsOptional()
+  @IsBoolean()
+  is_inline?: boolean;
 }

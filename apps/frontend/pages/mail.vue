@@ -161,6 +161,8 @@ const composeForm = reactive({
   text: '',
   attachments: [] as MailAttachmentDescriptor[],
 });
+const forwardedHtml = ref<string | null>(null);
+const forwardedHeader = ref<{ from: string; subject: string } | null>(null);
 const sendingCompose = ref(false);
 const attachInput = ref<HTMLInputElement | null>(null);
 const uploadingAttach = ref(false);
@@ -232,6 +234,43 @@ const removeReplyAttachment = (index: number) => {
   if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
 };
 
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const textToHtml = (value: string) => `<div>${escapeHtml(value).replace(/\n/g, '<br>')}</div>`;
+
+const forwardedTextSeparator = '\n\n---------- Пересланное письмо ----------';
+
+const buildComposeHtml = () => {
+  if (!forwardedHtml.value || !forwardedHeader.value) {
+    return composeForm.text ? textToHtml(composeForm.text) : undefined;
+  }
+
+  const document = new DOMParser().parseFromString(forwardedHtml.value, 'text/html');
+  document.querySelectorAll('script, noscript, [data-nervion-forwarded-header]').forEach((element) => element.remove());
+
+  const intro = composeForm.text.split(forwardedTextSeparator, 1)[0].trim();
+  const header = document.createElement('div');
+  header.dataset.nervionForwardedHeader = 'true';
+  header.style.cssText =
+    'margin:0 0 20px;padding:0 0 16px;border-bottom:1px solid #d9d9d9;font:14px/1.5 Arial,sans-serif;color:#222';
+  header.innerHTML = `${intro ? `${textToHtml(intro)}<br>` : ''}<div>---------- Пересланное письмо ----------<br>От: ${escapeHtml(
+    forwardedHeader.value.from,
+  )}<br>Тема: ${escapeHtml(forwardedHeader.value.subject)}</div>`;
+  document.body.insertBefore(header, document.body.firstChild);
+
+  return `<!doctype html>${document.documentElement.outerHTML}`;
+};
+
+const restoreForwardedHtml = (html: string | null) => {
+  if (typeof DOMParser === 'undefined' || !html || !html.includes('data-nervion-forwarded-header')) return null;
+  const document = new DOMParser().parseFromString(html, 'text/html');
+  const header = document.querySelector<HTMLElement>('[data-nervion-forwarded-header]');
+  if (!header) return null;
+  header.remove();
+  return `<!doctype html>${document.documentElement.outerHTML}`;
+};
+
 const composeIsDirty = () =>
   Boolean(
     composeForm.to.trim() ||
@@ -248,9 +287,7 @@ const autosaveDraft = async () => {
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean);
-  const html = composeForm.text
-    ? `<div>${composeForm.text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</div>`
-    : undefined;
+  const html = buildComposeHtml();
   try {
     const message = await mailStore.saveDraft({
       account_id: composeForm.account_id,
@@ -395,11 +432,20 @@ const editDraft = (draft: MailMessage) => {
   composeForm.cc = draft.cc_addresses.map((item) => item.address).join(', ');
   composeForm.subject = draft.subject ?? '';
   composeForm.text = draft.text_body ?? '';
+  forwardedHtml.value = restoreForwardedHtml(draft.html_body);
+  forwardedHeader.value = forwardedHtml.value
+    ? {
+        from: composeForm.text.match(/\nОт: ([^\n]*)/)?.[1] ?? '',
+        subject: composeForm.text.match(/\nТема: ([^\n]*)/)?.[1] ?? '',
+      }
+    : null;
   composeForm.attachments = (draft.attachments ?? []).map((item) => ({
     s3_key: item.s3_key,
     filename: item.filename,
     content_type: item.content_type,
     size: item.size,
+    content_id: item.content_id,
+    is_inline: item.is_inline,
   }));
   selectedThreadId.value = null;
   composeMode.value = true;
@@ -473,6 +519,9 @@ onMounted(() => {
     } else {
       void mailStore.markThreadRead(selectedThreadId.value).catch(() => {});
     }
+  } else if (composeMode.value && composeThreadId.value) {
+    const draft = messages.value.find((message) => message.status === 'draft');
+    if (draft) editDraft(draft);
   }
 
   pollTimer = setInterval(pollThreads, POLL_INTERVAL_MS);
@@ -498,11 +547,6 @@ const replyRecipient = computed(() => {
   const lastInbound = [...messages.value].reverse().find((message) => message.direction === MAIL_DIRECTIONS.inbound);
   return lastInbound?.from_address || currentThread.value?.counterparty_address || '';
 });
-
-const escapeHtml = (value: string) =>
-  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-const textToHtml = (value: string) => `<div>${escapeHtml(value).replace(/\n/g, '<br>')}</div>`;
 
 const sendReply = async () => {
   const text = replyText.value.trim();
@@ -548,6 +592,8 @@ const openComposer = async () => {
   composeForm.subject = '';
   composeForm.text = '';
   composeForm.attachments = [];
+  forwardedHtml.value = null;
+  forwardedHeader.value = null;
   if (!composeForm.account_id && accounts.value.length) {
     composeForm.account_id = accounts.value[0].id;
   }
@@ -608,13 +654,7 @@ const htmlToPlainText = (html: string) => {
     .trim();
 };
 
-const forwardMessage = async (message: {
-  from_address: string;
-  subject: string | null;
-  createdAt: string;
-  text_body: string | null;
-  html_body: string | null;
-}) => {
+const forwardMessage = async (message: MailMessage) => {
   await autosaveDraft();
   composeDraftId.value = null;
   composeThreadId.value = null;
@@ -624,8 +664,17 @@ const forwardMessage = async (message: {
   const subject = message.subject || '';
   composeForm.subject = subject.startsWith('Fwd:') ? subject : `Fwd: ${subject}`;
   const body = message.text_body?.trim() || (message.html_body ? htmlToPlainText(message.html_body) : '');
-  composeForm.text = `\n\n---------- Пересланное письмо ----------\nОт: ${message.from_address}\nТема: ${subject}\n\n${body}`;
-  composeForm.attachments = [];
+  composeForm.text = `${forwardedTextSeparator}\nОт: ${message.from_address}\nТема: ${subject}\n\n${body}`;
+  forwardedHtml.value = message.html_body;
+  forwardedHeader.value = message.html_body ? { from: message.from_address, subject } : null;
+  composeForm.attachments = (message.attachments ?? []).map((item) => ({
+    s3_key: item.s3_key,
+    filename: item.filename,
+    content_type: item.content_type,
+    size: item.size,
+    content_id: item.content_id,
+    is_inline: item.is_inline,
+  }));
   selectedThreadId.value = null;
   composeMode.value = true;
 };
@@ -649,7 +698,7 @@ const sendCompose = async () => {
         cc: ccRecipients,
         subject: composeForm.subject.trim(),
         text: composeForm.text,
-        html: textToHtml(composeForm.text),
+        html: buildComposeHtml(),
         draft_id: composeDraftId.value,
         attachments: composeForm.attachments,
       });
@@ -661,7 +710,7 @@ const sendCompose = async () => {
         cc: ccRecipients.length ? ccRecipients : undefined,
         subject: composeForm.subject.trim(),
         text: composeForm.text,
-        html: textToHtml(composeForm.text),
+        html: buildComposeHtml(),
         attachments: composeForm.attachments.length ? composeForm.attachments : undefined,
       });
     }
@@ -696,7 +745,7 @@ const saveDraftAction = async () => {
       cc: splitAddresses(composeForm.cc),
       subject: composeForm.subject.trim() || undefined,
       text: composeForm.text || undefined,
-      html: composeForm.text ? textToHtml(composeForm.text) : undefined,
+      html: buildComposeHtml(),
       draft_id: composeDraftId.value ?? undefined,
       attachments: composeForm.attachments,
     });

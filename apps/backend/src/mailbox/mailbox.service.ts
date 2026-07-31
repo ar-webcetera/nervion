@@ -411,12 +411,25 @@ export class MailboxService {
   }
 
   private async buildPostboxAttachments(
-    items: { s3_key: string; filename: string; content_type: string }[],
-  ): Promise<{ filename: string; content: Readable; contentType: string }[]> {
-    const result: { filename: string; content: Readable; contentType: string }[] = [];
+    items: { s3_key: string; filename: string; content_type: string; content_id?: string | null; is_inline?: boolean }[],
+  ): Promise<{ filename: string; content: Readable; contentType: string; cid?: string; contentDisposition?: 'inline' }[]> {
+    const result: {
+      filename: string;
+      content: Readable;
+      contentType: string;
+      cid?: string;
+      contentDisposition?: 'inline';
+    }[] = [];
     for (const item of items) {
       const stream = await this.storageService.getObjectStream(item.s3_key);
-      result.push({ filename: item.filename, content: stream.body, contentType: item.content_type });
+      const contentId = item.content_id?.replace(/^<|>$/g, '');
+      result.push({
+        filename: item.filename,
+        content: stream.body,
+        contentType: item.content_type,
+        ...(contentId ? { cid: contentId } : {}),
+        ...(item.is_inline ? { contentDisposition: 'inline' as const } : {}),
+      });
     }
     return result;
   }
@@ -434,8 +447,8 @@ export class MailboxService {
           content_type: item.content_type,
           size: item.size,
           s3_key: item.s3_key,
-          content_id: null,
-          is_inline: false,
+          content_id: item.content_id ?? null,
+          is_inline: item.is_inline ?? false,
         }),
       ),
     );

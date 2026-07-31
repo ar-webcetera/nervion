@@ -87,6 +87,8 @@ export interface MailAttachmentDescriptor {
   filename: string;
   content_type: string;
   size: number;
+  content_id?: string | null;
+  is_inline?: boolean;
 }
 
 export interface MailAccountPayload {
