@@ -68,24 +68,6 @@ export const CreateTaskResponseDto = {
       enum: Object.values(TASK_STATUSES),
       example: TASK_STATUSES.open,
     },
-    deadline_date: {
-      type: 'string',
-      format: 'date',
-      description: 'День дедлайна',
-      example: '2025-06-25',
-    },
-    deadline_time_from: {
-      type: 'string',
-      format: 'time',
-      description: 'Время начала окна дедлайна',
-      example: '16:00',
-    },
-    deadline_time_to: {
-      type: 'string',
-      format: 'time',
-      description: 'Время конца окна дедлайна',
-      example: '16:30',
-    },
     created_at: {
       type: 'string',
       example: '2025-07-18T09:55:24.540Z',

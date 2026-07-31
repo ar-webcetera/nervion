@@ -73,15 +73,6 @@ export class Tasks {
 
   current_timelog?: Timelogs | null;
 
-  @Column({ type: 'date', name: 'deadline_date', nullable: true })
-  deadline_date: string | null;
-
-  @Column({ type: 'time', name: 'deadline_time_from', nullable: true })
-  deadline_time_from: string | null;
-
-  @Column({ type: 'time', name: 'deadline_time_to', nullable: true })
-  deadline_time_to: string | null;
-
   @Column({ name: 'responsible_id', nullable: true })
   responsible_id: number | null;
 

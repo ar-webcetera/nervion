@@ -648,9 +648,6 @@ export class TasksService {
       description: source.description,
       closed_date: this.resolveClosedDate(source.status),
       planned_date: source.planned_date,
-      deadline_date: source.deadline_date,
-      deadline_time_from: source.deadline_time_from,
-      deadline_time_to: source.deadline_time_to,
       story_points: source.story_points,
       recurrence_days: source.recurrence_days,
       recurrence_since: source.recurrence_since,
@@ -1092,6 +1089,22 @@ export class TasksService {
     const monday = weekStart ? new Date(weekStart) : startOfWeek(new Date(), { weekStartsOn: 1 });
     const filters = await this.resolveFilters(filtersDto, currentUser.id);
     const { projects, responsibles, statuses, planned_date, closed_date, taskTypes, title, year, negativeFilters } = filters;
+    const hasExtraTodayFilters =
+      !!projects?.length ||
+      !!statuses?.length ||
+      !!closed_date?.length ||
+      !!taskTypes?.length ||
+      !!title?.trim() ||
+      !!year ||
+      Object.values(negativeFilters ?? {}).some(Boolean);
+    const todayFilterDate =
+      planned_date?.length === 2 &&
+      planned_date[0] === planned_date[1] &&
+      responsibles?.length === 1 &&
+      responsibles[0] === currentUser.id &&
+      !hasExtraTodayFilters
+        ? planned_date[0]
+        : null;
 
     const weekDates = Array.from({ length: 7 }, (_, i) => {
       const date = addDays(monday, i);
@@ -1110,13 +1123,39 @@ export class TasksService {
     this.applyProjectsFilter(recurringQb, projects, negativeFilters);
     this.applyResponsiblesFilter(recurringQb, responsibles, negativeFilters);
     this.applyStatusesFilter(recurringQb, statuses, negativeFilters);
-    this.applyDateFilter(recurringQb, 'planned_date', planned_date, negativeFilters, 'date');
+    if (!todayFilterDate) {
+      this.applyDateFilter(recurringQb, 'planned_date', planned_date, negativeFilters, 'date');
+    }
     this.applyDateFilter(recurringQb, 'closed_date', closed_date, negativeFilters, 'closed_date', filtersDto.timezone);
     this.applyTaskTypesFilter(recurringQb, taskTypes, negativeFilters);
     this.applyTitleFilter(recurringQb, title);
     this.applyYearFilter(recurringQb, year);
 
     const recurringTasks = await recurringQb.getMany();
+
+    const plannedQb = this.tasksRepository
+      .createQueryBuilder('task')
+      .leftJoinAndSelect('task.responsible', 'responsible')
+      .leftJoinAndSelect('task.project', 'project')
+      .leftJoinAndSelect('task.participants', 'participants')
+      .where('task.recurrence_days IS NULL')
+      .andWhere('DATE(task.planned_date) BETWEEN :weekStart AND :weekEnd', {
+        weekStart: weekDates[0],
+        weekEnd: weekDates[6],
+      });
+
+    this.applyProjectAccessScope(plannedQb, currentUser);
+    this.applyActiveProjectScope(plannedQb);
+    this.applyProjectsFilter(plannedQb, projects, negativeFilters);
+    this.applyResponsiblesFilter(plannedQb, responsibles, negativeFilters);
+    this.applyStatusesFilter(plannedQb, statuses, negativeFilters);
+    this.applyDateFilter(plannedQb, 'planned_date', planned_date, negativeFilters, 'date');
+    this.applyDateFilter(plannedQb, 'closed_date', closed_date, negativeFilters, 'closed_date', filtersDto.timezone);
+    this.applyTaskTypesFilter(plannedQb, taskTypes, negativeFilters);
+    this.applyTitleFilter(plannedQb, title);
+    this.applyYearFilter(plannedQb, year);
+
+    const plannedTasks = await plannedQb.getMany();
 
     const completions = await this.completionRepository
       .createQueryBuilder('c')
@@ -1161,21 +1200,27 @@ export class TasksService {
       completed: completionSet.has(`${task.id}:${dateStr}`),
     });
 
+    const getPlannedDate = (task: Tasks): string =>
+      task.planned_date instanceof Date ? format(task.planned_date, 'yyyy-MM-dd') : String(task.planned_date).substring(0, 10);
+
     const columns = weekDates.map((dateStr, i) => {
       const dayOfWeek = (i + 1) % 7;
 
       const recurringCards = recurringTasks
         .filter((t) => {
+          if (todayFilterDate && dateStr !== todayFilterDate) return false;
           if (!t.recurrence_days!.includes(dayOfWeek)) return false;
           if (t.recurrence_since && dateStr < String(t.recurrence_since).substring(0, 10)) return false;
           return true;
         })
         .map((t) => mapCard(t, dateStr));
 
-      const recurringCardIds = new Set(recurringCards.map((c) => c.id));
+      const plannedCards = plannedTasks.filter((t) => getPlannedDate(t) === dateStr).map((t) => mapCard(t, dateStr));
+
+      const displayedCardIds = new Set([...recurringCards, ...plannedCards].map((c) => c.id));
 
       const orphanedCards = completions
-        .filter((c) => String(c.completed_at).substring(0, 10) === dateStr && !recurringCardIds.has(c.task_id))
+        .filter((c) => String(c.completed_at).substring(0, 10) === dateStr && !displayedCardIds.has(c.task_id))
         .map((c) => completionTasksMap.get(c.task_id))
         .filter((t): t is Tasks => t !== undefined)
         .map((t) => mapCard(t, dateStr));
@@ -1183,7 +1228,7 @@ export class TasksService {
       return {
         date: dateStr,
         dayOfWeek,
-        cards: [...recurringCards, ...orphanedCards],
+        cards: [...recurringCards, ...plannedCards, ...orphanedCards],
       };
     });
 

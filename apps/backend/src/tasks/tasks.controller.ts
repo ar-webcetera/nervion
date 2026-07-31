@@ -51,7 +51,7 @@ export class TasksController {
   constructor(private readonly tasksService: TasksService) {}
 
   @Get('weekly')
-  @ApiOperation({ summary: 'Получение повторяющихся задач по неделям' })
+  @ApiOperation({ summary: 'Получение задач по неделям' })
   @ApiResponse({ status: 200, description: 'Задачи недели успешно получены' })
   @UseGuards(AuthGuard, RolesGuard)
   async getWeeklyTasks(@Req() req: RequestWithCookies, @Query() query: GetWeeklyTasksDto) {

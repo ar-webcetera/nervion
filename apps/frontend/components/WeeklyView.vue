@@ -58,10 +58,10 @@ const toggleCompletion = async (taskId: number, date: string, completed: boolean
   }
 };
 
-const openTask = (taskId: number, date: string) => {
-  router.push({ query: { 'task-id': taskId, 'task-date': date } });
+const openTask = (taskId: number, date: string, isRecurring: boolean) => {
+  router.push({ query: isRecurring ? { 'task-id': taskId, 'task-date': date } : { 'task-id': taskId } });
   taskStore.currentTaskId = taskId;
-  taskStore.currentTaskDate = date;
+  taskStore.currentTaskDate = isRecurring ? date : null;
 };
 
 await callOnce('weekly-tasks-init', async () => {
@@ -116,7 +116,7 @@ onMounted(() => {
             :key="card.id"
             class="weekly-view__card"
             :class="{ 'weekly-view__card_done': card.completed }"
-            @click="openTask(card.id, column.date)"
+            @click="openTask(card.id, column.date, !!card.recurrence_days?.length)"
           >
             <div class="weekly-view__card-header">
               <div class="weekly-view__card-project">{{ card.project?.name }}</div>
@@ -145,6 +145,7 @@ onMounted(() => {
             <div v-if="card.story_points != null" class="weekly-view__card-sp">{{ card.story_points }} SP</div>
 
             <button
+              v-if="card.recurrence_days?.length"
               class="weekly-view__done-btn"
               :class="{ 'weekly-view__done-btn_active': card.completed }"
               @click.stop="toggleCompletion(card.id, column.date, card.completed)"

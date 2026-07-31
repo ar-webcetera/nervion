@@ -637,9 +637,10 @@ describe('TasksService', () => {
     it('должен скрывать повторяющиеся задачи архивных проектов', async () => {
       const user = { id: 1, role: ROLES.admin } as Users;
       const recurringQb = createQueryBuilderMock();
+      const plannedQb = createQueryBuilderMock();
       const completionsQb = createQueryBuilderMock();
 
-      mockTasksRepository.createQueryBuilder.mockReturnValue(recurringQb);
+      mockTasksRepository.createQueryBuilder.mockReturnValueOnce(recurringQb).mockReturnValueOnce(plannedQb);
       mockCompletionRepository.createQueryBuilder.mockReturnValue(completionsQb);
 
       await service.getWeeklyTasks('2026-04-27', user);
@@ -647,6 +648,69 @@ describe('TasksService', () => {
       expect(recurringQb.andWhere).toHaveBeenCalledWith('(task.project_id IS NULL OR project.status != :archivedProjectStatus)', {
         archivedProjectStatus: PROJECT_STATUSES.ON_HOLD,
       });
+    });
+
+    it('должен показывать разовую задачу в день planned_date', async () => {
+      const user = { id: 1, role: ROLES.admin } as Users;
+      const recurringQb = createQueryBuilderMock();
+      const plannedQb = createQueryBuilderMock();
+      const completionsQb = createQueryBuilderMock();
+      plannedQb.getMany.mockResolvedValue([
+        {
+          id: 42,
+          title: 'Разовая задача',
+          planned_date: new Date('2026-04-30'),
+          recurrence_days: null,
+        } as Tasks,
+      ]);
+
+      mockTasksRepository.createQueryBuilder.mockReturnValueOnce(recurringQb).mockReturnValueOnce(plannedQb);
+      mockCompletionRepository.createQueryBuilder.mockReturnValue(completionsQb);
+
+      const result = await service.getWeeklyTasks('2026-04-27', user);
+
+      expect(result.columns.find((column) => column.date === '2026-04-30')?.cards).toEqual([
+        expect.objectContaining({ id: 42, recurrence_days: null }),
+      ]);
+    });
+
+    it('фильтр «Мои сегодня» должен объединять planned_date и повторение на выбранный день', async () => {
+      const user = { id: 7, role: ROLES.admin } as Users;
+      const recurringQb = createQueryBuilderMock();
+      const plannedQb = createQueryBuilderMock();
+      const completionsQb = createQueryBuilderMock();
+      recurringQb.getMany.mockResolvedValue([
+        {
+          id: 51,
+          title: 'Повторяющаяся задача',
+          planned_date: new Date('2026-04-01'),
+          recurrence_days: [3],
+        } as Tasks,
+      ]);
+      plannedQb.getMany.mockResolvedValue([
+        {
+          id: 52,
+          title: 'Разовая задача',
+          planned_date: new Date('2026-04-29'),
+          recurrence_days: null,
+        } as Tasks,
+      ]);
+
+      mockTasksRepository.createQueryBuilder.mockReturnValueOnce(recurringQb).mockReturnValueOnce(plannedQb);
+      mockCompletionRepository.createQueryBuilder.mockReturnValue(completionsQb);
+
+      const filters = Object.assign(new FindTasksByFilterDto(), {
+        planned_date: ['2026-04-29', '2026-04-29'],
+        responsibles: [7],
+      });
+      const result = await service.getWeeklyTasks('2026-04-27', user, filters);
+
+      expect(recurringQb.andWhere).not.toHaveBeenCalledWith('DATE(task.planned_date) = :planned_date', expect.anything());
+      expect(result.columns.find((column) => column.date === '2026-04-29')?.cards).toEqual([
+        expect.objectContaining({ id: 51 }),
+        expect.objectContaining({ id: 52 }),
+      ]);
+      expect(result.columns.flatMap((column) => column.cards)).toHaveLength(2);
     });
   });
 });

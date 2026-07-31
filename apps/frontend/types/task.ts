@@ -60,7 +60,7 @@ export interface WeeklyCard {
   taskType: TaskType;
   status: TASK_STATUSES;
   priority: number;
-  recurrence_days: number[];
+  recurrence_days: number[] | null;
   responsible: User | null;
   project: Project | null;
   story_points: number | null;
