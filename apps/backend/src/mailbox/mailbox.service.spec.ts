@@ -400,6 +400,24 @@ describe('MailboxService', () => {
     });
   });
 
+  describe('uploadOutboundAttachment', () => {
+    it('должен восстанавливать UTF-8 в имени загружаемого файла', async () => {
+      const filename = 'Договор на разработку.pdf';
+      const file = {
+        originalname: Buffer.from(filename, 'utf8').toString('latin1'),
+        mimetype: 'application/pdf',
+        buffer: Buffer.from('pdf'),
+        size: 3,
+      } as Express.Multer.File;
+
+      const attachment = await service.uploadOutboundAttachment(file);
+
+      expect(attachment.filename).toBe(filename);
+      expect(attachment.s3_key).toMatch(/^mailbox\/outbound\/[0-9a-f-]+-Договор_на_разработку\.pdf$/);
+      expect(mockStorageService.uploadObject).toHaveBeenCalledWith(attachment.s3_key, file.buffer, 'application/pdf');
+    });
+  });
+
   describe('avatars', () => {
     it('должен добавлять аватар пользователя при совпадении email без учёта регистра', async () => {
       mockThreadsRepository.findOne.mockResolvedValue({

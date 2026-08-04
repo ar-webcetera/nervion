@@ -400,7 +400,8 @@ export class MailboxService {
   }
 
   async uploadOutboundAttachment(file: Express.Multer.File): Promise<MailAttachmentInputDto> {
-    const original = file.originalname || 'file';
+    const encodedOriginalName = file.originalname as string | undefined;
+    const original = encodedOriginalName ? Buffer.from(encodedOriginalName, 'latin1').toString('utf8') : 'file';
     const safeName = original.replace(/[^\wа-яА-ЯёЁ.-]+/g, '_').slice(0, 200);
     const key = `mailbox/outbound/${randomUUID()}-${safeName}`;
     const contentType = file.mimetype || 'application/octet-stream';
