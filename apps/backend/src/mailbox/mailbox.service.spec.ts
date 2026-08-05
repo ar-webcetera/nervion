@@ -1,3 +1,4 @@
+import { PayloadTooLargeException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -88,6 +89,7 @@ describe('MailboxService', () => {
 
   const mockStorageService = {
     uploadObject: jest.fn(),
+    getObjectStream: jest.fn(),
   };
 
   const mockPostboxService = {
@@ -292,6 +294,101 @@ describe('MailboxService', () => {
           from_name: selectedAccount.display_name,
         }),
       );
+    });
+
+    it('должен возвращать отправленное сообщение вместе с сохранёнными вложениями', async () => {
+      const selectedAccount = {
+        id: 2,
+        address: 'l.pavlova@webcetera.test',
+        display_name: 'Лилия Павлова',
+        allowedUsers: [{ id: 10 }],
+      } as MailAccounts;
+      const thread = { id: 3, account_id: selectedAccount.id, subject: 'Тема письма' } as MailThreads;
+      const attachment = {
+        s3_key: 'mailbox/outbound/archive.7z',
+        filename: 'Документы.7z',
+        content_type: 'application/x-7z-compressed',
+        size: 3_290_279,
+      };
+      const savedAttachment = { id: 44, message_id: 12, ...attachment } as MailAttachments;
+
+      mockAccountsRepository.findOne.mockResolvedValue(selectedAccount);
+      mockThreadsRepository.save.mockResolvedValue(thread);
+      mockMessagesRepository.save.mockImplementation((message: Partial<MailMessages>) => Promise.resolve({ id: 12, ...message }));
+      mockStorageService.getObjectStream.mockResolvedValue({ body: {} });
+      mockAttachmentsRepository.save.mockResolvedValue([savedAttachment]);
+      mockPostboxService.send.mockResolvedValue('sent-message-id@webcetera.test');
+
+      const result = await service.sendMail({ id: 10, role: 'employee' } as never, {
+        account_id: selectedAccount.id,
+        to: ['client@example.com'],
+        subject: 'Тема письма',
+        attachments: [attachment],
+      });
+
+      expect(result.attachments).toEqual([savedAttachment]);
+    });
+
+    it('должен отклонять слишком большие вложения до обращения к Postbox', async () => {
+      mockAccountsRepository.findOne.mockResolvedValue({
+        id: 2,
+        address: 'l.pavlova@webcetera.test',
+        allowedUsers: [{ id: 10 }],
+      });
+
+      await expect(
+        service.sendMail({ id: 10, role: 'employee' } as never, {
+          account_id: 2,
+          to: ['client@example.com'],
+          subject: 'Тема письма',
+          attachments: [
+            {
+              s3_key: 'mailbox/outbound/archive.7z',
+              filename: 'Документы.7z',
+              content_type: 'application/x-7z-compressed',
+              size: 7_000_001,
+            },
+          ],
+        }),
+      ).rejects.toThrow(PayloadTooLargeException);
+      expect(mockPostboxService.send).not.toHaveBeenCalled();
+    });
+
+    it('должен возвращать понятную ошибку, если Postbox отклонил размер готового письма', async () => {
+      mockAccountsRepository.findOne.mockResolvedValue({
+        id: 2,
+        address: 'l.pavlova@webcetera.test',
+        allowedUsers: [{ id: 10 }],
+      });
+      mockPostboxService.send.mockRejectedValue(new Error('MessageRejected: message is too big (message size quota exceeded)'));
+
+      await expect(
+        service.sendMail({ id: 10, role: 'employee' } as never, {
+          account_id: 2,
+          to: ['client@example.com'],
+          subject: 'Тема письма',
+        }),
+      ).rejects.toThrow('Вложения занимают больше 7 МБ');
+    });
+
+    it('должен отклонять слишком большие вложения при отправке черновика', async () => {
+      mockMessagesRepository.findOne.mockResolvedValue({
+        id: 9,
+        status: MAIL_MESSAGE_STATUSES.draft,
+        subject: 'Тема письма',
+        text_body: 'Текст',
+        html_body: null,
+        to_addresses: [{ address: 'client@example.com' }],
+        cc_addresses: [],
+        attachments: [{ size: 7_000_001 }],
+        thread: {
+          id: 3,
+          account: { id: 1, address: 'mail@webcetera.test', allowedUsers: [{ id: 10 }] },
+        },
+      });
+
+      await expect(service.sendDraft({ id: 10, role: 'employee' } as never, 9)).rejects.toThrow('Вложения занимают больше 7 МБ');
+      expect(mockPostboxService.send).not.toHaveBeenCalled();
     });
 
     it('должен обновлять заголовок треда при сохранении черновика', async () => {

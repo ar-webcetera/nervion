@@ -7,6 +7,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -33,6 +34,8 @@ import { PostboxService } from './postbox.service';
 
 const DEFAULT_THREADS_LIMIT = 30;
 const MAX_THREADS_LIMIT = 100;
+const MAX_OUTBOUND_ATTACHMENTS_BYTES = 7_000_000;
+const OUTBOUND_ATTACHMENTS_TOO_LARGE_MESSAGE = 'Вложения занимают больше 7 МБ. Уменьшите файлы или отправьте ссылку на них.';
 
 @Injectable()
 export class MailboxService {
@@ -435,12 +438,12 @@ export class MailboxService {
     return result;
   }
 
-  private async syncOutboundAttachments(messageId: number, items?: MailAttachmentInputDto[]): Promise<void> {
+  private async syncOutboundAttachments(messageId: number, items?: MailAttachmentInputDto[]): Promise<MailAttachments[]> {
     await this.attachmentsRepository.delete({ message_id: messageId });
     if (!items?.length) {
-      return;
+      return [];
     }
-    await this.attachmentsRepository.save(
+    return this.attachmentsRepository.save(
       items.map((item) =>
         this.attachmentsRepository.create({
           message_id: messageId,
@@ -455,8 +458,29 @@ export class MailboxService {
     );
   }
 
+  private assertOutboundAttachmentsSize(items?: Pick<MailAttachmentInputDto, 'size'>[]): void {
+    const attachmentsSize = (items ?? []).reduce((total, attachment) => total + attachment.size, 0);
+
+    if (attachmentsSize > MAX_OUTBOUND_ATTACHMENTS_BYTES) {
+      throw new PayloadTooLargeException(OUTBOUND_ATTACHMENTS_TOO_LARGE_MESSAGE);
+    }
+  }
+
+  private rethrowPostboxError(error: Error, fallbackMessage: string): never {
+    if (error.name === 'ServiceUnavailableException') {
+      throw error;
+    }
+
+    if (error.message.includes('message size quota exceeded')) {
+      throw new PayloadTooLargeException(OUTBOUND_ATTACHMENTS_TOO_LARGE_MESSAGE);
+    }
+
+    throw new InternalServerErrorException(fallbackMessage);
+  }
+
   async sendMail(user: AuthenticatedUser, dto: SendMailDto): Promise<MailMessages> {
     const account = await this.getAccountForUser(user, dto.account_id);
+    this.assertOutboundAttachmentsSize(dto.attachments);
 
     let thread: MailThreads | null = null;
     let inReplyTo: string | null = null;
@@ -497,8 +521,8 @@ export class MailboxService {
     } catch (error) {
       this.logger.error(`Ошибка отправки письма с ${account.address}: ${error}`);
 
-      if (error instanceof Error && error.name === 'ServiceUnavailableException') {
-        throw error;
+      if (error instanceof Error) {
+        this.rethrowPostboxError(error, 'Не удалось отправить письмо');
       }
 
       throw new InternalServerErrorException('Не удалось отправить письмо');
@@ -540,9 +564,9 @@ export class MailboxService {
       }),
     );
 
-    await this.syncOutboundAttachments(message.id, dto.attachments);
+    const attachments = await this.syncOutboundAttachments(message.id, dto.attachments);
 
-    return message;
+    return { ...message, attachments };
   }
 
   async findThreads(user: AuthenticatedUser, dto: FindThreadsDto) {
@@ -803,6 +827,7 @@ export class MailboxService {
 
     const account = draft.thread.account;
     const cc = draft.cc_addresses.map((item) => item.address);
+    this.assertOutboundAttachmentsSize(draft.attachments);
     const draftAttachments = (draft.attachments ?? []).map((item) => ({
       s3_key: item.s3_key,
       filename: item.filename,
@@ -822,8 +847,8 @@ export class MailboxService {
       });
     } catch (error) {
       this.logger.error(`Ошибка отправки черновика ${draftId}: ${error}`);
-      if (error instanceof Error && error.name === 'ServiceUnavailableException') {
-        throw error;
+      if (error instanceof Error) {
+        this.rethrowPostboxError(error, 'Не удалось отправить черновик');
       }
       throw new InternalServerErrorException('Не удалось отправить черновик');
     }
