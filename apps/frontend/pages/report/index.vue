@@ -800,12 +800,15 @@ definePageMeta({
     span {
       @include flex(rn a-center);
       gap: 6px;
+      line-height: 1.25;
     }
   }
 
   &__key {
+    display: block;
+    flex-shrink: 0;
     width: 16px;
-    height: 3px;
+    height: 4px;
     border-radius: 2px;
     &_actual {
       background: var(--green);
