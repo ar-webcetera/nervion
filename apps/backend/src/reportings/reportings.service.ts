@@ -102,9 +102,7 @@ export class ReportingsService {
   }
 
   async getBillingItems(pending: boolean, limit = 20, offset = 0): Promise<BillingQueuePage> {
-    const statuses = pending
-      ? [BillingReviewStatus.PENDING]
-      : [BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED];
+    const statuses = pending ? [BillingReviewStatus.PENDING] : [BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED];
     const fetchLimit = offset + limit + 1;
     const timelogQb = this.timelogRepository
       .createQueryBuilder('timelog')
