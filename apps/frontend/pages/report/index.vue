@@ -21,7 +21,6 @@ const selectedProject = ref<number | null>(null);
 const selectedExecutor = ref<number | null>(null);
 const reportRows = ref<TimelogRow[]>([]);
 const tableVisible = ref(false);
-const financialPending = ref(true);
 const activeBillingTab = ref<'pending' | 'reviewed'>('pending');
 const targetInput = ref(0);
 
@@ -142,17 +141,11 @@ const billingItems = computed(() =>
 );
 const formatHours = (seconds: number | null) => (seconds == null ? '' : `${(seconds / 3600).toFixed(1)} ч`);
 
-const loadFinancialData = async () => {
-  try {
-    financialPending.value = true;
-    await reportStore.fetchFinancialData();
-    targetInput.value = reportStore.dashboard?.target ?? 0;
-  } catch (e) {
-    $toast.error(getErrorMessage(e));
-  } finally {
-    financialPending.value = false;
-  }
-};
+await useAsyncData('report-financial-data', async () => {
+  await reportStore.fetchFinancialData();
+  return true;
+});
+targetInput.value = reportStore.dashboard?.target ?? 0;
 
 const saveTarget = async () => {
   try {
@@ -171,8 +164,6 @@ const reviewBillingItem = async (item: BillingQueueItem, status: BillingReviewSt
     $toast.error(getErrorMessage(e));
   }
 };
-
-onMounted(loadFinancialData);
 
 definePageMeta({
   name: 'report',
@@ -327,8 +318,6 @@ definePageMeta({
           <p v-else class="finance__empty">Здесь пока нет записей</p>
         </div>
       </section>
-      <div v-if="financialPending" class="finance__loading">Загружаем финансовую сводку...</div>
-
       <div class="report__detail-title">
         <h2>Детальный отчёт и выгрузка</h2>
         <p>Существующий отчёт по сотрудникам и таймлогам</p>

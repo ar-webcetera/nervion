@@ -33,16 +33,23 @@ export const useReportStore = defineStore('report', () => {
   };
 
   const fetchFinancialData = async () => {
+    const headers = useRequestHeaders(['cookie']);
     const [dashboardResponse, pendingResponse, reviewedResponse] = await Promise.all([
-      $fetch<RevenueDashboard>('/api/reportings/revenue/dashboard', { baseURL: config.public.API_URL, credentials: 'include' }),
-      $fetch<BillingQueueItem[]>('/api/reportings/billing/items', {
-        baseURL: config.public.API_URL,
+      $fetch<RevenueDashboard>('/api/reportings/revenue/dashboard', {
+        baseURL: useApiBaseUrl(),
         credentials: 'include',
+        headers,
+      }),
+      $fetch<BillingQueueItem[]>('/api/reportings/billing/items', {
+        baseURL: useApiBaseUrl(),
+        credentials: 'include',
+        headers,
         params: { pending: true },
       }),
       $fetch<BillingQueueItem[]>('/api/reportings/billing/items', {
-        baseURL: config.public.API_URL,
+        baseURL: useApiBaseUrl(),
         credentials: 'include',
+        headers,
         params: { pending: false },
       }),
     ]);
