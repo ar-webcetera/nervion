@@ -217,7 +217,6 @@ export class ReportingsService {
         .leftJoinAndSelect('task.project', 'project')
         .where('task.billing_type = :type', { type: TaskBillingType.FIXED })
         .andWhere('task.status != :closed', { closed: TASK_STATUSES.closed })
-        .andWhere('task.planned_date BETWEEN :from AND :to', { from: currentStart, to: currentEnd })
         .getMany(),
       this.monthlyTargetRepository.findOneBy({ year: now.getFullYear(), month: now.getMonth() + 1 }),
     ]);

@@ -24,6 +24,8 @@ const tableVisible = ref(false);
 const activeBillingTab = ref<'pending' | 'reviewed'>('pending');
 const targetInput = ref(0);
 const billingMorePending = ref(false);
+const billingSummaryModal = ref<{ open: () => void; close: () => void } | null>(null);
+const billingSummaryItem = ref<BillingQueueItem | null>(null);
 
 if (userStore.user?.role !== ROLES.admin) {
   throw createError({ status: 403 });
@@ -181,6 +183,15 @@ const billingHasMore = computed(() =>
   activeBillingTab.value === 'pending' ? reportStore.pendingHasMore : reportStore.reviewedHasMore,
 );
 
+const hasBillingSummary = (item: BillingQueueItem) =>
+  item.sourceType === RevenueSourceType.TIMELOG && Boolean(item.summary?.trim());
+
+const openBillingSummary = async (item: BillingQueueItem) => {
+  billingSummaryItem.value = item;
+  await nextTick();
+  billingSummaryModal.value?.open();
+};
+
 definePageMeta({
   name: 'report',
   middleware: ['auth', 'role'],
@@ -301,6 +312,14 @@ definePageMeta({
                 <small
                   >{{ item.project }}<template v-if="item.executor"> · {{ item.executor }}</template></small
                 >
+                <button
+                  v-if="hasBillingSummary(item)"
+                  type="button"
+                  class="finance__billing-summary-btn"
+                  @click="openBillingSummary(item)"
+                >
+                  Описание
+                </button>
               </div>
               <div v-if="item.sourceType === RevenueSourceType.TIMELOG" class="finance__billing-field">
                 <label>Время</label><span>{{ formatHours(item.seconds) }}</span>
@@ -453,6 +472,19 @@ definePageMeta({
         </div>
       </div>
     </template>
+    <teleport to="#teleports">
+      <BaseModal ref="billingSummaryModal" @close="billingSummaryItem = null">
+        <div v-if="billingSummaryItem" class="finance-summary-modal">
+          <h2 class="finance-summary-modal__title">Описание таймтрека</h2>
+          <p class="finance-summary-modal__meta">
+            {{ billingSummaryItem.task }}
+            <template v-if="billingSummaryItem.project"> · {{ billingSummaryItem.project }}</template>
+            <template v-if="billingSummaryItem.executor"> · {{ billingSummaryItem.executor }}</template>
+          </p>
+          <p class="finance-summary-modal__text">{{ billingSummaryItem.summary }}</p>
+        </div>
+      </BaseModal>
+    </teleport>
   </div>
 </template>
 
@@ -982,6 +1014,20 @@ definePageMeta({
     white-space: nowrap;
     @extend %p12-regular;
   }
+  &__billing-summary-btn {
+    width: fit-content;
+    margin-top: 2px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--primary-75);
+    cursor: pointer;
+    @extend %p12-medium;
+
+    &:hover {
+      color: var(--primary);
+    }
+  }
   &__billing-field {
     @include flex(cn);
     gap: 4px;
@@ -1096,6 +1142,32 @@ definePageMeta({
       grid-template-columns: 44px minmax(0, 1fr) 88px;
       gap: 8px;
     }
+  }
+}
+
+.finance-summary-modal {
+  padding: 8px 24px 24px;
+  @include flex(cn);
+  gap: 12px;
+
+  &__title {
+    margin: 0;
+    @extend %h1;
+  }
+
+  &__meta {
+    margin: 0;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+
+  &__text {
+    margin: 0;
+    max-height: 50vh;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    @extend %text-s-regular;
   }
 }
 </style>
