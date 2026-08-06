@@ -32,8 +32,10 @@ export class ReportingsController {
   @Get('billing/items')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(ROLES.admin)
-  billingItems(@Query('pending') pending?: string) {
-    return this.reportingsService.getBillingItems(pending !== 'false');
+  billingItems(@Query('pending') pending?: string, @Query('limit') limit?: string, @Query('offset') offset?: string) {
+    const parsedLimit = Math.min(100, Math.max(1, Number(limit) || 20));
+    const parsedOffset = Math.max(0, Number(offset) || 0);
+    return this.reportingsService.getBillingItems(pending !== 'false', parsedLimit, parsedOffset);
   }
 
   @Patch('billing/timelogs/:id')

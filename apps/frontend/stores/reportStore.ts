@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia';
 import type { Employee } from '~/types/user';
-import { RevenueSourceType, type BillingQueueItem, type BillingReviewStatus, type RevenueDashboard } from '@tracker/contracts';
+import {
+  RevenueSourceType,
+  type BillingQueueItem,
+  type BillingQueuePage,
+  type BillingReviewStatus,
+  type RevenueDashboard,
+} from '@tracker/contracts';
 
 export interface TimelogRow {
   project: string;
@@ -23,6 +29,10 @@ export const useReportStore = defineStore('report', () => {
   const dashboard = ref<RevenueDashboard | null>(null);
   const pendingItems = ref<BillingQueueItem[]>([]);
   const reviewedItems = ref<BillingQueueItem[]>([]);
+  const pendingTotal = ref(0);
+  const reviewedTotal = ref(0);
+  const pendingHasMore = ref(false);
+  const reviewedHasMore = ref(false);
 
   const fetchPendingCount = async () => {
     const response = await $fetch<{ count: number }>('/api/reportings/billing/count', {
@@ -40,23 +50,47 @@ export const useReportStore = defineStore('report', () => {
         credentials: 'include',
         headers,
       }),
-      $fetch<BillingQueueItem[]>('/api/reportings/billing/items', {
+      $fetch<BillingQueuePage>('/api/reportings/billing/items', {
         baseURL: useApiBaseUrl(),
         credentials: 'include',
         headers,
-        params: { pending: true },
+        params: { pending: true, limit: 20, offset: 0 },
       }),
-      $fetch<BillingQueueItem[]>('/api/reportings/billing/items', {
+      $fetch<BillingQueuePage>('/api/reportings/billing/items', {
         baseURL: useApiBaseUrl(),
         credentials: 'include',
         headers,
-        params: { pending: false },
+        params: { pending: false, limit: 20, offset: 0 },
       }),
     ]);
     dashboard.value = dashboardResponse;
-    pendingItems.value = pendingResponse;
-    reviewedItems.value = reviewedResponse;
-    pendingCount.value = pendingResponse.length;
+    pendingItems.value = pendingResponse.items;
+    reviewedItems.value = reviewedResponse.items;
+    pendingTotal.value = pendingResponse.total;
+    reviewedTotal.value = reviewedResponse.total;
+    pendingHasMore.value = pendingResponse.hasMore;
+    reviewedHasMore.value = reviewedResponse.hasMore;
+    pendingCount.value = pendingResponse.total;
+  };
+
+  const loadMoreBillingItems = async (pending: boolean) => {
+    const target = pending ? pendingItems : reviewedItems;
+    const headers = useRequestHeaders(['cookie']);
+    const response = await $fetch<BillingQueuePage>('/api/reportings/billing/items', {
+      baseURL: useApiBaseUrl(),
+      credentials: 'include',
+      headers,
+      params: { pending, limit: 20, offset: target.value.length },
+    });
+    target.value.push(...response.items);
+    if (pending) {
+      pendingTotal.value = response.total;
+      pendingHasMore.value = response.hasMore;
+      pendingCount.value = response.total;
+    } else {
+      reviewedTotal.value = response.total;
+      reviewedHasMore.value = response.hasMore;
+    }
   };
 
   const reviewItem = async (item: BillingQueueItem, status: BillingReviewStatus) => {
@@ -134,8 +168,13 @@ export const useReportStore = defineStore('report', () => {
     dashboard,
     pendingItems,
     reviewedItems,
+    pendingTotal,
+    reviewedTotal,
+    pendingHasMore,
+    reviewedHasMore,
     fetchPendingCount,
     fetchFinancialData,
+    loadMoreBillingItems,
     reviewItem,
     saveTarget,
   };

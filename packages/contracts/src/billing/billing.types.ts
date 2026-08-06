@@ -36,3 +36,9 @@ export interface BillingQueueItem {
   occurredAt: string;
   recognizedAt: string;
 }
+
+export interface BillingQueuePage {
+  items: BillingQueueItem[];
+  total: number;
+  hasMore: boolean;
+}

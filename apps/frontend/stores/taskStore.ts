@@ -380,6 +380,8 @@ export const useTaskStore = defineStore('task', () => {
     }
     if (updateTaskOptions.story_points !== undefined) body.story_points = updateTaskOptions.story_points;
     if (updateTaskOptions.recurrence_days !== undefined) body.recurrence_days = updateTaskOptions.recurrence_days;
+    if (updateTaskOptions.billing_type !== undefined) body.billing_type = updateTaskOptions.billing_type;
+    if (updateTaskOptions.fixed_price !== undefined) body.fixed_price = updateTaskOptions.fixed_price;
     await $fetch(`/api/tasks/${id}`, {
       method: 'PATCH',
       credentials: 'include',

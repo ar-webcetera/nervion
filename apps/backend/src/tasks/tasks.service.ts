@@ -30,6 +30,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ConfigService } from '@nestjs/config';
 import { FixedRevenue } from '../reportings/entities/fixed-revenue.entity';
+import { Timelogs } from '../timelogs/entities/timelog.entity';
 
 interface TaskAuditPayload extends JsonObject {
   title: string | null;
@@ -65,6 +66,8 @@ export class TasksService {
     private readonly completionRepository: Repository<TaskCompletion>,
     @InjectRepository(FixedRevenue)
     private readonly fixedRevenueRepository: Repository<FixedRevenue>,
+    @InjectRepository(Timelogs)
+    private readonly timelogRepository: Repository<Timelogs>,
     @InjectRepository(Projects)
     private readonly projectsRepository: Repository<Projects>,
     @InjectRepository(ProjectMembers)
@@ -787,6 +790,16 @@ export class TasksService {
         id: Number(taskId),
         ...data,
       });
+      if (updateTaskDto.billing_type === TaskBillingType.HOURLY && existingTask.billing_type !== TaskBillingType.HOURLY) {
+        await this.timelogRepository.update(
+          {
+            task_id: Number(taskId),
+            status: TIMELOG_STATUSES.completed,
+            billing_status: IsNull(),
+          },
+          { billing_status: BillingReviewStatus.PENDING },
+        );
+      }
       const findTask = await this.tasksRepository.findOne({
         where: { id: Number(taskId) },
         relations: ['responsible', 'participants', 'project'],

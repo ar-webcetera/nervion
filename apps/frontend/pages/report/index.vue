@@ -23,6 +23,7 @@ const reportRows = ref<TimelogRow[]>([]);
 const tableVisible = ref(false);
 const activeBillingTab = ref<'pending' | 'reviewed'>('pending');
 const targetInput = ref(0);
+const billingMorePending = ref(false);
 
 if (userStore.user?.role !== ROLES.admin) {
   throw createError({ status: 403 });
@@ -165,6 +166,21 @@ const reviewBillingItem = async (item: BillingQueueItem, status: BillingReviewSt
   }
 };
 
+const loadMoreBillingItems = async () => {
+  try {
+    billingMorePending.value = true;
+    await reportStore.loadMoreBillingItems(activeBillingTab.value === 'pending');
+  } catch (e) {
+    $toast.error(getErrorMessage(e));
+  } finally {
+    billingMorePending.value = false;
+  }
+};
+
+const billingHasMore = computed(() =>
+  activeBillingTab.value === 'pending' ? reportStore.pendingHasMore : reportStore.reviewedHasMore,
+);
+
 definePageMeta({
   name: 'report',
   middleware: ['auth', 'role'],
@@ -270,7 +286,7 @@ definePageMeta({
             </div>
             <div class="finance__tabs">
               <button :class="{ finance__tab_active: activeBillingTab === 'pending' }" @click="activeBillingTab = 'pending'">
-                Требуют проверки <span>{{ reportStore.pendingItems.length }}</span>
+                Требуют проверки <span>{{ reportStore.pendingTotal }}</span>
               </button>
               <button :class="{ finance__tab_active: activeBillingTab === 'reviewed' }" @click="activeBillingTab = 'reviewed'">
                 Проверенные
@@ -314,6 +330,9 @@ definePageMeta({
                 {{ item.status === BillingReviewStatus.APPROVED ? 'Подтверждено' : 'Не учитывается' }}
               </span>
             </article>
+            <button v-if="billingHasMore" class="finance__billing-more" :disabled="billingMorePending" @click="loadMoreBillingItems">
+              {{ billingMorePending ? 'Загружаем...' : 'Показать ещё' }}
+            </button>
           </div>
           <p v-else class="finance__empty">Здесь пока нет записей</p>
         </div>
@@ -926,6 +945,19 @@ definePageMeta({
     align-items: center;
     padding: 12px 0;
     border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+  }
+  &__billing-more {
+    width: 100%;
+    min-height: 44px;
+    margin-top: 12px;
+    background: var(--light-text-backgroung-primary-10);
+    color: var(--light-text-backgroung-primary);
+    @extend %text-s-medium;
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
   }
 
   &__billing-source {

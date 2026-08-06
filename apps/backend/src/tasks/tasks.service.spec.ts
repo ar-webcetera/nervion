@@ -10,7 +10,7 @@ import { UserTaskFilter } from './entities/user-task-filter.entity';
 import { DataSource } from 'typeorm';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { DeepseekService } from '../deepseek/deepseek.service';
-import { TASK_STATUSES } from '../common/enums/statuses.enum';
+import { TASK_STATUSES, TIMELOG_STATUSES } from '../common/enums/statuses.enum';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { FindTasksByFilterDto } from './dto/find-tasks-by-filter.dto';
@@ -23,6 +23,8 @@ import { Notifications } from '../notifications/entities/notification.entity';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { ConfigService } from '@nestjs/config';
 import { FixedRevenue } from '../reportings/entities/fixed-revenue.entity';
+import { Timelogs } from '../timelogs/entities/timelog.entity';
+import { BillingReviewStatus, TaskBillingType } from '@tracker/contracts';
 
 type QueryParamValue = string | number | boolean | null | undefined | Date | string[] | number[] | Date[];
 type QueryParams = Record<string, QueryParamValue>;
@@ -87,6 +89,9 @@ describe('TasksService', () => {
     save: jest.fn(),
     update: jest.fn(),
   };
+  const mockTimelogRepository = {
+    update: jest.fn(),
+  };
   const mockDeepseekService = {};
   const mockDataSource = {
     transaction: jest.fn(),
@@ -128,6 +133,10 @@ describe('TasksService', () => {
         {
           provide: getRepositoryToken(FixedRevenue),
           useValue: mockFixedRevenueRepository,
+        },
+        {
+          provide: getRepositoryToken(Timelogs),
+          useValue: mockTimelogRepository,
         },
         {
           provide: getRepositoryToken(Comments),
@@ -288,6 +297,26 @@ describe('TasksService', () => {
   });
 
   describe('updateTask', () => {
+    it('должен сохранить почасовую модель и отправить завершённые таймтреки без решения на проверку', async () => {
+      const updateTaskDto = Object.assign(new UpdateTaskDto(), {
+        billing_type: TaskBillingType.HOURLY,
+        fixed_price: null,
+      });
+      mockTasksRepository.findOne
+        .mockResolvedValueOnce({ id: 1, billing_type: null, recurrence_days: null } as Partial<Tasks>)
+        .mockResolvedValueOnce({ id: 1, billing_type: TaskBillingType.HOURLY, recurrence_days: null } as Partial<Tasks>);
+
+      await service.updateTask('1', updateTaskDto, { id: 1, role: ROLES.admin } as AuthenticatedUser);
+
+      expect(mockTasksRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 1, billing_type: TaskBillingType.HOURLY, fixed_price: null }),
+      );
+      expect(mockTimelogRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({ task_id: 1, status: TIMELOG_STATUSES.completed }),
+        { billing_status: BillingReviewStatus.PENDING },
+      );
+    });
+
     it('должен устанавливать closed_date при обновлении статуса на "Закрыто"', async () => {
       const updateTaskDto = Object.assign(new UpdateTaskDto(), {
         status: TASK_STATUSES.closed,

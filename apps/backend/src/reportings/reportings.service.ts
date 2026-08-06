@@ -10,7 +10,14 @@ import { Tasks } from 'src/tasks/entities/task.entity';
 import * as fs from 'fs';
 import { extractTextFromDoc } from '../common/utils/extractTextFromDoc';
 import type { Node } from '../common/utils/extractTextFromDoc';
-import { BillingQueueItem, BillingReviewStatus, RevenueDashboard, RevenueSourceType, TaskBillingType } from '@tracker/contracts';
+import {
+  BillingQueueItem,
+  BillingQueuePage,
+  BillingReviewStatus,
+  RevenueDashboard,
+  RevenueSourceType,
+  TaskBillingType,
+} from '@tracker/contracts';
 import { FixedRevenue } from './entities/fixed-revenue.entity';
 import { MonthlyRevenueTarget } from './entities/monthly-revenue-target.entity';
 import { ReviewBillingDto } from './dto/review-billing.dto';
@@ -94,7 +101,11 @@ export class ReportingsService {
     return { count: timelogs + fixed };
   }
 
-  async getBillingItems(pending: boolean): Promise<BillingQueueItem[]> {
+  async getBillingItems(pending: boolean, limit = 20, offset = 0): Promise<BillingQueuePage> {
+    const statuses = pending
+      ? [BillingReviewStatus.PENDING]
+      : [BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED];
+    const fetchLimit = offset + limit + 1;
     const timelogQb = this.timelogRepository
       .createQueryBuilder('timelog')
       .leftJoinAndSelect('timelog.task', 'task')
@@ -104,7 +115,8 @@ export class ReportingsService {
         pending: BillingReviewStatus.PENDING,
         reviewed: [BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED],
       })
-      .orderBy('timelog.updated_at', 'DESC');
+      .orderBy('timelog.updated_at', 'DESC')
+      .take(fetchLimit);
     const fixedQb = this.fixedRevenueRepository
       .createQueryBuilder('revenue')
       .leftJoinAndSelect('revenue.task', 'task')
@@ -113,8 +125,14 @@ export class ReportingsService {
         pending: BillingReviewStatus.PENDING,
         reviewed: [BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED],
       })
-      .orderBy('revenue.updated_at', 'DESC');
-    const [timelogs, fixed] = await Promise.all([timelogQb.getMany(), fixedQb.getMany()]);
+      .orderBy('revenue.closed_at', 'DESC')
+      .take(fetchLimit);
+    const [timelogs, fixed, timelogTotal, fixedTotal] = await Promise.all([
+      timelogQb.getMany(),
+      fixedQb.getMany(),
+      this.timelogRepository.count({ where: { billing_status: In(statuses) } }),
+      this.fixedRevenueRepository.count({ where: { status: In(statuses) } }),
+    ]);
     const timelogItems: BillingQueueItem[] = timelogs.map((item) => {
       const rate = item.billing_rate == null ? Number(item.task?.project?.hourlyRate ?? 0) : Number(item.billing_rate);
       return {
@@ -146,7 +164,11 @@ export class ReportingsService {
       occurredAt: item.closed_at.toISOString(),
       recognizedAt: item.recognized_at,
     }));
-    return [...timelogItems, ...fixedItems].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+    const total = timelogTotal + fixedTotal;
+    const items = [...timelogItems, ...fixedItems]
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+      .slice(offset, offset + limit);
+    return { items, total, hasMore: offset + items.length < total };
   }
 
   async reviewTimelog(id: number, dto: ReviewBillingDto, reviewerId: number): Promise<void> {
