@@ -18,14 +18,11 @@ const userStore = useUserStore();
 const notificationStore = useNotificationStore();
 const taskStore = useTaskStore();
 const chatStore = useChatStore();
+const reportStore = useReportStore();
 
 const chatId = computed(() => route.query?.chatId);
-const mailDetailOpen = computed(
-  () => route.name === 'mail' && Boolean(route.query?.thread || route.query?.compose),
-);
-const hideChrome = computed(
-  () => Boolean(chatId.value) || mailDetailOpen.value || rootStore.isDetailFullscreen,
-);
+const mailDetailOpen = computed(() => route.name === 'mail' && Boolean(route.query?.thread || route.query?.compose));
+const hideChrome = computed(() => Boolean(chatId.value) || mailDetailOpen.value || rootStore.isDetailFullscreen);
 
 const isMenuVisible = (key: string) => !(userStore.user?.hidden_menu_items ?? []).includes(key);
 
@@ -70,6 +67,7 @@ onMounted(() => {
   window.addEventListener('pageshow', handleMailPageShow);
   void nextTick(updateNavScroll);
   window.addEventListener('resize', updateNavScroll);
+  if (userStore.user?.role === ROLES.admin) void reportStore.fetchPendingCount().catch(() => {});
 });
 
 onUnmounted(() => {
@@ -115,194 +113,259 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
       <BaseTopTracker />
     </div>
     <div class="base-menu-left__nav">
-      <div
-        v-show="canScrollUp"
-        class="base-menu-left__nav-fade base-menu-left__nav-fade_top"
-        aria-hidden="true"
-      ></div>
+      <div v-show="canScrollUp" class="base-menu-left__nav-fade base-menu-left__nav-fade_top" aria-hidden="true"></div>
       <div
         ref="navScrollRef"
         class="base-menu-left__nav-scroll"
         :class="{ 'base-menu-left__nav-scroll_scrollable': isNavOverflowing }"
         @scroll="updateNavScroll"
       >
-      <div class="base-menu-left__items">
-        <NuxtLink
-          :to="{ name: PAGE_NAMES.home }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-          :data-tooltip="'Задачи'"
-        >
-          <IconsIconAllTasks />
-        </NuxtLink>
-        <NuxtLink
-          v-if="isMenuVisible('projects')"
-          :data-tooltip="'Проекты'"
-          :to="{ name: PAGE_NAMES.projects }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <IconsIconProjects />
-        </NuxtLink>
+        <div class="base-menu-left__items">
+          <NuxtLink
+            :to="{ name: PAGE_NAMES.home }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+            :data-tooltip="'Задачи'"
+          >
+            <IconsIconAllTasks />
+          </NuxtLink>
+          <NuxtLink
+            v-if="isMenuVisible('projects')"
+            :data-tooltip="'Проекты'"
+            :to="{ name: PAGE_NAMES.projects }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <IconsIconProjects />
+          </NuxtLink>
 
-        <NuxtLink
-          v-if="isMenuVisible('wiki')"
-          :data-tooltip="'Вики'"
-          :to="{ name: PAGE_NAMES.wiki }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M4.5 0.5H3.7002C2.58009 0.5 2.01962 0.5 1.5918 0.717987C1.21547 0.909734 0.909734 1.21547 0.717987 1.5918C0.5 2.01962 0.5 2.58009 0.5 3.7002V13.3002C0.5 14.4203 0.5 14.9801 0.717987 15.4079C0.909734 15.7842 1.21547 16.0905 1.5918 16.2822C2.0192 16.5 2.57899 16.5 3.69691 16.5H4.5M4.5 0.5H13.3002C14.4203 0.5 14.9796 0.5 15.4074 0.717987C15.7837 0.909734 16.0905 1.21547 16.2822 1.5918C16.5 2.0192 16.5 2.57899 16.5 3.69691V13.3036C16.5 14.4215 16.5 14.9805 16.2822 15.4079C16.0905 15.7842 15.7837 16.0905 15.4074 16.2822C14.98 16.5 14.421 16.5 13.3031 16.5H4.5M4.5 0.5V16.5M8.5 7.5H12.5M8.5 4.5H12.5"
-              stroke="#FEFEFE"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </NuxtLink>
-        <NuxtLink
-          v-if="isMenuVisible('chat')"
-          :data-tooltip="'Чаты'"
-          :to="{ name: PAGE_NAMES.CHAT }"
-          class="base-menu-left__item chat-icon-wrapper"
-          active-class="base-menu-left__item_active"
-        >
-          <div v-if="totalUnreadCount > 0" class="chat-unread-badge">{{ totalUnreadCount }}</div>
-          <IconsIconChat />
-        </NuxtLink>
-        <NuxtLink
-          v-if="(userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee) && isMenuVisible('mail')"
-          :data-tooltip="'Почта'"
-          :to="{ name: PAGE_NAMES.MAIL }"
-          class="base-menu-left__item chat-icon-wrapper"
-          active-class="base-menu-left__item_active"
-        >
-          <div v-if="mailInboxUnreadCount > 0" class="chat-unread-badge">{{ mailInboxUnreadCount }}</div>
-          <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0.5" y="2.5" width="16" height="12" rx="1.5" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M1.5 4L8.5 9L15.5 4" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </NuxtLink>
-        <NuxtLink
-          v-if="(userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee) && isMenuVisible('planning')"
-          :data-tooltip="'Планирование'"
-          :to="{ name: PAGE_NAMES.planning }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <IconsIconCalendarMenu />
-        </NuxtLink>
-        <NuxtLink
-          v-if="userStore.user?.role !== ROLES.guest && isMenuVisible('schedule')"
-          :data-tooltip="'График работы'"
-          :to="{ name: PAGE_NAMES.SCHEDULE }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0.5" y="0.5" width="7" height="7" rx="1.5" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
-            <rect x="9.5" y="0.5" width="7" height="7" rx="1.5" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
-            <rect x="0.5" y="9.5" width="7" height="7" rx="1.5" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
-            <rect x="9.5" y="9.5" width="7" height="7" rx="1.5" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </NuxtLink>
+          <NuxtLink
+            v-if="isMenuVisible('wiki')"
+            :data-tooltip="'Вики'"
+            :to="{ name: PAGE_NAMES.wiki }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M4.5 0.5H3.7002C2.58009 0.5 2.01962 0.5 1.5918 0.717987C1.21547 0.909734 0.909734 1.21547 0.717987 1.5918C0.5 2.01962 0.5 2.58009 0.5 3.7002V13.3002C0.5 14.4203 0.5 14.9801 0.717987 15.4079C0.909734 15.7842 1.21547 16.0905 1.5918 16.2822C2.0192 16.5 2.57899 16.5 3.69691 16.5H4.5M4.5 0.5H13.3002C14.4203 0.5 14.9796 0.5 15.4074 0.717987C15.7837 0.909734 16.0905 1.21547 16.2822 1.5918C16.5 2.0192 16.5 2.57899 16.5 3.69691V13.3036C16.5 14.4215 16.5 14.9805 16.2822 15.4079C16.0905 15.7842 15.7837 16.0905 15.4074 16.2822C14.98 16.5 14.421 16.5 13.3031 16.5H4.5M4.5 0.5V16.5M8.5 7.5H12.5M8.5 4.5H12.5"
+                stroke="#FEFEFE"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </NuxtLink>
+          <NuxtLink
+            v-if="isMenuVisible('chat')"
+            :data-tooltip="'Чаты'"
+            :to="{ name: PAGE_NAMES.CHAT }"
+            class="base-menu-left__item chat-icon-wrapper"
+            active-class="base-menu-left__item_active"
+          >
+            <div v-if="totalUnreadCount > 0" class="chat-unread-badge">{{ totalUnreadCount }}</div>
+            <IconsIconChat />
+          </NuxtLink>
+          <NuxtLink
+            v-if="(userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee) && isMenuVisible('mail')"
+            :data-tooltip="'Почта'"
+            :to="{ name: PAGE_NAMES.MAIL }"
+            class="base-menu-left__item chat-icon-wrapper"
+            active-class="base-menu-left__item_active"
+          >
+            <div v-if="mailInboxUnreadCount > 0" class="chat-unread-badge">{{ mailInboxUnreadCount }}</div>
+            <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect
+                x="0.5"
+                y="2.5"
+                width="16"
+                height="12"
+                rx="1.5"
+                stroke="#FEFEFE"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path d="M1.5 4L8.5 9L15.5 4" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </NuxtLink>
+          <NuxtLink
+            v-if="(userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee) && isMenuVisible('planning')"
+            :data-tooltip="'Планирование'"
+            :to="{ name: PAGE_NAMES.planning }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <IconsIconCalendarMenu />
+          </NuxtLink>
+          <NuxtLink
+            v-if="userStore.user?.role !== ROLES.guest && isMenuVisible('schedule')"
+            :data-tooltip="'График работы'"
+            :to="{ name: PAGE_NAMES.SCHEDULE }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect
+                x="0.5"
+                y="0.5"
+                width="7"
+                height="7"
+                rx="1.5"
+                stroke="#FEFEFE"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <rect
+                x="9.5"
+                y="0.5"
+                width="7"
+                height="7"
+                rx="1.5"
+                stroke="#FEFEFE"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <rect
+                x="0.5"
+                y="9.5"
+                width="7"
+                height="7"
+                rx="1.5"
+                stroke="#FEFEFE"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <rect
+                x="9.5"
+                y="9.5"
+                width="7"
+                height="7"
+                rx="1.5"
+                stroke="#FEFEFE"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </NuxtLink>
+        </div>
+        <div class="base-menu-left__items">
+          <NuxtLink
+            v-if="userStore.user?.role === ROLES.admin && isMenuVisible('report')"
+            :data-tooltip="'Отчеты'"
+            :to="{ name: PAGE_NAMES.report }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <div v-if="reportStore.pendingCount > 0" class="chat-unread-badge">{{ reportStore.pendingCount }}</div>
+            <IconsIconReports />
+          </NuxtLink>
+          <NuxtLink
+            v-if="userStore.user?.role === ROLES.admin && isMenuVisible('users-management')"
+            :data-tooltip="'Управление пользователями'"
+            :to="{ name: PAGE_NAMES.USERS_MANAGEMENT }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <IconsIconUsers />
+          </NuxtLink>
+          <NuxtLink
+            v-if="userStore.user?.role === ROLES.admin && isMenuVisible('changelogs')"
+            :data-tooltip="'Changelog'"
+            :to="{ name: PAGE_NAMES.CHANGELOGS }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <IconsIconChangelog />
+          </NuxtLink>
+          <NuxtLink
+            v-if="userStore.user?.role === ROLES.admin && isMenuVisible('audit-logs')"
+            :data-tooltip="'Журнал действий'"
+            :to="{ name: PAGE_NAMES.AUDIT_LOGS }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <svg width="24" height="24" viewBox="0 0 16 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect
+                x="0.5"
+                y="0.5"
+                width="3"
+                height="3"
+                rx="0.75"
+                stroke="#FEFEFE"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path d="M6 2H15.5" stroke="#FEFEFE" stroke-linecap="round" />
+              <rect
+                x="0.5"
+                y="6"
+                width="3"
+                height="3"
+                rx="0.75"
+                stroke="#FEFEFE"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path d="M6 7.5H15.5" stroke="#FEFEFE" stroke-linecap="round" />
+              <rect
+                x="0.5"
+                y="11.5"
+                width="3"
+                height="3"
+                rx="0.75"
+                stroke="#FEFEFE"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path d="M6 13H12.5" stroke="#FEFEFE" stroke-linecap="round" />
+            </svg>
+          </NuxtLink>
+          <NuxtLink
+            v-if="userStore.user?.role === ROLES.admin && isMenuVisible('healthchecks')"
+            :data-tooltip="'Healthcheck-мониторы'"
+            :to="{ name: PAGE_NAMES.HEALTHCHECKS }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <svg width="24" height="24" viewBox="0 0 17 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M11.5 15.5H5.5M0.5 9.3002V3.7002C0.5 2.58009 0.5 2.01962 0.717987 1.5918C0.909734 1.21547 1.21547 0.909734 1.5918 0.717987C2.01962 0.5 2.58009 0.5 3.7002 0.5H13.3002C14.4203 0.5 14.9796 0.5 15.4074 0.717987C15.7837 0.909734 16.0905 1.21547 16.2822 1.5918C16.5 2.0192 16.5 2.57899 16.5 3.69691V9.30309C16.5 10.421 16.5 10.98 16.2822 11.4074C16.0905 11.7837 15.7837 12.0905 15.4074 12.2822C14.98 12.5 14.421 12.5 13.3031 12.5H3.69691C2.57899 12.5 2.0192 12.5 1.5918 12.2822C1.21547 12.0905 0.909734 11.7837 0.717987 11.4074C0.5 10.9796 0.5 10.4203 0.5 9.3002Z"
+                stroke="#FEFEFE"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </NuxtLink>
+          <NuxtLink
+            v-if="userStore.user?.role === ROLES.admin && isMenuVisible('mail-accounts')"
+            :data-tooltip="'Почтовые ящики'"
+            :to="{ name: PAGE_NAMES.MAIL_ACCOUNTS }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="0.75" y="3.25" width="14.5" height="9.5" rx="1.5" stroke="#FEFEFE" />
+              <path d="M1.5 4.5L8 8.5L14.5 4.5" stroke="#FEFEFE" stroke-linecap="round" />
+              <circle cx="12.6" cy="11" r="2.4" fill="var(--dark-text-background-primary)" stroke="#FEFEFE" />
+            </svg>
+          </NuxtLink>
+          <NuxtLink
+            v-if="userStore.user?.role === ROLES.admin && isMenuVisible('git')"
+            :data-tooltip="'Git'"
+            :to="{ name: PAGE_NAMES.GIT }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="4" cy="3" r="2" stroke="#FEFEFE" stroke-width="1.2" />
+              <circle cx="4" cy="13" r="2" stroke="#FEFEFE" stroke-width="1.2" />
+              <circle cx="12" cy="6" r="2" stroke="#FEFEFE" stroke-width="1.2" />
+              <path d="M4 5V11" stroke="#FEFEFE" stroke-width="1.2" stroke-linecap="round" />
+              <path d="M12 8C12 10 10 11 7 11" stroke="#FEFEFE" stroke-width="1.2" stroke-linecap="round" />
+            </svg>
+          </NuxtLink>
+        </div>
       </div>
-      <div class="base-menu-left__items">
-        <NuxtLink
-          v-if="userStore.user?.role === ROLES.admin && isMenuVisible('report')"
-          :data-tooltip="'Отчеты'"
-          :to="{ name: PAGE_NAMES.report }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <IconsIconReports />
-        </NuxtLink>
-        <NuxtLink
-          v-if="userStore.user?.role === ROLES.admin && isMenuVisible('users-management')"
-          :data-tooltip="'Управление пользователями'"
-          :to="{ name: PAGE_NAMES.USERS_MANAGEMENT }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <IconsIconUsers />
-        </NuxtLink>
-        <NuxtLink
-          v-if="userStore.user?.role === ROLES.admin && isMenuVisible('changelogs')"
-          :data-tooltip="'Changelog'"
-          :to="{ name: PAGE_NAMES.CHANGELOGS }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <IconsIconChangelog />
-        </NuxtLink>
-        <NuxtLink
-          v-if="userStore.user?.role === ROLES.admin && isMenuVisible('audit-logs')"
-          :data-tooltip="'Журнал действий'"
-          :to="{ name: PAGE_NAMES.AUDIT_LOGS }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <svg width="24" height="24" viewBox="0 0 16 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0.5" y="0.5" width="3" height="3" rx="0.75" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M6 2H15.5" stroke="#FEFEFE" stroke-linecap="round"/>
-            <rect x="0.5" y="6" width="3" height="3" rx="0.75" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M6 7.5H15.5" stroke="#FEFEFE" stroke-linecap="round"/>
-            <rect x="0.5" y="11.5" width="3" height="3" rx="0.75" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M6 13H12.5" stroke="#FEFEFE" stroke-linecap="round"/>
-          </svg>
-        </NuxtLink>
-        <NuxtLink
-          v-if="userStore.user?.role === ROLES.admin && isMenuVisible('healthchecks')"
-          :data-tooltip="'Healthcheck-мониторы'"
-          :to="{ name: PAGE_NAMES.HEALTHCHECKS }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <svg width="24" height="24" viewBox="0 0 17 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M11.5 15.5H5.5M0.5 9.3002V3.7002C0.5 2.58009 0.5 2.01962 0.717987 1.5918C0.909734 1.21547 1.21547 0.909734 1.5918 0.717987C2.01962 0.5 2.58009 0.5 3.7002 0.5H13.3002C14.4203 0.5 14.9796 0.5 15.4074 0.717987C15.7837 0.909734 16.0905 1.21547 16.2822 1.5918C16.5 2.0192 16.5 2.57899 16.5 3.69691V9.30309C16.5 10.421 16.5 10.98 16.2822 11.4074C16.0905 11.7837 15.7837 12.0905 15.4074 12.2822C14.98 12.5 14.421 12.5 13.3031 12.5H3.69691C2.57899 12.5 2.0192 12.5 1.5918 12.2822C1.21547 12.0905 0.909734 11.7837 0.717987 11.4074C0.5 10.9796 0.5 10.4203 0.5 9.3002Z"
-              stroke="#FEFEFE"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </NuxtLink>
-        <NuxtLink
-          v-if="userStore.user?.role === ROLES.admin && isMenuVisible('mail-accounts')"
-          :data-tooltip="'Почтовые ящики'"
-          :to="{ name: PAGE_NAMES.MAIL_ACCOUNTS }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="0.75" y="3.25" width="14.5" height="9.5" rx="1.5" stroke="#FEFEFE" />
-            <path d="M1.5 4.5L8 8.5L14.5 4.5" stroke="#FEFEFE" stroke-linecap="round" />
-            <circle cx="12.6" cy="11" r="2.4" fill="var(--dark-text-background-primary)" stroke="#FEFEFE" />
-          </svg>
-        </NuxtLink>
-        <NuxtLink
-          v-if="userStore.user?.role === ROLES.admin && isMenuVisible('git')"
-          :data-tooltip="'Git'"
-          :to="{ name: PAGE_NAMES.GIT }"
-          class="base-menu-left__item"
-          active-class="base-menu-left__item_active"
-        >
-          <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="4" cy="3" r="2" stroke="#FEFEFE" stroke-width="1.2" />
-            <circle cx="4" cy="13" r="2" stroke="#FEFEFE" stroke-width="1.2" />
-            <circle cx="12" cy="6" r="2" stroke="#FEFEFE" stroke-width="1.2" />
-            <path d="M4 5V11" stroke="#FEFEFE" stroke-width="1.2" stroke-linecap="round" />
-            <path d="M12 8C12 10 10 11 7 11" stroke="#FEFEFE" stroke-width="1.2" stroke-linecap="round" />
-          </svg>
-        </NuxtLink>
-      </div>
-      </div>
-      <div
-        v-show="canScrollDown"
-        class="base-menu-left__nav-fade base-menu-left__nav-fade_bottom"
-        aria-hidden="true"
-      >
+      <div v-show="canScrollDown" class="base-menu-left__nav-fade base-menu-left__nav-fade_bottom" aria-hidden="true">
         <span class="base-menu-left__nav-chevron">
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
@@ -354,7 +417,16 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
       >
         <div v-if="mailInboxUnreadCount > 0" class="chat-unread-badge">{{ mailInboxUnreadCount }}</div>
         <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="0.5" y="2.5" width="16" height="12" rx="1.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
+          <rect
+            x="0.5"
+            y="2.5"
+            width="16"
+            height="12"
+            rx="1.5"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
           <path d="M1.5 4L8.5 9L15.5 4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         <span>Почта</span>

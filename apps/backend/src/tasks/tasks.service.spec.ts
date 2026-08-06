@@ -22,6 +22,7 @@ import { CreateNotificationDto } from '../notifications/dto/create-notification.
 import { Notifications } from '../notifications/entities/notification.entity';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { ConfigService } from '@nestjs/config';
+import { FixedRevenue } from '../reportings/entities/fixed-revenue.entity';
 
 type QueryParamValue = string | number | boolean | null | undefined | Date | string[] | number[] | Date[];
 type QueryParams = Record<string, QueryParamValue>;
@@ -81,6 +82,11 @@ describe('TasksService', () => {
     delete: jest.fn().mockResolvedValue({ affected: 1 }),
     createQueryBuilder: jest.fn<QueryBuilderMock, [string]>(),
   };
+  const mockFixedRevenueRepository = {
+    findOne: jest.fn(),
+    save: jest.fn(),
+    update: jest.fn(),
+  };
   const mockDeepseekService = {};
   const mockDataSource = {
     transaction: jest.fn(),
@@ -118,6 +124,10 @@ describe('TasksService', () => {
         {
           provide: getRepositoryToken(TaskCompletion),
           useValue: mockCompletionRepository,
+        },
+        {
+          provide: getRepositoryToken(FixedRevenue),
+          useValue: mockFixedRevenueRepository,
         },
         {
           provide: getRepositoryToken(Comments),

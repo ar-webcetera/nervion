@@ -1,5 +1,5 @@
 import { ConflictException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { AuditActionType, AuditEntityType } from '@tracker/contracts';
+import { AuditActionType, AuditEntityType, BillingReviewStatus, TaskBillingType } from '@tracker/contracts';
 import * as XLSX from 'xlsx';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, FindOptionsWhere, In, QueryFailedError, Repository } from 'typeorm';
@@ -60,6 +60,10 @@ export class TimelogsService {
       const task = await this.tasksRepository.findOneBy({ id: createTimelogDto.task_id });
       if (task) {
         data.task = task;
+        if (createTimelogDto.status === TIMELOG_STATUSES.completed && task.billing_type === TaskBillingType.HOURLY) {
+          data.billing_status = BillingReviewStatus.PENDING;
+          data.recognized_at = createTimelogDto.tracking_date ?? new Date().toISOString().slice(0, 10);
+        }
       } else {
         throw new HttpException(
           {
@@ -175,6 +179,11 @@ export class TimelogsService {
       timelog.status = TIMELOG_STATUSES.completed;
       timelog.summary = updateTimelogDto.summary ?? '';
       timelog.change_status_at = Date.now();
+      const task = await this.tasksRepository.findOneBy({ id: timelog.task_id });
+      if (task?.billing_type === TaskBillingType.HOURLY) {
+        timelog.billing_status = BillingReviewStatus.PENDING;
+        timelog.recognized_at = timelog.tracking_date ?? new Date().toISOString().slice(0, 10);
+      }
     }
 
     const updatedTimelog = await this.timelogRepository.save(timelog);

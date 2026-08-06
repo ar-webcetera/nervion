@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNumber, IsObject, IsOptional, IsString, Length } from 'class-validator';
+import { IsEnum, IsNumber, IsObject, IsOptional, IsString, Length, Min, ValidateIf } from 'class-validator';
+import { TaskBillingType } from '@tracker/contracts';
 import { TASK_STATUSES } from '../../common/enums/statuses.enum';
 import { MAX_TASK_NAME_LENGTH, TaskType } from '../../tasks/entities/task.entity';
 
@@ -75,4 +76,16 @@ export class CreateTaskDto {
   })
   @IsOptional()
   description: Record<string, any>;
+
+  @IsEnum(TaskBillingType)
+  @IsOptional()
+  @ApiProperty({ enum: TaskBillingType, required: false, nullable: true, description: 'Формат оплаты задачи' })
+  billing_type?: TaskBillingType | null;
+
+  @ValidateIf((dto: CreateTaskDto) => dto.billing_type === TaskBillingType.FIXED || dto.fixed_price != null)
+  @IsNumber({}, { message: 'Фиксированная стоимость должна быть числом' })
+  @Min(0, { message: 'Фиксированная стоимость не может быть отрицательной' })
+  @IsOptional()
+  @ApiProperty({ required: false, nullable: true, description: 'Фиксированная стоимость задачи' })
+  fixed_price?: number | null;
 }

@@ -1,7 +1,7 @@
 import type { User } from '~/types/user';
 import type { Project } from '~/types/project';
 import type { JSONContent } from '@tiptap/core';
-import { TASK_STATUSES, TIMELOG_STATUSES } from '@tracker/contracts';
+import { TASK_STATUSES, TIMELOG_STATUSES, type BillingReviewStatus, type TaskBillingType } from '@tracker/contracts';
 
 export enum TaskType {
   USER_STORY = 'user-story',
@@ -21,6 +21,9 @@ export interface Timelog {
   authorFullName: string;
   created_at: Date;
   updated_at: Date;
+  billing_status: BillingReviewStatus | null;
+  billing_rate: number | null;
+  recognized_at: string | null;
 }
 
 export interface Task {
@@ -52,6 +55,8 @@ export interface Task {
   /** Выполнена ли задача сегодня (только для повторяющихся задач) */
   is_completed_today?: boolean;
   active_tracking_date?: string | null;
+  billing_type: TaskBillingType | null;
+  fixed_price: number | null;
 }
 
 export interface WeeklyCard {

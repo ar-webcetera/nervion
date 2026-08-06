@@ -11,6 +11,7 @@ import {
 import { Users } from '../../users/entities/users.entity';
 import { TIMELOG_STATUSES } from '../../common/enums/statuses.enum';
 import { Tasks } from '../../tasks/entities/task.entity';
+import { BillingReviewStatus } from '@tracker/contracts';
 
 @Index('unique_active_timelogs_per_task_author', ['task_id', 'author_id'], {
   unique: true,
@@ -68,6 +69,21 @@ export class Timelogs {
     default: 0,
   })
   change_status_at: number;
+
+  @Column({ type: 'enum', enum: BillingReviewStatus, name: 'billing_status', nullable: true })
+  billing_status: BillingReviewStatus | null;
+
+  @Column({ type: 'numeric', precision: 12, scale: 2, name: 'billing_rate', nullable: true })
+  billing_rate: number | null;
+
+  @Column({ type: 'date', name: 'recognized_at', nullable: true })
+  recognized_at: string | null;
+
+  @Column({ type: 'int', name: 'reviewed_by_id', nullable: true })
+  reviewed_by_id: number | null;
+
+  @Column({ type: 'timestamp', name: 'reviewed_at', nullable: true })
+  reviewed_at: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   created_at: Date;

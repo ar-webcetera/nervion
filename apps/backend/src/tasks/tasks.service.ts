@@ -1,11 +1,11 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { AuditActionType, AuditEntityType, type JsonObject } from '@tracker/contracts';
+import { AuditActionType, AuditEntityType, BillingReviewStatus, TaskBillingType, type JsonObject } from '@tracker/contracts';
 import { FindTasksByFilterDto } from './dto/find-tasks-by-filter.dto';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
 import { MAX_TASK_NAME_LENGTH, Tasks, TaskType } from './entities/task.entity';
 import { TaskCompletion } from './entities/task-completion.entity';
-import { DataSource, DeepPartial, Repository, SelectQueryBuilder } from 'typeorm';
+import { DataSource, DeepPartial, IsNull, Repository, SelectQueryBuilder } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Projects } from '../projects/entities/project.entity';
 import { Users } from '../users/entities/users.entity';
@@ -29,6 +29,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ConfigService } from '@nestjs/config';
+import { FixedRevenue } from '../reportings/entities/fixed-revenue.entity';
 
 interface TaskAuditPayload extends JsonObject {
   title: string | null;
@@ -42,6 +43,8 @@ interface TaskAuditPayload extends JsonObject {
   recurrence_days: number[] | null;
   recurrence_since: string | null;
   closed_date: string | null;
+  billing_type: TaskBillingType | null;
+  fixed_price: number | null;
 }
 
 interface ResponsibleAssignedNotificationPayload {
@@ -60,6 +63,8 @@ export class TasksService {
     private readonly tasksRepository: Repository<Tasks>,
     @InjectRepository(TaskCompletion)
     private readonly completionRepository: Repository<TaskCompletion>,
+    @InjectRepository(FixedRevenue)
+    private readonly fixedRevenueRepository: Repository<FixedRevenue>,
     @InjectRepository(Projects)
     private readonly projectsRepository: Repository<Projects>,
     @InjectRepository(ProjectMembers)
@@ -517,6 +522,7 @@ export class TasksService {
   }
 
   async createTask(createTaskDto: CreateTaskDto, currentUser?: AuthenticatedUser) {
+    this.assertBillingFieldsAccess(createTaskDto, currentUser);
     let project: Projects | null = null;
     if (createTaskDto.project_id) {
       project = await this.projectsRepository.findOne({
@@ -562,6 +568,8 @@ export class TasksService {
       taskType: createTaskDto.taskType ?? TaskType.TASK,
       description: createTaskDto.description,
       closed_date: this.resolveClosedDate(status),
+      billing_type: createTaskDto.billing_type ?? null,
+      fixed_price: createTaskDto.billing_type === TaskBillingType.FIXED ? (createTaskDto.fixed_price ?? 0) : null,
     };
 
     if (project) data.project = project;
@@ -572,6 +580,7 @@ export class TasksService {
     if (createTaskDto.planned_date) data.planned_date = createTaskDto.planned_date;
     const task = this.tasksRepository.create(data);
     const createdTask = await this.tasksRepository.save(task);
+    if (status === TASK_STATUSES.closed) await this.upsertFixedRevenue(createdTask);
     const createdTaskForLog = await this.tasksRepository.findOne({
       where: { id: createdTask.id },
       relations: ['project', 'responsible'],
@@ -696,6 +705,7 @@ export class TasksService {
 
   async updateTask(taskId: string, updateTaskDto: UpdateTaskDto, currentUser?: AuthenticatedUser) {
     try {
+      this.assertBillingFieldsAccess(updateTaskDto, currentUser);
       const existingTask = await this.tasksRepository.findOne({
         where: { id: Number(taskId) },
         relations: ['project', 'responsible'],
@@ -749,6 +759,12 @@ export class TasksService {
       if (updateTaskDto.title) data.title = updateTaskDto.title;
       if (updateTaskDto.taskType) data.taskType = updateTaskDto.taskType;
       if (updateTaskDto.story_points !== undefined) data.story_points = updateTaskDto.story_points;
+      if (updateTaskDto.billing_type !== undefined) {
+        data.billing_type = updateTaskDto.billing_type;
+        data.fixed_price = updateTaskDto.billing_type === TaskBillingType.FIXED ? (updateTaskDto.fixed_price ?? 0) : null;
+      } else if (updateTaskDto.fixed_price !== undefined) {
+        data.fixed_price = updateTaskDto.fixed_price;
+      }
       if (updateTaskDto.recurrence_days !== undefined) {
         const newDays = updateTaskDto.recurrence_days;
         data.recurrence_days = newDays;
@@ -775,6 +791,20 @@ export class TasksService {
         where: { id: Number(taskId) },
         relations: ['responsible', 'participants', 'project'],
       });
+      if (findTask && updateTaskDto.status === TASK_STATUSES.closed && existingTask.status !== TASK_STATUSES.closed) {
+        await this.upsertFixedRevenue(findTask);
+      }
+      if (
+        findTask &&
+        updateTaskDto.status &&
+        updateTaskDto.status !== TASK_STATUSES.closed &&
+        existingTask.status === TASK_STATUSES.closed
+      ) {
+        await this.fixedRevenueRepository.update(
+          { task_id: findTask.id, occurrence_date: IsNull() },
+          { status: BillingReviewStatus.PENDING },
+        );
+      }
       if (findTask) {
         this.websocketGateway.sendTaskUpdate(findTask);
       }
@@ -1255,6 +1285,7 @@ export class TasksService {
       completed_at: date,
     });
     const savedCompletion = await this.completionRepository.save(completion);
+    await this.upsertFixedRevenue(task, date);
     void this.auditLogsService.record({
       actionType: AuditActionType.TASK_COMPLETED,
       entityType: AuditEntityType.TASK,
@@ -1279,6 +1310,7 @@ export class TasksService {
     }
 
     await this.completionRepository.delete({ task_id: taskId, completed_at: date });
+    await this.fixedRevenueRepository.update({ task_id: taskId, occurrence_date: date }, { status: BillingReviewStatus.PENDING });
     void this.auditLogsService.record({
       actionType: AuditActionType.TASK_UNCOMPLETED,
       entityType: AuditEntityType.TASK,
@@ -1317,6 +1349,33 @@ export class TasksService {
     return status === TASK_STATUSES.closed ? new Date() : null;
   }
 
+  private assertBillingFieldsAccess(dto: Pick<CreateTaskDto, 'billing_type' | 'fixed_price'>, currentUser?: AuthenticatedUser) {
+    const containsBillingFields = dto.billing_type !== undefined || dto.fixed_price !== undefined;
+    if (containsBillingFields && currentUser?.role !== ROLES.admin) {
+      throw new HttpException('Настройки оплаты доступны только администратору', HttpStatus.FORBIDDEN);
+    }
+  }
+
+  private async upsertFixedRevenue(task: Tasks, occurrenceDate: string | null = null): Promise<void> {
+    if (task.billing_type !== TaskBillingType.FIXED) return;
+    const occurredAt = occurrenceDate ?? format(task.closed_date ?? new Date(), 'yyyy-MM-dd');
+    const existing = await this.fixedRevenueRepository.findOne({
+      where: { task_id: task.id, occurrence_date: occurrenceDate ?? IsNull() },
+    });
+    await this.fixedRevenueRepository.save({
+      ...(existing ?? {}),
+      task_id: task.id,
+      project_id: task.project_id,
+      occurrence_date: occurrenceDate,
+      amount: Number(task.fixed_price ?? 0),
+      closed_at: task.closed_date ?? new Date(),
+      recognized_at: occurredAt,
+      status: BillingReviewStatus.PENDING,
+      reviewed_at: null,
+      reviewed_by_id: null,
+    });
+  }
+
   private serializeTaskForAudit(task: Partial<Tasks>): TaskAuditPayload {
     return {
       title: task.title ?? null,
@@ -1330,6 +1389,8 @@ export class TasksService {
       recurrence_days: task.recurrence_days ?? null,
       recurrence_since: task.recurrence_since ?? null,
       closed_date: task.closed_date ? new Date(task.closed_date).toISOString() : null,
+      billing_type: task.billing_type ?? null,
+      fixed_price: task.fixed_price == null ? null : Number(task.fixed_price),
     };
   }
 
@@ -1355,6 +1416,8 @@ export class TasksService {
       { key: 'recurrence_days', label: 'дни повторения' },
       { key: 'recurrence_since', label: 'дата начала повторения' },
       { key: 'closed_date', label: 'дата закрытия' },
+      { key: 'billing_type', label: 'формат оплаты' },
+      { key: 'fixed_price', label: 'фиксированная стоимость' },
     ];
 
     return fieldLabels

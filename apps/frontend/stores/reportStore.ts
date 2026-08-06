@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import type { Employee } from '~/types/user';
+import { RevenueSourceType, type BillingQueueItem, type BillingReviewStatus, type RevenueDashboard } from '@tracker/contracts';
 
 export interface TimelogRow {
   project: string;
@@ -18,6 +19,63 @@ type ReportPayload = { from: string; to: string; employees: Employee[]; project_
 
 export const useReportStore = defineStore('report', () => {
   const config = useRuntimeConfig();
+  const pendingCount = ref(0);
+  const dashboard = ref<RevenueDashboard | null>(null);
+  const pendingItems = ref<BillingQueueItem[]>([]);
+  const reviewedItems = ref<BillingQueueItem[]>([]);
+
+  const fetchPendingCount = async () => {
+    const response = await $fetch<{ count: number }>('/api/reportings/billing/count', {
+      baseURL: config.public.API_URL,
+      credentials: 'include',
+    });
+    pendingCount.value = response.count;
+  };
+
+  const fetchFinancialData = async () => {
+    const [dashboardResponse, pendingResponse, reviewedResponse] = await Promise.all([
+      $fetch<RevenueDashboard>('/api/reportings/revenue/dashboard', { baseURL: config.public.API_URL, credentials: 'include' }),
+      $fetch<BillingQueueItem[]>('/api/reportings/billing/items', {
+        baseURL: config.public.API_URL,
+        credentials: 'include',
+        params: { pending: true },
+      }),
+      $fetch<BillingQueueItem[]>('/api/reportings/billing/items', {
+        baseURL: config.public.API_URL,
+        credentials: 'include',
+        params: { pending: false },
+      }),
+    ]);
+    dashboard.value = dashboardResponse;
+    pendingItems.value = pendingResponse;
+    reviewedItems.value = reviewedResponse;
+    pendingCount.value = pendingResponse.length;
+  };
+
+  const reviewItem = async (item: BillingQueueItem, status: BillingReviewStatus) => {
+    const endpoint = item.sourceType === RevenueSourceType.TIMELOG ? 'timelogs' : 'fixed';
+    await $fetch(`/api/reportings/billing/${endpoint}/${item.id}`, {
+      method: 'PATCH',
+      baseURL: config.public.API_URL,
+      credentials: 'include',
+      body: {
+        status,
+        recognizedAt: item.recognizedAt,
+        ...(item.sourceType === RevenueSourceType.TIMELOG ? { rate: Number(item.rate ?? 0) } : { amount: Number(item.amount) }),
+      },
+    });
+    await fetchFinancialData();
+  };
+
+  const saveTarget = async (year: number, month: number, amount: number) => {
+    await $fetch('/api/reportings/revenue/target', {
+      method: 'PATCH',
+      baseURL: config.public.API_URL,
+      credentials: 'include',
+      body: { year, month, amount },
+    });
+    await fetchFinancialData();
+  };
 
   const fetchPreview = async (payload: ReportPayload): Promise<TimelogRow[]> => {
     const response = await fetch(`${config.public.API_URL}/api/reportings/preview`, {
@@ -62,5 +120,16 @@ export const useReportStore = defineStore('report', () => {
     return response;
   };
 
-  return { unloadReport, fetchPreview };
+  return {
+    unloadReport,
+    fetchPreview,
+    pendingCount,
+    dashboard,
+    pendingItems,
+    reviewedItems,
+    fetchPendingCount,
+    fetchFinancialData,
+    reviewItem,
+    saveTarget,
+  };
 });

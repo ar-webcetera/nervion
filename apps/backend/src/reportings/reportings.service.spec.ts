@@ -4,6 +4,8 @@ import { TIMELOG_STATUSES } from '../common/enums/statuses.enum';
 import { Timelogs } from '../timelogs/entities/timelog.entity';
 import { Tasks } from '../tasks/entities/task.entity';
 import { ReportingsService } from './reportings.service';
+import { FixedRevenue } from './entities/fixed-revenue.entity';
+import { MonthlyRevenueTarget } from './entities/monthly-revenue-target.entity';
 
 describe('ReportingsService', () => {
   let service: ReportingsService;
@@ -21,6 +23,8 @@ describe('ReportingsService', () => {
         ReportingsService,
         { provide: getRepositoryToken(Timelogs), useValue: timelogRepository },
         { provide: getRepositoryToken(Tasks), useValue: tasksRepository },
+        { provide: getRepositoryToken(FixedRevenue), useValue: {} },
+        { provide: getRepositoryToken(MonthlyRevenueTarget), useValue: {} },
       ],
     }).compile();
 

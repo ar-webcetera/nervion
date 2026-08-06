@@ -16,6 +16,7 @@ import { Users } from '../../users/entities/users.entity';
 import { Projects } from '../../projects/entities/project.entity';
 import { TASK_STATUSES } from '../../common/enums/statuses.enum';
 import { Timelogs } from '../../timelogs/entities/timelog.entity';
+import { TaskBillingType } from '@tracker/contracts';
 
 export const MAX_TASK_NAME_LENGTH = 150;
 
@@ -131,6 +132,12 @@ export class Tasks {
 
   @Column({ type: 'timestamp', name: 'closed_date', nullable: true })
   closed_date: Date | null;
+
+  @Column({ type: 'enum', enum: TaskBillingType, name: 'billing_type', nullable: true })
+  billing_type: TaskBillingType | null;
+
+  @Column({ type: 'numeric', precision: 12, scale: 2, name: 'fixed_price', nullable: true })
+  fixed_price: number | null;
 
   @Column({
     type: 'int',

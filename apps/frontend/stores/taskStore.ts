@@ -10,6 +10,7 @@ import type { TaskType } from '~/enums/task.enums';
 import { extractPlainText, type TiptapDoc } from '~/utils/extractPainText';
 import { useTimelogStore } from './timelogStore';
 import { useUserStore } from './userStore';
+import type { TaskBillingType } from '@tracker/contracts';
 
 interface ExportTasksParams {
   statuses?: string[];
@@ -62,6 +63,8 @@ interface UpdateTasksOptions {
   taskType?: TaskType;
   story_points?: number | null;
   recurrence_days?: number[] | null;
+  billing_type?: TaskBillingType | null;
+  fixed_price?: number | null;
 }
 
 export interface KanbanCard {

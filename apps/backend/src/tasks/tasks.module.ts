@@ -14,13 +14,24 @@ import { UserTaskFilter } from 'src/tasks/entities/user-task-filter.entity';
 import { TaskCompletion } from 'src/tasks/entities/task-completion.entity';
 import { DeepseekModule } from 'src/deepseek/deepseek.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { FixedRevenue } from '../reportings/entities/fixed-revenue.entity';
 @Module({
   imports: [
     DeepseekModule,
     NotificationsModule,
     WebsocketModule,
     HttpModule,
-    TypeOrmModule.forFeature([Timelogs, Users, Tasks, Projects, Comments, ProjectMembers, UserTaskFilter, TaskCompletion]),
+    TypeOrmModule.forFeature([
+      Timelogs,
+      Users,
+      Tasks,
+      Projects,
+      Comments,
+      ProjectMembers,
+      UserTaskFilter,
+      TaskCompletion,
+      FixedRevenue,
+    ]),
   ],
   controllers: [TasksController],
   providers: [TasksService],

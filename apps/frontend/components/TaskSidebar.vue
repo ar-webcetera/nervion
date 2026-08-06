@@ -23,6 +23,8 @@ import IconRecurrence from './Icons/IconRecurrence.vue';
 import { format, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { getErrorMessage } from '~/utils/error';
+import { TaskBillingType } from '@tracker/contracts';
+import { ROLES } from '~/types/user';
 
 const RECURRENCE_DAY_OPTIONS = [
   { label: 'Пн', value: 1 },
@@ -140,6 +142,26 @@ const newTimelog = ref<Partial<Timelog>>({
 });
 
 const taskTypeOptions = TASK_TYPE_OPTIONS;
+const billingTypeOptions = [
+  { label: 'Не учитывать', value: null },
+  { label: 'Почасовая', value: TaskBillingType.HOURLY },
+  { label: 'Фиксированная', value: TaskBillingType.FIXED },
+];
+const isAdmin = computed(() => userStore.user?.role === ROLES.admin);
+
+const updateBilling = async (value?: string | number | (string | number)[] | null) => {
+  if (!taskStore.currentTask) return;
+  const billing_type = value === undefined ? taskStore.currentTask.billing_type : (value as TaskBillingType | null);
+  const fixed_price = billing_type === TaskBillingType.FIXED ? Number(taskStore.currentTask.fixed_price ?? 0) : null;
+  try {
+    await taskStore.updateTask(taskStore.currentTask.id, { billing_type, fixed_price });
+    taskStore.currentTask.billing_type = billing_type;
+    taskStore.currentTask.fixed_price = fixed_price;
+  } catch (e) {
+    $toast.error(getErrorMessage(e));
+    await fetchTask();
+  }
+};
 
 const emit = defineEmits<{
   (e: 'close'): void;
@@ -489,6 +511,28 @@ const submitComment = async () => {
                 placeholder="Не указан"
                 @update:model-value="updateTaskStatus($event)"
               />
+            </div>
+          </div>
+          <div v-if="isAdmin" class="task-sidebar__field task-sidebar__field_billing">
+            <div class="task-sidebar__label">Формат оплаты</div>
+            <div v-if="taskStore.currentTask" class="task-sidebar__value task-sidebar__billing">
+              <BaseDropdown
+                v-model="taskStore.currentTask.billing_type"
+                :options="billingTypeOptions"
+                placeholder="Не учитывать"
+                @update:model-value="updateBilling($event)"
+              />
+              <div v-if="taskStore.currentTask.billing_type === TaskBillingType.FIXED" class="task-sidebar__billing-price">
+                <input
+                  v-model.number="taskStore.currentTask.fixed_price"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  aria-label="Фиксированная стоимость"
+                  @change="updateBilling()"
+                />
+                <span>₽</span>
+              </div>
             </div>
           </div>
           <div v-if="isRecurring" class="task-sidebar__field task-sidebar__field_completion">

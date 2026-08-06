@@ -1,15 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateReportingDto } from './dto/create-reporting.dto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Timelogs } from '../timelogs/entities/timelog.entity';
-import { Between, FindOptionsWhere, Repository } from 'typeorm';
+import { Between, FindOptionsWhere, In, Repository } from 'typeorm';
 import { TASK_STATUSES, TIMELOG_STATUSES } from '../common/enums/statuses.enum';
 import * as XLSX from 'xlsx';
-import { format } from 'date-fns';
+import { endOfMonth, endOfWeek, format, startOfMonth, startOfWeek, subDays, subMonths } from 'date-fns';
 import { Tasks } from 'src/tasks/entities/task.entity';
 import * as fs from 'fs';
 import { extractTextFromDoc } from '../common/utils/extractTextFromDoc';
 import type { Node } from '../common/utils/extractTextFromDoc';
+import { BillingQueueItem, BillingReviewStatus, RevenueDashboard, RevenueSourceType, TaskBillingType } from '@tracker/contracts';
+import { FixedRevenue } from './entities/fixed-revenue.entity';
+import { MonthlyRevenueTarget } from './entities/monthly-revenue-target.entity';
+import { ReviewBillingDto } from './dto/review-billing.dto';
 
 export interface TimelogRow {
   project: string;
@@ -76,7 +80,187 @@ export class ReportingsService {
     private readonly timelogRepository: Repository<Timelogs>,
     @InjectRepository(Tasks)
     private readonly tasksRepository: Repository<Tasks>,
+    @InjectRepository(FixedRevenue)
+    private readonly fixedRevenueRepository: Repository<FixedRevenue>,
+    @InjectRepository(MonthlyRevenueTarget)
+    private readonly monthlyTargetRepository: Repository<MonthlyRevenueTarget>,
   ) {}
+
+  async getPendingCount(): Promise<{ count: number }> {
+    const [timelogs, fixed] = await Promise.all([
+      this.timelogRepository.count({ where: { billing_status: BillingReviewStatus.PENDING } }),
+      this.fixedRevenueRepository.count({ where: { status: BillingReviewStatus.PENDING } }),
+    ]);
+    return { count: timelogs + fixed };
+  }
+
+  async getBillingItems(pending: boolean): Promise<BillingQueueItem[]> {
+    const timelogQb = this.timelogRepository
+      .createQueryBuilder('timelog')
+      .leftJoinAndSelect('timelog.task', 'task')
+      .leftJoinAndSelect('task.project', 'project')
+      .leftJoinAndSelect('timelog.author', 'author')
+      .where(pending ? 'timelog.billing_status = :pending' : 'timelog.billing_status IN (:...reviewed)', {
+        pending: BillingReviewStatus.PENDING,
+        reviewed: [BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED],
+      })
+      .orderBy('timelog.updated_at', 'DESC');
+    const fixedQb = this.fixedRevenueRepository
+      .createQueryBuilder('revenue')
+      .leftJoinAndSelect('revenue.task', 'task')
+      .leftJoinAndSelect('revenue.project', 'project')
+      .where(pending ? 'revenue.status = :pending' : 'revenue.status IN (:...reviewed)', {
+        pending: BillingReviewStatus.PENDING,
+        reviewed: [BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED],
+      })
+      .orderBy('revenue.updated_at', 'DESC');
+    const [timelogs, fixed] = await Promise.all([timelogQb.getMany(), fixedQb.getMany()]);
+    const timelogItems: BillingQueueItem[] = timelogs.map((item) => {
+      const rate = item.billing_rate == null ? Number(item.task?.project?.hourlyRate ?? 0) : Number(item.billing_rate);
+      return {
+        id: item.id,
+        sourceType: RevenueSourceType.TIMELOG,
+        status: item.billing_status!,
+        project: item.task?.project?.name ?? 'Без проекта',
+        task: item.task?.title ?? `Задача #${item.task_id}`,
+        executor: item.author ? `${item.author.first_name} ${item.author.last_name}`.trim() : null,
+        summary: item.summary,
+        seconds: Number(item.time_spent),
+        rate,
+        amount: this.calculateTimelogAmount(item.time_spent, rate),
+        occurredAt: item.updated_at.toISOString(),
+        recognizedAt: item.recognized_at ?? item.tracking_date ?? format(item.updated_at, 'yyyy-MM-dd'),
+      };
+    });
+    const fixedItems: BillingQueueItem[] = fixed.map((item) => ({
+      id: item.id,
+      sourceType: RevenueSourceType.FIXED_TASK,
+      status: item.status,
+      project: item.project?.name ?? 'Без проекта',
+      task: item.task?.title ?? `Задача #${item.task_id}`,
+      executor: null,
+      summary: null,
+      seconds: null,
+      rate: null,
+      amount: Number(item.amount),
+      occurredAt: item.closed_at.toISOString(),
+      recognizedAt: item.recognized_at,
+    }));
+    return [...timelogItems, ...fixedItems].sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+  }
+
+  async reviewTimelog(id: number, dto: ReviewBillingDto, reviewerId: number): Promise<void> {
+    const timelog = await this.timelogRepository.findOne({ where: { id }, relations: ['task', 'task.project'] });
+    if (!timelog) throw new NotFoundException('Таймтрек не найден');
+    const rate = dto.rate ?? Number(timelog.task?.project?.hourlyRate ?? 0);
+    await this.timelogRepository.update(id, {
+      billing_status: dto.status,
+      billing_rate: dto.status === BillingReviewStatus.APPROVED ? rate : null,
+      recognized_at: dto.recognizedAt,
+      reviewed_by_id: reviewerId,
+      reviewed_at: new Date(),
+    });
+  }
+
+  async reviewFixedRevenue(id: number, dto: ReviewBillingDto, reviewerId: number): Promise<void> {
+    const revenue = await this.fixedRevenueRepository.findOneBy({ id });
+    if (!revenue) throw new NotFoundException('Начисление не найдено');
+    await this.fixedRevenueRepository.update(id, {
+      status: dto.status,
+      amount: dto.amount ?? revenue.amount,
+      recognized_at: dto.recognizedAt,
+      reviewed_by_id: reviewerId,
+      reviewed_at: new Date(),
+    });
+  }
+
+  async upsertMonthlyTarget(year: number, month: number, amount: number, userId: number): Promise<void> {
+    const existing = await this.monthlyTargetRepository.findOneBy({ year, month });
+    await this.monthlyTargetRepository.save({ ...(existing ?? {}), year, month, amount, updated_by_id: userId });
+  }
+
+  async getRevenueDashboard(now = new Date()): Promise<RevenueDashboard> {
+    const currentStart = format(startOfMonth(now), 'yyyy-MM-dd');
+    const currentEnd = format(endOfMonth(now), 'yyyy-MM-dd');
+    const previous = subMonths(now, 1);
+    const [timelogs, fixed, openFixed, target] = await Promise.all([
+      this.timelogRepository.find({
+        where: { billing_status: In([BillingReviewStatus.APPROVED, BillingReviewStatus.PENDING]) },
+        relations: ['task', 'task.project'],
+      }),
+      this.fixedRevenueRepository.find({
+        where: { status: In([BillingReviewStatus.APPROVED, BillingReviewStatus.PENDING]) },
+        relations: ['task', 'project'],
+      }),
+      this.tasksRepository
+        .createQueryBuilder('task')
+        .leftJoinAndSelect('task.project', 'project')
+        .where('task.billing_type = :type', { type: TaskBillingType.FIXED })
+        .andWhere('task.status != :closed', { closed: TASK_STATUSES.closed })
+        .andWhere('task.planned_date BETWEEN :from AND :to', { from: currentStart, to: currentEnd })
+        .getMany(),
+      this.monthlyTargetRepository.findOneBy({ year: now.getFullYear(), month: now.getMonth() + 1 }),
+    ]);
+    type Entry = { date: string; amount: number; project: string; status: BillingReviewStatus };
+    const entries: Entry[] = [
+      ...timelogs.map((item) => ({
+        date: item.recognized_at ?? item.tracking_date ?? format(item.updated_at, 'yyyy-MM-dd'),
+        amount: this.calculateTimelogAmount(item.time_spent, Number(item.billing_rate ?? item.task?.project?.hourlyRate ?? 0)),
+        project: item.task?.project?.name ?? 'Без проекта',
+        status: item.billing_status!,
+      })),
+      ...fixed.map((item) => ({
+        date: item.recognized_at,
+        amount: Number(item.amount),
+        project: item.project?.name ?? 'Без проекта',
+        status: item.status,
+      })),
+    ];
+    const approved = entries.filter((item) => item.status === BillingReviewStatus.APPROVED);
+    const sumPeriod = (from: string, to: string) =>
+      approved.filter((item) => item.date >= from && item.date <= to).reduce((sum, item) => sum + item.amount, 0);
+    const today = format(now, 'yyyy-MM-dd');
+    const yesterday = format(subDays(now, 1), 'yyyy-MM-dd');
+    const weekStart = format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    const weekEnd = format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+    const previousStart = format(startOfMonth(previous), 'yyyy-MM-dd');
+    const previousEnd = format(endOfMonth(previous), 'yyyy-MM-dd');
+    const currentEntries = approved.filter((item) => item.date >= currentStart && item.date <= currentEnd);
+    const aggregate = (items: Entry[], key: (item: Entry) => string) => {
+      const values = new Map<string, number>();
+      items.forEach((item) => values.set(key(item), (values.get(key(item)) ?? 0) + item.amount));
+      return [...values.entries()].map(([label, amount]) => ({ label, amount: this.roundMoney(amount) }));
+    };
+    const actual = currentEntries.reduce((sum, item) => sum + item.amount, 0);
+    const pending = entries
+      .filter((item) => item.status === BillingReviewStatus.PENDING && item.date >= currentStart && item.date <= currentEnd)
+      .reduce((sum, item) => sum + item.amount, 0);
+    const openFixedAmount = openFixed.reduce((sum, task) => sum + Number(task.fixed_price ?? 0), 0);
+    return {
+      summary: [
+        { key: 'today', label: 'Сегодня', amount: this.roundMoney(sumPeriod(today, today)) },
+        { key: 'yesterday', label: 'Вчера', amount: this.roundMoney(sumPeriod(yesterday, yesterday)) },
+        { key: 'currentWeek', label: 'Текущая неделя', amount: this.roundMoney(sumPeriod(weekStart, weekEnd)) },
+        { key: 'currentMonth', label: 'Текущий месяц', amount: this.roundMoney(actual) },
+        { key: 'previousMonth', label: 'Предыдущий месяц', amount: this.roundMoney(sumPeriod(previousStart, previousEnd)) },
+      ],
+      daily: aggregate(currentEntries, (item) => item.date).sort((a, b) => a.label.localeCompare(b.label)),
+      projects: aggregate(currentEntries, (item) => item.project).sort((a, b) => b.amount - a.amount),
+      actual: this.roundMoney(actual),
+      pending: this.roundMoney(pending),
+      openFixed: this.roundMoney(openFixedAmount),
+      potential: this.roundMoney(actual + pending + openFixedAmount),
+      target: Number(target?.amount ?? 0),
+    };
+  }
+
+  private calculateTimelogAmount(seconds: number, rate: number): number {
+    return this.roundMoney((Number(seconds) / 3600) * Number(rate));
+  }
+
+  private roundMoney(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
   private async buildTimelogs(
     createReportingDto: CreateReportingDto,
   ): Promise<{ timelogs: TimelogRow[]; rawTimelogs: Timelogs[]; rateByUserId: Map<number, number> }> {
