@@ -254,7 +254,19 @@ export class ReportingsService {
     const pending = entries
       .filter((item) => item.status === BillingReviewStatus.PENDING && item.date >= currentStart && item.date <= currentEnd)
       .reduce((sum, item) => sum + item.amount, 0);
-    const openFixedAmount = openFixed.reduce((sum, task) => sum + Number(task.fixed_price ?? 0), 0);
+    const billedOpenTaskIds = new Set(
+      fixed
+        .filter(
+          (item) =>
+            item.recognized_at >= currentStart &&
+            item.recognized_at <= currentEnd &&
+            (item.status === BillingReviewStatus.PENDING || item.status === BillingReviewStatus.APPROVED),
+        )
+        .map((item) => item.task_id),
+    );
+    const openFixedAmount = openFixed
+      .filter((task) => !billedOpenTaskIds.has(task.id))
+      .reduce((sum, task) => sum + Number(task.fixed_price ?? 0), 0);
     return {
       summary: [
         { key: 'today', label: 'Сегодня', amount: this.roundMoney(sumPeriod(today, today)) },

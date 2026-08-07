@@ -813,10 +813,7 @@ export class TasksService {
         updateTaskDto.status !== TASK_STATUSES.closed &&
         existingTask.status === TASK_STATUSES.closed
       ) {
-        await this.fixedRevenueRepository.update(
-          { task_id: findTask.id, occurrence_date: IsNull() },
-          { status: BillingReviewStatus.PENDING },
-        );
+        await this.fixedRevenueRepository.delete({ task_id: findTask.id, occurrence_date: IsNull() });
       }
       if (findTask) {
         this.websocketGateway.sendTaskUpdate(findTask);
@@ -1298,7 +1295,6 @@ export class TasksService {
       completed_at: date,
     });
     const savedCompletion = await this.completionRepository.save(completion);
-    await this.upsertFixedRevenue(task, date);
     void this.auditLogsService.record({
       actionType: AuditActionType.TASK_COMPLETED,
       entityType: AuditEntityType.TASK,
@@ -1323,7 +1319,6 @@ export class TasksService {
     }
 
     await this.completionRepository.delete({ task_id: taskId, completed_at: date });
-    await this.fixedRevenueRepository.update({ task_id: taskId, occurrence_date: date }, { status: BillingReviewStatus.PENDING });
     void this.auditLogsService.record({
       actionType: AuditActionType.TASK_UNCOMPLETED,
       entityType: AuditEntityType.TASK,
@@ -1369,17 +1364,17 @@ export class TasksService {
     }
   }
 
-  private async upsertFixedRevenue(task: Tasks, occurrenceDate: string | null = null): Promise<void> {
+  private async upsertFixedRevenue(task: Tasks): Promise<void> {
     if (task.billing_type !== TaskBillingType.FIXED) return;
-    const occurredAt = occurrenceDate ?? format(task.closed_date ?? new Date(), 'yyyy-MM-dd');
+    const occurredAt = format(task.closed_date ?? new Date(), 'yyyy-MM-dd');
     const existing = await this.fixedRevenueRepository.findOne({
-      where: { task_id: task.id, occurrence_date: occurrenceDate ?? IsNull() },
+      where: { task_id: task.id, occurrence_date: IsNull() },
     });
     await this.fixedRevenueRepository.save({
       ...(existing ?? {}),
       task_id: task.id,
       project_id: task.project_id,
-      occurrence_date: occurrenceDate,
+      occurrence_date: null,
       amount: Number(task.fixed_price ?? 0),
       closed_at: task.closed_date ?? new Date(),
       recognized_at: occurredAt,

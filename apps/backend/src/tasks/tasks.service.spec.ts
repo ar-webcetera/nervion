@@ -88,6 +88,7 @@ describe('TasksService', () => {
     findOne: jest.fn(),
     save: jest.fn(),
     update: jest.fn(),
+    delete: jest.fn(),
   };
   const mockTimelogRepository = {
     update: jest.fn(),
