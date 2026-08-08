@@ -11,9 +11,20 @@ Cloud Function: читает события из Data Streams (configuration set
 
 Entry point: `index.handler`. Runtime: Node.js 18+.
 
-## Создание в консоли Yandex Cloud
+## Создание в консоли / CLI
 
 Каталог: `default` (`b1gitf9i2nhtkmpedo90`).
+
+### Через CLI (предпочтительно)
+
+```bash
+# один раз: yc init (OAuth в браузере), выбрать cloud/folder default
+export PATH="$HOME/yandex-cloud/bin:$PATH"   # если ставили локально
+export WEBHOOK_SECRET='…тот же, что POSTBOX_EVENTS_WEBHOOK_SECRET…'
+./deploy/yandex-cloud/postbox-webhook/create.sh
+```
+
+### Через консоль
 
 1. **Сервисный аккаунт** (если ещё нет) с ролями:
    - `yds.editor` (или `yds.admin`) на поток `postbox-events`
