@@ -102,7 +102,13 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
         </div>
       </div>
       <div class="mail-message__info">
-        <span v-if="message.status === 'failed'" class="mail-message__failed">не отправлено</span>
+        <MailDeliveryBadge
+          v-if="!isInbound"
+          :status="message.status"
+          :delivery-status="message.delivery_status"
+          :open-count="message.open_count"
+          :click-count="message.click_count"
+        />
         <span class="mail-message__date">{{ formattedDate }}</span>
         <button class="mail-message__action" title="Переслать" @click="emit('forward', message)">Переслать</button>
         <button

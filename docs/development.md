@@ -74,6 +74,18 @@ Web-авторизация хранится в httpOnly-cookie. Срок жиз�
 
 Входящая почта принимается отдельным SMTP-процессом Nest (порт из `SMTP_PORT`), исходящая — через SES-совместимый Postbox. HTTP API работает в основном backend-процессе. После сохранения нового входящего письма SMTP-процесс отправляет web-push всем пользователям с доступом к ящику; нажатие открывает соответствующий тред. Конфигурация — переменные `MAILBOX_*`, `POSTBOX_*` и `VAPID_*` (см. `apps/backend/.env.example`). Почтовые аккаунты создаются после первой миграции через `POST /api/mailbox/accounts`.
 
+### Трекинг доставки исходящих
+
+На исходящих письмах хранятся `provider_message_id`, `delivery_status`, счётчики открытий/кликов. События Postbox (`Delivery`, `Bounce`, `Complaint`, `Open`, `Click`) принимаются на `POST /api/mailbox/postbox-events` с заголовком `Authorization: Bearer <POSTBOX_EVENTS_WEBHOOK_SECRET>`.
+
+Чтобы события пошли:
+
+1. В Postbox создайте configuration set, включите Engagement statistics и подписку на нужные типы событий в Data Streams.
+2. Укажите имя set в `POSTBOX_CONFIGURATION_SET`.
+3. Из Data Streams прокидывайте JSON на webhook: Cloud Function из `deploy/yandex-cloud/postbox-webhook/` (триггер Data Streams → функция → `POST /api/mailbox/postbox-events`). Тело: одно событие Postbox, `{ "events": [...] }`, `{ "messages": [...] }` (формат триггера CF) или Kinesis `{ "Records": [{ "kinesis": { "data": "<base64>" } }] }`.
+
+Статистика по доступным ящикам: `GET /api/mailbox/stats?account_id=&from=&to=`. В UI почты — папка «Статистика» и бейджи статусов в «Отправленных».
+
 
 ## WebRTC (звонки/голосовые комнаты)
 

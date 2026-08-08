@@ -1,1 +1,2 @@
-export * from "./mailbox.types";
+export * from './mailbox.enums';
+export * from './mailbox.types';

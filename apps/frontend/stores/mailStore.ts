@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import type { MailUnreadCounts } from '@tracker/contracts';
+import type { MailStatsResponse, MailUnreadCounts } from '@tracker/contracts';
 import type {
   MailAccount,
   MailAccountPayload,
@@ -214,6 +214,17 @@ export const useMailStore = defineStore('mail', () => {
     return response;
   };
 
+  const fetchStats = async (params: { account_id?: number; from?: string; to?: string } = {}) => {
+    return $fetch<MailStatsResponse>('/api/mailbox/stats', {
+      ...requestOptions(),
+      query: {
+        account_id: params.account_id || undefined,
+        from: params.from || undefined,
+        to: params.to || undefined,
+      },
+    });
+  };
+
   const createAccount = async (payload: MailAccountPayload) => {
     const account = await $fetch<MailAccount>('/api/mailbox/accounts', {
       ...requestOptions(),
@@ -255,6 +266,7 @@ export const useMailStore = defineStore('mail', () => {
     markThreadRead,
     sendMail,
     fetchUnreadCount,
+    fetchStats,
     createAccount,
     updateAccount,
     moveThreadToFolder,

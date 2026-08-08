@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
+import type { MailStatsResponse } from '@tracker/contracts';
 import BaseModal from '~/components/BaseModal.vue';
+import MailDeliveryBadge from '~/components/Mail/MailDeliveryBadge.vue';
 import MailMessageView from '~/components/Mail/MailMessageView.vue';
 import { ROLES } from '~/types/user';
 import { MAIL_DIRECTIONS, type MailAttachmentDescriptor, type MailMessage, type MailThread } from '~/types/mail';
@@ -96,14 +98,72 @@ const FOLDERS = [
   { key: 'sent', label: 'Отправленные' },
   { key: 'drafts', label: 'Черновики' },
   { key: 'trash', label: 'Корзина' },
+  { key: 'stats', label: 'Статистика' },
 ] as const;
 type FolderKey = (typeof FOLDERS)[number]['key'];
+type ThreadFolderKey = Exclude<FolderKey, 'stats'>;
 const initialFolder = FOLDERS.find((item) => item.key === route.query.folder)?.key ?? 'inbox';
 const currentFolder = ref<FolderKey>(initialFolder);
+const isStatsFolder = computed(() => currentFolder.value === 'stats');
 const folderUnreadCount = (folder: FolderKey) => {
   if (folder === 'inbox') return inboxUnreadCount.value;
   if (folder === 'trash') return trashUnreadCount.value;
   return 0;
+};
+
+const mailStats = ref<MailStatsResponse | null>(null);
+const pendingStats = ref(false);
+const statsFrom = ref('');
+const statsTo = ref('');
+
+const formatStatsDay = (iso: string) =>
+  new Intl.DateTimeFormat('ru-RU', { timeZone: MAIL_TZ, day: '2-digit', month: '2-digit', year: 'numeric' }).format(
+    new Date(iso),
+  );
+
+const defaultStatsRange = () => {
+  const to = new Date();
+  const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const toIsoDay = (date: Date) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: MAIL_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const year = parts.find((part) => part.type === 'year')?.value;
+    const month = parts.find((part) => part.type === 'month')?.value;
+    const day = parts.find((part) => part.type === 'day')?.value;
+    return `${year}-${month}-${day}`;
+  };
+  return { from: toIsoDay(from), to: toIsoDay(to) };
+};
+
+const loadStats = async () => {
+  pendingStats.value = true;
+  try {
+    if (!statsFrom.value || !statsTo.value) {
+      const range = defaultStatsRange();
+      statsFrom.value = range.from;
+      statsTo.value = range.to;
+    }
+    mailStats.value = await mailStore.fetchStats({
+      account_id: selectedAccountId.value || undefined,
+      from: statsFrom.value,
+      to: statsTo.value,
+    });
+  } catch (e) {
+    $toast.error(getErrorMessage(e));
+  } finally {
+    pendingStats.value = false;
+  }
+};
+
+const openProblemThread = async (threadId: number) => {
+  currentFolder.value = 'sent';
+  selectedThreadId.value = threadId;
+  await loadThreads();
+  await openThreadById(threadId);
 };
 
 const composeParam = String(route.query.compose ?? '');
@@ -350,12 +410,16 @@ const selectedThreadIds = ref<Set<number>>(new Set());
 const selectedThreadsCount = computed(() => selectedThreadIds.value.size);
 
 const threadQuery = () => ({
-  folder: currentFolder.value,
+  folder: (currentFolder.value === 'stats' ? 'sent' : currentFolder.value) as ThreadFolderKey,
   account_id: selectedAccountId.value || undefined,
   search: search.value || undefined,
 });
 
 const loadThreads = async () => {
+  if (isStatsFolder.value) {
+    await loadStats();
+    return;
+  }
   selectedThreadIds.value = new Set();
   try {
     await mailStore.fetchThreads(threadQuery());
@@ -407,20 +471,26 @@ const selectFolder = async (folder: FolderKey) => {
   composeThreadId.value = null;
   currentFolder.value = folder;
   selectedThreadId.value = null;
-  void loadThreads();
+  if (folder === 'stats') {
+    void loadStats();
+  } else {
+    void loadThreads();
+  }
 };
 
 const POLL_INTERVAL_MS = 30000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const pollThreads = () => {
-  void mailStore
-    .fetchThreads({
-      ...threadQuery(),
-      limit: Math.max(30, threads.value.length),
-      silent: true,
-    })
-    .catch(() => {});
+  if (!isStatsFolder.value) {
+    void mailStore
+      .fetchThreads({
+        ...threadQuery(),
+        limit: Math.max(30, threads.value.length),
+        silent: true,
+      })
+      .catch(() => {});
+  }
   void mailStore.fetchUnreadCount().catch(() => {});
 };
 
@@ -476,17 +546,17 @@ const openThreadById = async (id: number, unread = false) => {
 const loadMailPageData = async () => {
   const tasks: Promise<unknown>[] = [
     mailStore.fetchAccounts(),
-    loadThreads(),
+    isStatsFolder.value ? loadStats() : loadThreads(),
     mailStore.fetchUnreadCount(),
     mailStore.fetchContacts(),
   ];
-  if (selectedThreadId.value) {
+  if (!isStatsFolder.value && selectedThreadId.value) {
     tasks.push(
       mailStore.fetchThread(selectedThreadId.value).catch(() => {
         selectedThreadId.value = null;
       }),
     );
-  } else if (composeThreadId.value) {
+  } else if (!isStatsFolder.value && composeThreadId.value) {
     tasks.push(
       mailStore.fetchThread(composeThreadId.value).catch(() => {
         composeThreadId.value = null;
@@ -962,10 +1032,91 @@ watch(
           <option :value="0">Все ящики</option>
           <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.address }}</option>
         </select>
-        <input v-model="search" class="mail-page__search" type="text" placeholder="Поиск по теме или адресу" />
-        <button class="mail-page__compose-btn mail-page__compose-mobile" @click="openComposer">Написать</button>
+        <template v-if="isStatsFolder">
+          <input v-model="statsFrom" class="mail-page__search mail-page__search_date" type="date" aria-label="Дата с" />
+          <input v-model="statsTo" class="mail-page__search mail-page__search_date" type="date" aria-label="Дата по" />
+          <button class="mail-page__compose-btn" type="button" :disabled="pendingStats" @click="loadStats">Показать</button>
+        </template>
+        <template v-else>
+          <input v-model="search" class="mail-page__search" type="text" placeholder="Поиск по теме или адресу" />
+          <button class="mail-page__compose-btn mail-page__compose-mobile" @click="openComposer">Написать</button>
+        </template>
       </div>
 
+      <div v-if="isStatsFolder" class="mail-page__stats">
+        <div v-if="pendingStats && !mailStats" class="mail-page__placeholder">Загрузка статистики…</div>
+        <template v-else-if="mailStats">
+          <p class="mail-page__stats-period">
+            {{ formatStatsDay(mailStats.from) }} - {{ formatStatsDay(mailStats.to) }}
+          </p>
+          <div class="mail-page__stats-grid">
+            <div class="mail-page__stats-card">
+              <span class="mail-page__stats-value">{{ mailStats.totals.sent }}</span>
+              <span class="mail-page__stats-label">отправлено</span>
+            </div>
+            <div class="mail-page__stats-card">
+              <span class="mail-page__stats-value">{{ mailStats.totals.delivered }}</span>
+              <span class="mail-page__stats-label">доставлено</span>
+            </div>
+            <div class="mail-page__stats-card">
+              <span class="mail-page__stats-value">{{ mailStats.totals.opened }}</span>
+              <span class="mail-page__stats-label">открыто · {{ mailStats.totals.open_rate }}%</span>
+            </div>
+            <div class="mail-page__stats-card">
+              <span class="mail-page__stats-value">{{ mailStats.totals.clicked }}</span>
+              <span class="mail-page__stats-label">клики · {{ mailStats.totals.click_rate }}%</span>
+            </div>
+            <div class="mail-page__stats-card">
+              <span class="mail-page__stats-value">{{ mailStats.totals.bounced }}</span>
+              <span class="mail-page__stats-label">bounce · {{ mailStats.totals.bounce_rate }}%</span>
+            </div>
+            <div class="mail-page__stats-card">
+              <span class="mail-page__stats-value">{{ mailStats.totals.complained }}</span>
+              <span class="mail-page__stats-label">жалобы · {{ mailStats.totals.complaint_rate }}%</span>
+            </div>
+          </div>
+          <p class="mail-page__stats-note">
+            Открытия считаются по трекинг-pixel Postbox и не равны "прочитано". Папку "Спам" провайдеры не отдают:
+            видна только жалоба, если она пришла.
+          </p>
+          <h3 class="mail-page__stats-heading">По ящикам</h3>
+          <div v-if="!mailStats.by_account.length" class="mail-page__placeholder">За период отправок нет</div>
+          <div v-else class="mail-page__stats-accounts">
+            <div v-for="row in mailStats.by_account" :key="row.account_id" class="mail-page__stats-account">
+              <span class="mail-page__stats-account-name">{{ row.display_name || row.address }}</span>
+              <span class="mail-page__stats-account-meta">
+                {{ row.sent }} отпр. · {{ row.opened }} откр. · {{ row.bounced }} bounce · {{ row.complained }} жалоб
+              </span>
+            </div>
+          </div>
+          <h3 class="mail-page__stats-heading">Проблемные письма</h3>
+          <div v-if="!mailStats.problems.length" class="mail-page__placeholder">Bounce и жалоб за период нет</div>
+          <button
+            v-for="item in mailStats.problems"
+            :key="item.id"
+            type="button"
+            class="mail-page__stats-problem"
+            @click="openProblemThread(item.thread_id)"
+          >
+            <span class="mail-page__stats-problem-top">
+              <span class="mail-page__stats-problem-subject">{{ item.subject || '(без темы)' }}</span>
+              <MailDeliveryBadge
+                status="sent"
+                :delivery-status="item.delivery_status"
+                :open-count="0"
+                :click-count="0"
+                compact
+              />
+            </span>
+            <span class="mail-page__stats-problem-meta">
+              {{ item.account_address }} → {{ item.to_addresses.join(', ') || '—' }}
+            </span>
+          </button>
+        </template>
+        <div v-else class="mail-page__placeholder">Не удалось загрузить статистику</div>
+      </div>
+
+      <template v-else>
       <div v-if="selectedThreadsCount" class="mail-page__selection-bar">
         <span class="mail-page__selection-count">Выбрано: {{ selectedThreadsCount }}</span>
         <button class="mail-page__selection-clear" type="button" @click="clearThreadSelection">Снять</button>
@@ -1035,6 +1186,14 @@ watch(
               <span :class="['mail-page__thread-subject', { 'mail-page__thread-subject_unread': thread.unread_count }]">
                 {{ thread.subject }}
               </span>
+              <MailDeliveryBadge
+                v-if="currentFolder === 'sent'"
+                status="sent"
+                :delivery-status="thread.delivery_status"
+                :open-count="thread.open_count"
+                :click-count="thread.click_count"
+                compact
+              />
               <span v-if="thread.unread_count" class="mail-page__thread-badge">{{ thread.unread_count }}</span>
             </span>
             <span v-if="!selectedAccountId" class="mail-page__thread-account">{{ accountLabel(thread.account_id) }}</span>
@@ -1042,10 +1201,17 @@ watch(
         </div>
         <div v-if="isLoadingMoreThreads" class="mail-page__load-more">Загружаем ещё…</div>
       </div>
+      </template>
     </div>
 
     <div class="mail-page__detail">
-      <template v-if="composeMode">
+      <template v-if="isStatsFolder">
+        <div class="mail-page__detail-empty">
+          <p>Сводка по исходящим письмам из ящиков, к которым у вас есть доступ.</p>
+          <p class="mail-page__detail-empty-hint">Проблемное письмо из списка слева откроется в "Отправленных".</p>
+        </div>
+      </template>
+      <template v-else-if="composeMode">
         <div class="mail-page__detail-header">
           <button class="mail-page__back-mobile" title="Назад" @click="closeComposer">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -1593,6 +1759,148 @@ watch(
     @media (max-width: $screen-mobile-l) {
       padding-bottom: var(--mobile-nav-h);
     }
+  }
+
+  &__search_date {
+    min-width: 0;
+  }
+
+  &__stats {
+    flex: 1;
+    overflow-y: auto;
+    @include flex(cn);
+    gap: 12px;
+    padding: 16px;
+
+    @media (max-width: $screen-mobile-l) {
+      padding-bottom: calc(16px + var(--mobile-nav-h));
+    }
+  }
+
+  &__stats-period {
+    margin: 0;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+
+  &__stats-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  &__stats-card {
+    @include flex(cn);
+    gap: 4px;
+    padding: 12px;
+    border-radius: 10px;
+    background: var(--light-text-backgroung-primary-5);
+    border: 1px solid var(--light-text-backgroung-primary-10);
+  }
+
+  &__stats-value {
+    color: var(--light-text-backgroung-primary);
+    font-variant-numeric: tabular-nums;
+    @extend %text-l-medium;
+  }
+
+  &__stats-label {
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-xs-regular;
+  }
+
+  &__stats-note {
+    margin: 0;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-xs-regular;
+    line-height: 1.45;
+  }
+
+  &__stats-heading {
+    margin: 8px 0 0;
+    color: var(--light-text-backgroung-primary);
+    @extend %text-s-medium;
+  }
+
+  &__stats-accounts {
+    @include flex(cn);
+    gap: 8px;
+  }
+
+  &__stats-account {
+    @include flex(cn);
+    gap: 2px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--light-text-backgroung-primary-5);
+  }
+
+  &__stats-account-name {
+    color: var(--light-text-backgroung-primary);
+    overflow-wrap: anywhere;
+    @extend %text-s-medium;
+  }
+
+  &__stats-account-meta {
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-xs-regular;
+  }
+
+  &__stats-problem {
+    @include flex(cn);
+    gap: 4px;
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 10px;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--light-text-backgroung-primary-5);
+    }
+  }
+
+  &__stats-problem-top {
+    @include flex(rn, between, a-center);
+    gap: 8px;
+    width: 100%;
+  }
+
+  &__stats-problem-subject {
+    min-width: 0;
+    color: var(--light-text-backgroung-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    @extend %text-s-medium;
+  }
+
+  &__stats-problem-meta {
+    color: var(--light-text-backgroung-primary-50);
+    overflow-wrap: anywhere;
+    @extend %text-xs-regular;
+  }
+
+  &__detail-empty {
+    @include flex(cn, a-center, j-center);
+    flex: 1;
+    gap: 8px;
+    padding: 24px;
+    text-align: center;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+
+    p {
+      margin: 0;
+      max-width: 36ch;
+    }
+  }
+
+  &__detail-empty-hint {
+    color: var(--light-text-backgroung-primary-25);
+    @extend %text-xs-regular;
   }
 
   &__selection-bar {

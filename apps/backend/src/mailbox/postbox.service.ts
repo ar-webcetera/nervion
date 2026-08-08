@@ -18,8 +18,16 @@ export interface PostboxSendParams {
   attachments?: Attachment[];
 }
 
+export interface PostboxSendResult {
+  /** RFC Message-ID без угловых скобок (наш заголовок). */
+  messageId: string;
+  /** MessageId из ответа Postbox — им матчим delivery-события. */
+  providerMessageId: string | null;
+}
+
 const DEFAULT_POSTBOX_ENDPOINT = 'https://postbox.cloud.yandex.net';
 const DEFAULT_POSTBOX_REGION = 'ru-central1';
+const NERVION_MESSAGE_TAG = 'nervion-message-id';
 
 @Injectable()
 export class PostboxService {
@@ -53,9 +61,10 @@ export class PostboxService {
     return `${randomUUID()}@${domain}`;
   }
 
-  async send(params: PostboxSendParams): Promise<string> {
+  async send(params: PostboxSendParams): Promise<PostboxSendResult> {
     const client = this.getClient();
     const messageId = this.generateMessageId();
+    const configurationSetName = this.configService.get<string>('POSTBOX_CONFIGURATION_SET')?.trim() || undefined;
 
     const composer = new MailComposer({
       from: params.from.name ? { name: params.from.name, address: params.from.address } : params.from.address,
@@ -72,7 +81,7 @@ export class PostboxService {
 
     const raw = await composer.compile().build();
 
-    await client.send(
+    const response = await client.send(
       new SendEmailCommand({
         FromEmailAddress: params.from.address,
         Destination: {
@@ -80,11 +89,18 @@ export class PostboxService {
           CcAddresses: params.cc && params.cc.length > 0 ? params.cc : undefined,
         },
         Content: { Raw: { Data: raw } },
+        ConfigurationSetName: configurationSetName,
+        EmailTags: [{ Name: NERVION_MESSAGE_TAG, Value: messageId }],
       }),
     );
 
-    this.logger.log(`Письмо отправлено через Postbox: ${messageId} -> ${params.to.join(', ')}`);
+    const providerMessageId = response.MessageId?.trim() || null;
+    this.logger.log(
+      `Письмо отправлено через Postbox: ${messageId}` +
+        (providerMessageId ? ` (provider=${providerMessageId})` : '') +
+        ` -> ${params.to.join(', ')}`,
+    );
 
-    return messageId;
+    return { messageId, providerMessageId };
   }
 }

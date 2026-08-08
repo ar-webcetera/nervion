@@ -1,3 +1,5 @@
+import type { MailDeliveryStatus } from '@tracker/contracts';
+
 export enum MAIL_ACCOUNT_TYPES {
   personal = 'personal',
   service = 'service',
@@ -7,6 +9,8 @@ export enum MAIL_DIRECTIONS {
   inbound = 'inbound',
   outbound = 'outbound',
 }
+
+export type { MailDeliveryStatus };
 
 export interface MailAccountUser {
   id: number;
@@ -54,6 +58,11 @@ export interface MailMessage {
   html_body: string | null;
   is_read: boolean;
   status: 'received' | 'sent' | 'failed' | 'draft';
+  delivery_status?: MailDeliveryStatus | null;
+  first_opened_at?: string | null;
+  open_count?: number;
+  click_count?: number;
+  last_delivery_event_at?: string | null;
   createdAt: string;
   sender_avatar_url?: string | null;
   attachments?: MailAttachment[];
@@ -69,6 +78,9 @@ export interface MailThread {
   last_message_at: string;
   account?: MailAccount;
   unread_count?: number;
+  delivery_status?: MailDeliveryStatus | null;
+  open_count?: number;
+  click_count?: number;
 }
 
 export interface SendMailPayload {

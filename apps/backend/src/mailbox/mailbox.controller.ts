@@ -25,17 +25,22 @@ import { ROLES } from '../common/enums/roles.enum';
 import { RequestWithCookies } from '../common/types/request';
 import { CreateMailAccountDto } from './dto/create-mail-account.dto';
 import { FindThreadsDto } from './dto/find-threads.dto';
+import { MailboxStatsDto } from './dto/mailbox-stats.dto';
 import { SaveDraftDto } from './dto/save-draft.dto';
 import { SendMailDto } from './dto/send-mail.dto';
 import { UpdateMailAccountDto } from './dto/update-mail-account.dto';
 import { MAIL_FOLDERS } from './entities/mail-thread.entity';
+import { MailDeliveryService } from './mail-delivery.service';
 import { MailboxService } from './mailbox.service';
 
 @Controller('mailbox')
 @ApiTags('Почта')
 @UseGuards(AuthGuard, RolesGuard)
 export class MailboxController {
-  constructor(private readonly mailboxService: MailboxService) {}
+  constructor(
+    private readonly mailboxService: MailboxService,
+    private readonly mailDeliveryService: MailDeliveryService,
+  ) {}
 
   @Get('accounts')
   @ApiOperation({ summary: 'Список почтовых ящиков, доступных пользователю' })
@@ -224,6 +229,18 @@ export class MailboxController {
   @ApiResponse({ status: 401, description: 'Не авторизован' })
   getUnreadCount(@Req() req: RequestWithCookies) {
     return this.mailboxService.getUnreadCounts(req.user);
+  }
+
+  @Get('stats')
+  @ApiOperation({ summary: 'Статистика доставки исходящих писем по доступным ящикам' })
+  @ApiResponse({ status: 200, description: 'Сводка отправок, открытий, bounce и жалоб' })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  getStats(@Req() req: RequestWithCookies, @Query() dto: MailboxStatsDto) {
+    return this.mailDeliveryService.getStats(req.user, {
+      accountId: dto.account_id,
+      from: dto.from,
+      to: dto.to,
+    });
   }
 
   @Get('contacts')

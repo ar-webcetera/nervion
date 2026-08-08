@@ -4,8 +4,10 @@ import { PushModule } from '../push/push.module';
 import { StorageModule } from '../storage/storage.module';
 import { MailAccounts } from './entities/mail-account.entity';
 import { MailAttachments } from './entities/mail-attachment.entity';
+import { MailDeliveryEvents } from './entities/mail-delivery-event.entity';
 import { MailMessages } from './entities/mail-message.entity';
 import { MailThreads } from './entities/mail-thread.entity';
+import { MailDeliveryService } from './mail-delivery.service';
 import { MailboxService } from './mailbox.service';
 import { PostboxService } from './postbox.service';
 import { SmtpServerService } from './smtp/smtp-server.service';
@@ -16,9 +18,17 @@ import { Users } from '../users/entities/users.entity';
   imports: [
     PushModule,
     StorageModule,
-    TypeOrmModule.forFeature([MailAccounts, MailThreads, MailMessages, MailAttachments, Notifications, Users]),
+    TypeOrmModule.forFeature([
+      MailAccounts,
+      MailThreads,
+      MailMessages,
+      MailAttachments,
+      MailDeliveryEvents,
+      Notifications,
+      Users,
+    ]),
   ],
-  providers: [MailboxService, PostboxService, SmtpServerService],
-  exports: [MailboxService, PostboxService, SmtpServerService],
+  providers: [MailboxService, MailDeliveryService, PostboxService, SmtpServerService],
+  exports: [MailboxService, MailDeliveryService, PostboxService, SmtpServerService],
 })
 export class MailboxCoreModule {}

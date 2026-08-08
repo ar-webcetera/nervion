@@ -11,6 +11,7 @@ import { MailAttachments } from './entities/mail-attachment.entity';
 import { Notifications } from '../notifications/entities/notification.entity';
 import { StorageService } from '../storage/storage.service';
 import { PostboxService } from './postbox.service';
+import { MailDeliveryService } from './mail-delivery.service';
 import { PushService } from '../push/push.service';
 import { InboundMailData } from './mailbox.types';
 import { Users } from '../users/entities/users.entity';
@@ -95,6 +96,10 @@ describe('MailboxService', () => {
   const mockPostboxService = {
     send: jest.fn(),
   };
+  const mockMailDeliveryService = {
+    attachDeliverySummaries: jest.fn().mockResolvedValue(new Map()),
+    getStats: jest.fn(),
+  };
   const mockConfigService = {
     get: jest.fn(),
   };
@@ -134,6 +139,7 @@ describe('MailboxService', () => {
         { provide: getRepositoryToken(Users), useValue: mockUsersRepository },
         { provide: StorageService, useValue: mockStorageService },
         { provide: PostboxService, useValue: mockPostboxService },
+        { provide: MailDeliveryService, useValue: mockMailDeliveryService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: PushService, useValue: mockPushService },
       ],
@@ -271,7 +277,10 @@ describe('MailboxService', () => {
       mockAccountsRepository.findOne.mockResolvedValue(selectedAccount);
       mockThreadsRepository.save.mockResolvedValue(thread);
       mockMessagesRepository.save.mockImplementation((message: Partial<MailMessages>) => Promise.resolve(message));
-      mockPostboxService.send.mockResolvedValue('sent-message-id@webcetera.test');
+      mockPostboxService.send.mockResolvedValue({
+        messageId: 'sent-message-id@webcetera.test',
+        providerMessageId: 'QA_provider_1',
+      });
 
       await service.sendMail({ id: 10, role: 'employee' } as never, {
         account_id: selectedAccount.id,
@@ -292,6 +301,9 @@ describe('MailboxService', () => {
         expect.objectContaining({
           from_address: selectedAccount.address,
           from_name: selectedAccount.display_name,
+          message_id: 'sent-message-id@webcetera.test',
+          provider_message_id: 'QA_provider_1',
+          delivery_status: 'sent',
         }),
       );
     });
@@ -317,7 +329,10 @@ describe('MailboxService', () => {
       mockMessagesRepository.save.mockImplementation((message: Partial<MailMessages>) => Promise.resolve({ id: 12, ...message }));
       mockStorageService.getObjectStream.mockResolvedValue({ body: {} });
       mockAttachmentsRepository.save.mockResolvedValue([savedAttachment]);
-      mockPostboxService.send.mockResolvedValue('sent-message-id@webcetera.test');
+      mockPostboxService.send.mockResolvedValue({
+        messageId: 'sent-message-id@webcetera.test',
+        providerMessageId: 'QA_provider_2',
+      });
 
       const result = await service.sendMail({ id: 10, role: 'employee' } as never, {
         account_id: selectedAccount.id,
@@ -486,13 +501,21 @@ describe('MailboxService', () => {
         attachments: [],
         thread,
       });
-      mockPostboxService.send.mockResolvedValue('<sent@test>');
+      mockPostboxService.send.mockResolvedValue({
+        messageId: 'sent@test',
+        providerMessageId: 'QA_provider_draft',
+      });
 
       await service.sendDraft({ id: 10, role: 'employee' } as never, 9);
 
       expect(mockThreadsRepository.save).toHaveBeenCalledWith(expect.objectContaining({ subject: 'Итоговая тема' }));
       expect(mockMessagesRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ status: MAIL_MESSAGE_STATUSES.sent, message_id: '<sent@test>' }),
+        expect.objectContaining({
+          status: MAIL_MESSAGE_STATUSES.sent,
+          message_id: 'sent@test',
+          provider_message_id: 'QA_provider_draft',
+          delivery_status: 'sent',
+        }),
       );
     });
   });

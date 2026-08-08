@@ -30,7 +30,9 @@ import { MailThreads, MAIL_FOLDERS } from './entities/mail-thread.entity';
 import { Users } from '../users/entities/users.entity';
 import { InboundMailData } from './mailbox.types';
 import { buildReferencesHeader, canAccessAccount, extractReferencedIds, parseTaskIdFromAddress } from './mailbox.utils';
+import { MailDeliveryService } from './mail-delivery.service';
 import { PostboxService } from './postbox.service';
+import { MailDeliveryStatus } from '@tracker/contracts';
 
 const DEFAULT_THREADS_LIMIT = 30;
 const MAX_THREADS_LIMIT = 100;
@@ -56,6 +58,7 @@ export class MailboxService {
     private readonly usersRepository: Repository<Users>,
     private readonly storageService: StorageService,
     private readonly postboxService: PostboxService,
+    private readonly mailDeliveryService: MailDeliveryService,
     private readonly configService: ConfigService,
     private readonly pushService: PushService,
   ) {}
@@ -504,10 +507,10 @@ export class MailboxService {
       }
     }
 
-    let sentMessageId: string;
+    let sendResult: { messageId: string; providerMessageId: string | null };
 
     try {
-      sentMessageId = await this.postboxService.send({
+      sendResult = await this.postboxService.send({
         from: { address: account.address, name: account.display_name },
         to: dto.to,
         cc: dto.cc,
@@ -547,7 +550,11 @@ export class MailboxService {
       this.messagesRepository.create({
         thread_id: thread.id,
         direction: MAIL_DIRECTIONS.outbound,
-        message_id: sentMessageId,
+        message_id: sendResult.messageId,
+        provider_message_id: sendResult.providerMessageId,
+        delivery_status: MailDeliveryStatus.SENT,
+        open_count: 0,
+        click_count: 0,
         in_reply_to: inReplyTo,
         references_header: references,
         from_address: account.address,
@@ -635,12 +642,22 @@ export class MailboxService {
 
     const [threads, total] = await query.getManyAndCount();
     const avatarByAddress = await this.getUserAvatarMap(threads.map((thread) => thread.counterparty_address));
+    const deliveryByThread =
+      folder === MAIL_FOLDER_FILTER.sent
+        ? await this.mailDeliveryService.attachDeliverySummaries(threads.map((thread) => thread.id))
+        : null;
 
     return {
-      threads: threads.map((thread) => ({
-        ...thread,
-        counterparty_avatar_url: avatarByAddress.get(this.normalizeEmail(thread.counterparty_address)) ?? null,
-      })),
+      threads: threads.map((thread) => {
+        const delivery = deliveryByThread?.get(thread.id);
+        return {
+          ...thread,
+          counterparty_avatar_url: avatarByAddress.get(this.normalizeEmail(thread.counterparty_address)) ?? null,
+          delivery_status: delivery?.delivery_status ?? null,
+          open_count: delivery?.open_count ?? 0,
+          click_count: delivery?.click_count ?? 0,
+        };
+      }),
       total,
       page,
       limit,
@@ -834,9 +851,9 @@ export class MailboxService {
       content_type: item.content_type,
     }));
 
-    let sentMessageId: string;
+    let sendResult: { messageId: string; providerMessageId: string | null };
     try {
-      sentMessageId = await this.postboxService.send({
+      sendResult = await this.postboxService.send({
         from: { address: account.address, name: account.display_name },
         to,
         cc,
@@ -853,7 +870,13 @@ export class MailboxService {
       throw new InternalServerErrorException('Не удалось отправить черновик');
     }
 
-    draft.message_id = sentMessageId;
+    draft.message_id = sendResult.messageId;
+    draft.provider_message_id = sendResult.providerMessageId;
+    draft.delivery_status = MailDeliveryStatus.SENT;
+    draft.open_count = 0;
+    draft.click_count = 0;
+    draft.first_opened_at = null;
+    draft.last_delivery_event_at = null;
     draft.status = MAIL_MESSAGE_STATUSES.sent;
     draft.thread.subject = draft.subject || '(без темы)';
     draft.thread.last_message_at = new Date();

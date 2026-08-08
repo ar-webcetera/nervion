@@ -1,4 +1,5 @@
 import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { MailDeliveryStatus } from '@tracker/contracts';
 import { Users } from '../../users/entities/users.entity';
 import { MailAttachments } from './mail-attachment.entity';
 import { MailThreads } from './mail-thread.entity';
@@ -14,6 +15,8 @@ export enum MAIL_MESSAGE_STATUSES {
   failed = 'failed',
   draft = 'draft',
 }
+
+export { MailDeliveryStatus };
 
 export interface MailAddress {
   address: string;
@@ -96,6 +99,30 @@ export class MailMessages {
     default: MAIL_MESSAGE_STATUSES.received,
   })
   status: MAIL_MESSAGE_STATUSES;
+
+  @Index()
+  @Column({ type: 'varchar', length: 255, name: 'provider_message_id', nullable: true })
+  provider_message_id: string | null;
+
+  @Column({
+    type: 'varchar',
+    length: 32,
+    name: 'delivery_status',
+    nullable: true,
+  })
+  delivery_status: MailDeliveryStatus | null;
+
+  @Column({ type: 'timestamp', name: 'first_opened_at', nullable: true })
+  first_opened_at: Date | null;
+
+  @Column({ type: 'int', name: 'open_count', default: 0 })
+  open_count: number;
+
+  @Column({ type: 'int', name: 'click_count', default: 0 })
+  click_count: number;
+
+  @Column({ type: 'timestamp', name: 'last_delivery_event_at', nullable: true })
+  last_delivery_event_at: Date | null;
 
   @Column({ type: 'int', name: 'sent_by_user_id', nullable: true })
   sent_by_user_id: number | null;
