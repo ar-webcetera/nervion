@@ -521,21 +521,27 @@ export class MailDeliveryService {
     const result = new Map<number, { delivery_status: MailDeliveryStatus | null; open_count: number; click_count: number }>();
     if (threadIds.length === 0) return result;
 
+    // По треду: худший статус среди всех исходящих (жалоба/bounce важнее ответа «отправлено»)
+    // и сумма открытий/кликов.
+    const statusRankSql = `CASE message.delivery_status
+      WHEN '${MailDeliveryStatus.COMPLAINED}' THEN 4
+      WHEN '${MailDeliveryStatus.BOUNCED}' THEN 3
+      WHEN '${MailDeliveryStatus.DELIVERED}' THEN 2
+      WHEN '${MailDeliveryStatus.SENT}' THEN 1
+      ELSE 0
+    END`;
+
     const rows = await this.messagesRepository
       .createQueryBuilder('message')
-      .distinctOn(['message.thread_id'])
-      .select([
-        'message.thread_id AS thread_id',
-        'message.delivery_status AS delivery_status',
-        'message.open_count AS open_count',
-        'message.click_count AS click_count',
-      ])
+      .select('message.thread_id', 'thread_id')
+      .addSelect(`(ARRAY_AGG(message.delivery_status ORDER BY (${statusRankSql}) DESC NULLS LAST))[1]`, 'delivery_status')
+      .addSelect('COALESCE(SUM(message.open_count), 0)::int', 'open_count')
+      .addSelect('COALESCE(SUM(message.click_count), 0)::int', 'click_count')
       .where('message.thread_id IN (:...threadIds)', { threadIds })
       .andWhere('message.direction = :outbound', { outbound: MAIL_DIRECTIONS.outbound })
       .andWhere('message.status = :sentStatus', { sentStatus: MAIL_MESSAGE_STATUSES.sent })
       .andWhere('message.deleted_at IS NULL')
-      .orderBy('message.thread_id', 'ASC')
-      .addOrderBy('message.id', 'DESC')
+      .groupBy('message.thread_id')
       .getRawMany<{
         thread_id: string;
         delivery_status: MailDeliveryStatus | null;

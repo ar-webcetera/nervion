@@ -127,6 +127,35 @@ describe('MailDeliveryService', () => {
     );
   });
 
+  it('в сводке треда берёт жалобу, даже если последнее письмо только sent', async () => {
+    const qb = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      setParameters: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([
+        {
+          thread_id: '2830',
+          delivery_status: MailDeliveryStatus.COMPLAINED,
+          open_count: '0',
+          click_count: '0',
+        },
+      ]),
+    };
+    mockMessagesRepository.createQueryBuilder.mockReturnValue(qb);
+
+    const map = await service.attachDeliverySummaries([2830]);
+
+    expect(map.get(2830)).toEqual({
+      delivery_status: MailDeliveryStatus.COMPLAINED,
+      open_count: 0,
+      click_count: 0,
+    });
+    expect(qb.groupBy).toHaveBeenCalledWith('message.thread_id');
+  });
+
   it('игнорирует дубль по eventId', async () => {
     mockMessagesRepository.findOne.mockResolvedValue({
       id: 12,
