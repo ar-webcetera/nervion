@@ -88,9 +88,7 @@ export class MailDeliveryService {
     return [];
   }
 
-  private decodeStreamMessage(
-    message: PostboxEventPayload | string | { data?: string },
-  ): PostboxEventPayload[] {
+  private decodeStreamMessage(message: PostboxEventPayload | string | { data?: string }): PostboxEventPayload[] {
     if (!message) return [];
 
     if (typeof message === 'string') {
@@ -129,10 +127,7 @@ export class MailDeliveryService {
     if (!raw) return [];
 
     try {
-      const text =
-        typeof raw === 'string'
-          ? Buffer.from(raw, 'base64').toString('utf8')
-          : Buffer.from(raw).toString('utf8');
+      const text = typeof raw === 'string' ? Buffer.from(raw, 'base64').toString('utf8') : Buffer.from(raw).toString('utf8');
       const parsed: unknown = JSON.parse(text);
       if (Array.isArray(parsed)) {
         return parsed.filter((item): item is PostboxEventPayload => Boolean(item && typeof item === 'object'));
@@ -263,9 +258,7 @@ export class MailDeliveryService {
     }
     if (event.delivery) meta.delivery = { ...event.delivery };
     if (event.mail?.tags) {
-      meta.tags = Object.fromEntries(
-        Object.entries(event.mail.tags).map(([key, values]) => [key, [...values]]),
-      );
+      meta.tags = Object.fromEntries(Object.entries(event.mail.tags).map(([key, values]) => [key, [...values]]));
     }
     return meta;
   }
@@ -274,36 +267,49 @@ export class MailDeliveryService {
     const patch: Partial<MailMessages> = {
       last_delivery_event_at: this.maxDate(message.last_delivery_event_at, occurredAt),
     };
+    const knownType = this.asDeliveryEventType(eventType);
 
-    if (eventType === MailDeliveryEventType.DELIVERY) {
-      patch.delivery_status = this.pickHigherStatus(message.delivery_status, MailDeliveryStatus.DELIVERED);
-    } else if (eventType === MailDeliveryEventType.BOUNCE) {
-      patch.delivery_status = this.pickHigherStatus(message.delivery_status, MailDeliveryStatus.BOUNCED);
-    } else if (eventType === MailDeliveryEventType.COMPLAINT) {
-      patch.delivery_status = this.pickHigherStatus(message.delivery_status, MailDeliveryStatus.COMPLAINED);
-    } else if (eventType === MailDeliveryEventType.OPEN) {
-      patch.open_count = (message.open_count ?? 0) + 1;
-      patch.first_opened_at = message.first_opened_at ?? occurredAt;
-      if (!message.delivery_status || message.delivery_status === MailDeliveryStatus.SENT) {
-        patch.delivery_status = MailDeliveryStatus.DELIVERED;
-      }
-    } else if (eventType === MailDeliveryEventType.CLICK) {
-      patch.click_count = (message.click_count ?? 0) + 1;
-      if (!message.delivery_status || message.delivery_status === MailDeliveryStatus.SENT) {
-        patch.delivery_status = MailDeliveryStatus.DELIVERED;
-      }
-    } else if (eventType === MailDeliveryEventType.SEND && !message.delivery_status) {
-      patch.delivery_status = MailDeliveryStatus.SENT;
+    switch (knownType) {
+      case MailDeliveryEventType.DELIVERY:
+        patch.delivery_status = this.pickHigherStatus(message.delivery_status, MailDeliveryStatus.DELIVERED);
+        break;
+      case MailDeliveryEventType.BOUNCE:
+        patch.delivery_status = this.pickHigherStatus(message.delivery_status, MailDeliveryStatus.BOUNCED);
+        break;
+      case MailDeliveryEventType.COMPLAINT:
+        patch.delivery_status = this.pickHigherStatus(message.delivery_status, MailDeliveryStatus.COMPLAINED);
+        break;
+      case MailDeliveryEventType.OPEN:
+        patch.open_count = (message.open_count ?? 0) + 1;
+        patch.first_opened_at = message.first_opened_at ?? occurredAt;
+        if (!message.delivery_status || message.delivery_status === MailDeliveryStatus.SENT) {
+          patch.delivery_status = MailDeliveryStatus.DELIVERED;
+        }
+        break;
+      case MailDeliveryEventType.CLICK:
+        patch.click_count = (message.click_count ?? 0) + 1;
+        if (!message.delivery_status || message.delivery_status === MailDeliveryStatus.SENT) {
+          patch.delivery_status = MailDeliveryStatus.DELIVERED;
+        }
+        break;
+      case MailDeliveryEventType.SEND:
+        if (!message.delivery_status) {
+          patch.delivery_status = MailDeliveryStatus.SENT;
+        }
+        break;
+      default:
+        break;
     }
 
     await this.messagesRepository.update({ id: message.id }, patch);
     Object.assign(message, patch);
   }
 
-  private pickHigherStatus(
-    current: MailDeliveryStatus | null | undefined,
-    next: MailDeliveryStatus,
-  ): MailDeliveryStatus {
+  private asDeliveryEventType(value: string): MailDeliveryEventType | null {
+    return (Object.values(MailDeliveryEventType) as string[]).includes(value) ? (value as MailDeliveryEventType) : null;
+  }
+
+  private pickHigherStatus(current: MailDeliveryStatus | null | undefined, next: MailDeliveryStatus): MailDeliveryStatus {
     if (!current) return next;
     return STATUS_RANK[next] >= STATUS_RANK[current] ? next : current;
   }
@@ -512,10 +518,7 @@ export class MailDeliveryService {
   async attachDeliverySummaries(
     threadIds: number[],
   ): Promise<Map<number, { delivery_status: MailDeliveryStatus | null; open_count: number; click_count: number }>> {
-    const result = new Map<
-      number,
-      { delivery_status: MailDeliveryStatus | null; open_count: number; click_count: number }
-    >();
+    const result = new Map<number, { delivery_status: MailDeliveryStatus | null; open_count: number; click_count: number }>();
     if (threadIds.length === 0) return result;
 
     const rows = await this.messagesRepository

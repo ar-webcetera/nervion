@@ -19,10 +19,7 @@ export class MailboxPostboxEventsController {
   })
   @ApiResponse({ status: 201, description: 'События приняты' })
   @ApiResponse({ status: 401, description: 'Неверный секрет' })
-  async ingest(
-    @Headers('authorization') authorization: string | undefined,
-    @Body() body: PostboxEventsIngestBody,
-  ) {
+  async ingest(@Headers('authorization') authorization: string | undefined, @Body() body: PostboxEventsIngestBody) {
     this.mailDeliveryService.assertWebhookSecret(authorization);
     return this.mailDeliveryService.ingestPayload(body ?? {});
   }
