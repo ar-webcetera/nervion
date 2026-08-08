@@ -7,14 +7,15 @@ FOLDER_ID="${FOLDER_ID:-b1gitf9i2nhtkmpedo90}"
 FUNCTION_NAME="${FUNCTION_NAME:-nervion-postbox-webhook}"
 TRIGGER_NAME="${TRIGGER_NAME:-nervion-postbox-events}"
 STREAM_NAME="${STREAM_NAME:-postbox-events}"
-YDB_ID="${YDB_ID:-etnimgsmr4tfr51si6ld}"
+# Полный путь БД YDB для Data Streams (не только id).
+YDB_DATABASE="${YDB_DATABASE:-/ru-central1/b1gohnhmv11qt3af57hs/etnimgsmr4tfr51si6ld}"
 WEBHOOK_URL="${WEBHOOK_URL:-https://app.nervion.ru/api/mailbox/postbox-events}"
 WEBHOOK_SECRET="${WEBHOOK_SECRET:?Задайте WEBHOOK_SECRET (= POSTBOX_EVENTS_WEBHOOK_SECRET)}"
 SA_NAME="${SA_NAME:-nervion-postbox-webhook}"
 RUNTIME="${RUNTIME:-nodejs18}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 
-export YC_FOLDER_ID="$FOLDER_ID"
+yc config set folder-id "$FOLDER_ID" >/dev/null
 
 echo "==> Сервисный аккаунт $SA_NAME"
 if ! yc iam service-account get --name "$SA_NAME" >/dev/null 2>&1; then
@@ -32,11 +33,19 @@ yc resource-manager folder add-access-binding "$FOLDER_ID" \
 yc resource-manager folder add-access-binding "$FOLDER_ID" \
   --role serverless.functions.invoker \
   --subject "serviceAccount:$SA_ID" >/dev/null || true
+yc resource-manager folder add-access-binding "$FOLDER_ID" \
+  --role functions.editor \
+  --subject "serviceAccount:$SA_ID" >/dev/null || true
 
 echo "==> Функция $FUNCTION_NAME"
 if ! yc serverless function get --name "$FUNCTION_NAME" >/dev/null 2>&1; then
   yc serverless function create --name "$FUNCTION_NAME" --description "Postbox Data Streams → Nervion"
 fi
+
+# В архив версии не тащим README/create.sh — только handler.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+cp "$DIR/index.js" "$STAGE/index.js"
 
 yc serverless function version create \
   --function-name "$FUNCTION_NAME" \
@@ -44,7 +53,7 @@ yc serverless function version create \
   --entrypoint index.handler \
   --memory 128m \
   --execution-timeout 30s \
-  --source-path "$DIR" \
+  --source-path "$STAGE" \
   --service-account-id "$SA_ID" \
   --environment "WEBHOOK_URL=$WEBHOOK_URL,WEBHOOK_SECRET=$WEBHOOK_SECRET"
 
@@ -56,9 +65,10 @@ if yc serverless trigger get --name "$TRIGGER_NAME" >/dev/null 2>&1; then
 else
   yc serverless trigger create yds \
     --name "$TRIGGER_NAME" \
-    --database-id "$YDB_ID" \
+    --database "$YDB_DATABASE" \
     --stream "$STREAM_NAME" \
-    --batch-size 10 \
+    --stream-service-account-id "$SA_ID" \
+    --batch-size 1k \
     --batch-cutoff 1s \
     --invoke-function-id "$FUNC_ID" \
     --invoke-function-service-account-id "$SA_ID"
