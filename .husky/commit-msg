@@ -1,0 +1,36 @@
+#!/usr/bin/env sh
+# Удаляет trailer-атрибуцию AI/IDE из сообщения коммита (см. docs/agents/git-and-commits.md).
+
+msg_file="$1"
+if [ ! -f "$msg_file" ]; then
+  exit 0
+fi
+
+tmp_file="$(mktemp)"
+# shellcheck disable=SC2064
+trap 'rm -f "$tmp_file"' EXIT
+
+# Убираем запрещённые trailer-строки и хвостовые пустые строки после чистки.
+awk '
+  BEGIN { ignore = 0 }
+  {
+    line = $0
+    lower = tolower(line)
+    if (match(lower, /^co-authored-by[[:space:]]*:/)) next
+    if (match(lower, /^signed-off-by[[:space:]]*:/)) next
+    if (match(lower, /^made-with[[:space:]]*:/)) next
+    if (match(lower, /^generated-by[[:space:]]*:/)) next
+    print line
+  }
+' "$msg_file" > "$tmp_file"
+
+# Схлопнуть лишние пустые строки в конце файла
+awk '
+  { lines[NR] = $0 }
+  END {
+    end = NR
+    while (end > 0 && lines[end] ~ /^[[:space:]]*$/) end--
+    for (i = 1; i <= end; i++) print lines[i]
+    if (end > 0) print ""
+  }
+' "$tmp_file" > "$msg_file"
