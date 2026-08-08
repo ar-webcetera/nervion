@@ -15,8 +15,7 @@ import { MailDeliveryEvents } from './entities/mail-delivery-event.entity';
 import { MailMessages, MAIL_DIRECTIONS, MAIL_MESSAGE_STATUSES } from './entities/mail-message.entity';
 import { MailAccounts } from './entities/mail-account.entity';
 import type { PostboxEventPayload, PostboxEventsIngestBody, PostboxKinesisRecord } from './postbox-events.types';
-
-const NERVION_MESSAGE_TAG = 'nervion-message-id';
+import { NERVION_MESSAGE_TAG } from './postbox.service';
 
 const STATUS_RANK: Record<MailDeliveryStatus, number> = {
   [MailDeliveryStatus.SENT]: 1,
@@ -198,11 +197,17 @@ export class MailDeliveryService {
 
     const tagIds = event.mail?.tags?.[NERVION_MESSAGE_TAG] ?? [];
     for (const rawId of tagIds) {
-      const messageId = this.normalizeMessageId(rawId);
-      if (!messageId) continue;
-      const byTag = await this.messagesRepository.findOne({
-        where: { message_id: messageId, direction: MAIL_DIRECTIONS.outbound },
-      });
+      const token = this.normalizeMessageId(rawId);
+      if (!token) continue;
+      // В EmailTag уходит только UUID (без @domain) — ищем полный message_id.
+      const byTag = await this.messagesRepository
+        .createQueryBuilder('message')
+        .where('message.direction = :outbound', { outbound: MAIL_DIRECTIONS.outbound })
+        .andWhere('(message.message_id = :token OR message.message_id LIKE :prefix)', {
+          token,
+          prefix: `${token}@%`,
+        })
+        .getOne();
       if (byTag) return byTag;
     }
 

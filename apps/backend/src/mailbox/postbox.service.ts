@@ -27,7 +27,16 @@ export interface PostboxSendResult {
 
 const DEFAULT_POSTBOX_ENDPOINT = 'https://postbox.cloud.yandex.net';
 const DEFAULT_POSTBOX_REGION = 'ru-central1';
-const NERVION_MESSAGE_TAG = 'nervion-message-id';
+export const NERVION_MESSAGE_TAG = 'nervion-message-id';
+
+/**
+ * Значение EmailTag для Postbox/SES: только [A-Za-z0-9_-], ≤256 символов.
+ * В тег кладём UUID из Message-ID (часть до @) — иначе `uuid@domain` даёт tag value is invalid.
+ */
+export function toNervionMessageTagValue(messageId: string): string {
+  const local = messageId.replace(/^<|>$/g, '').trim().split('@')[0] ?? '';
+  return local.replace(/[^0-9A-Za-z_-]/g, '').slice(0, 256);
+}
 
 @Injectable()
 export class PostboxService {
@@ -90,7 +99,7 @@ export class PostboxService {
         },
         Content: { Raw: { Data: raw } },
         ConfigurationSetName: configurationSetName,
-        EmailTags: [{ Name: NERVION_MESSAGE_TAG, Value: messageId }],
+        EmailTags: [{ Name: NERVION_MESSAGE_TAG, Value: toNervionMessageTagValue(messageId) }],
       }),
     );
 
