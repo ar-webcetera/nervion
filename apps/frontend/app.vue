@@ -154,6 +154,13 @@ const updateTask = (updateTask: Task) => {
   }
 };
 
+/** Убирает задачу из панели трекера, когда по ней не осталось активных таймлогов */
+const dropTaskWithoutActiveTimelog = (taskId: number | null) => {
+  if (!taskId) return;
+  if (timelogStore.currentTimelogs.some((timelog) => timelog.task_id === taskId)) return;
+  taskStore.tasksWithTimelogs = taskStore.tasksWithTimelogs.filter((task) => task.id !== taskId);
+};
+
 const removeTaskLocally = (taskId: number) => {
   taskStore.tasks = taskStore.tasks.filter((t) => t.id !== taskId);
   taskStore.tasksWithTimelogs = taskStore.tasksWithTimelogs.filter((t) => t.id !== taskId);
@@ -377,6 +384,15 @@ const initSocket = () => {
         if (Number(tl?.author_id) !== Number(userStore.user?.id)) break;
         const others = timelogStore.currentTimelogs.filter((t) => t.id !== tl.id);
         timelogStore.currentTimelogs = tl.status === TIMELOG_STATUSES.completed ? others : [...others, tl];
+        if (tl.status === TIMELOG_STATUSES.completed) dropTaskWithoutActiveTimelog(tl.task_id);
+        break;
+      }
+      case SOCKET_EVENT_TYPE.timelog_deleted: {
+        const tl = event.data as Pick<Timelog, 'id' | 'task_id' | 'author_id'>;
+        if (Number(tl?.author_id) !== Number(userStore.user?.id)) break;
+        timelogStore.currentTimelogs = timelogStore.currentTimelogs.filter((t) => t.id !== tl.id);
+        timelogStore.timelogs = timelogStore.timelogs.filter((t) => t.id !== tl.id);
+        dropTaskWithoutActiveTimelog(tl.task_id);
         break;
       }
       case SOCKET_EVENT_TYPE.chat_message_added: {

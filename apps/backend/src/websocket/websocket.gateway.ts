@@ -72,6 +72,13 @@ export class WebsocketGateway {
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.timelog_updated, data: timelog });
   }
 
+  sendTimelogDeleted(timelog: Pick<Timelogs, 'id' | 'task_id' | 'author_id'>) {
+    this.server.emit('event', {
+      type: SOCKET_EVENT_TYPE.timelog_deleted,
+      data: { id: timelog.id, task_id: timelog.task_id, author_id: timelog.author_id },
+    });
+  }
+
   handleConnection(client: Socket) {
     const userId = this.getUserIdFromClient(client);
     if (userId) {

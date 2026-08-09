@@ -358,6 +358,7 @@ export class TimelogsService {
         summary: `Удален таймлог #${timelog.id}`,
         beforePayload: this.serializeTimelogForAudit(timelog),
       });
+      this.websocketGateway.sendTimelogDeleted(timelog);
     }
 
     return result;

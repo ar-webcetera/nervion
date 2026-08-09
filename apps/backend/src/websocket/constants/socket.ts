@@ -16,4 +16,5 @@ export enum SOCKET_EVENT_TYPE {
   users_online = 'users_online',
   voice_room_updated = 'voice_room_updated',
   timelog_updated = 'timelog_updated',
+  timelog_deleted = 'timelog_deleted',
 }
