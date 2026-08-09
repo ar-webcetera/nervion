@@ -95,7 +95,7 @@ const createUnboundTimelog = async () => {
       status: TIMELOG_STATUSES.in_progress,
       ...(raw ? { title: raw } : {}),
     } as Partial<Timelog>);
-    if (created) timelogStore.currentTimelogs = [created, ...timelogStore.currentTimelogs];
+    if (created) timelogStore.upsertCurrentTimelog(created, true);
     newTimerModal.value?.close();
   } catch (e) {
     $toast.error(getErrorMessage(e));
@@ -272,21 +272,21 @@ onBeforeUnmount(() => {
             </template>
           </div>
           <div class="unbound-row__right">
-            <button type="button" class="unbound-row__attach" @click="openAttachModal(t.id)">Привязать</button>
-            <BaseTimetrack :timelog="t" @reset-timelog="onUnboundReset" />
+            <BaseTimetrack :timelog="t" bindable @reset-timelog="onUnboundReset" @bind-task="openAttachModal(t.id)" />
           </div>
         </div>
 
-        <div v-for="task of taskStore.tasksWithTimelogs" :key="task.id" class="bound-row">
-          <TaskComponent
-            :show-timetracking="true"
-            class="task"
-            :task="task"
-            disable-dropdown
-            @open-task-sidebar="openTaskSidebar"
-          />
-          <button type="button" class="bound-row__change" @click.stop="openChangeTaskModal(task)">Сменить задачу</button>
-        </div>
+        <TaskComponent
+          v-for="task of taskStore.tasksWithTimelogs"
+          :key="task.id"
+          :show-timetracking="true"
+          class="task"
+          :task="task"
+          disable-dropdown
+          bindable-timelog
+          @open-task-sidebar="openTaskSidebar"
+          @bind-task="openChangeTaskModal(task)"
+        />
       </div>
       <div v-else class="empty-message">
         <img src="@/assets/empty_timer.webp" alt="" />
@@ -577,53 +577,14 @@ onBeforeUnmount(() => {
     @include flex(rn, a-center);
     gap: 8px;
   }
-
-  &__attach {
-    padding: 6px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--light-text-backgroung-primary-10);
-    background: transparent;
-    color: var(--light-text-backgroung-primary);
-    cursor: pointer;
-    @extend %text-xs-regular;
-
-    &:hover {
-      background: var(--light-text-backgroung-primary-10);
-    }
-  }
-}
-
-.bound-row {
-  @include flex(rn, a-center);
-  gap: 8px;
-
-  .task {
-    flex: 1;
-    min-width: 0;
-  }
-
-  &__change {
-    padding: 6px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--light-text-backgroung-primary-10);
-    background: transparent;
-    color: var(--light-text-backgroung-primary-50);
-    cursor: pointer;
-    white-space: nowrap;
-    @extend %text-xs-regular;
-
-    &:hover {
-      background: var(--light-text-backgroung-primary-10);
-      color: var(--light-text-backgroung-primary);
-    }
-  }
 }
 
 .new-timer-modal {
   @include flex(cn);
   gap: 16px;
-  padding: 24px;
-  width: 420px;
+  // Вертикальные отступы уже задаёт .base-modal__content
+  padding: 0 24px;
+  width: 100%;
 
   h2 {
     @extend %text-l-bold;
@@ -664,9 +625,8 @@ onBeforeUnmount(() => {
 .attach-modal {
   @include flex(cn);
   gap: 12px;
-  padding: 24px;
-  width: 480px;
-  max-height: 60vh;
+  padding: 0 24px;
+  width: 100%;
 
   h2 {
     @extend %text-l-bold;

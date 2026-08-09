@@ -8,6 +8,7 @@ import {
   HttpStatus,
   Logger,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -173,8 +174,8 @@ export class TasksController {
     description: 'Задача успешно получена',
   })
   @UseGuards(AuthGuard, RolesGuard)
-  async findTaskById(@Param() param: { taskId: number }, @Req() req: RequestWithCookies) {
-    return await this.tasksService.findTaskById(param.taskId, req.user);
+  async findTaskById(@Param('taskId', ParseIntPipe) taskId: number, @Req() req: RequestWithCookies) {
+    return await this.tasksService.findTaskById(taskId, req.user);
   }
 
   @Post()

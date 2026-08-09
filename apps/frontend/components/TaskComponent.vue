@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import IconDrag from '~/components/Icons/IconDrag.vue';
-import { TaskType, type Task } from '~/types/task';
+import { TaskType, type Task, type Timelog } from '~/types/task';
 import { useUserStore } from '~/stores/userStore';
 import type { User } from '~/types/user';
 import type { TASK_STATUSES } from '~/constants/task.constants';
@@ -22,6 +22,12 @@ const props = defineProps<{
   showTimetracking?: boolean;
   disableDropdown?: boolean;
   relatedTaskId?: number | null;
+  /** Показывать в таймере иконку смены задачи */
+  bindableTimelog?: boolean;
+}>();
+
+const emit = defineEmits<{
+  (e: 'bind-task', timelog: Timelog): void;
 }>();
 const { $toast } = useNuxtApp();
 const resposibleId = ref<number | null>(null);
@@ -142,7 +148,12 @@ onMounted(() => {
           <span>{{ task.title }}</span>
         </div>
         <div class="task__track">
-          <BaseTimetrack v-if="showTimetracking" :timelog="currentTimelog" />
+          <BaseTimetrack
+            v-if="showTimetracking"
+            :timelog="currentTimelog"
+            :bindable="bindableTimelog"
+            @bind-task="emit('bind-task', $event)"
+          />
         </div>
       </div>
       <div class="task__tags">
@@ -182,7 +193,12 @@ onMounted(() => {
       <IconUnlink v-else />
     </div>
 
-    <BaseTimetrack v-if="showTimetracking" :timelog="currentTimelog" />
+    <BaseTimetrack
+      v-if="showTimetracking"
+      :timelog="currentTimelog"
+      :bindable="bindableTimelog"
+      @bind-task="emit('bind-task', $event)"
+    />
   </div>
 </template>
 

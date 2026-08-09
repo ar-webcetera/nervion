@@ -31,7 +31,7 @@ export const useTaskTimelogs = (taskId: Ref<number | null>) => {
     });
 
     if (timelog) {
-      timelogStore.currentTimelogs.push(timelog);
+      timelogStore.upsertCurrentTimelog(timelog);
     }
 
     const task =

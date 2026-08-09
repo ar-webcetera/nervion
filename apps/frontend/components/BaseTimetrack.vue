@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import IconTimer from '~/components/Icons/IconTimer.vue';
+import IconLink from '~/components/Icons/IconLink.vue';
 import IconPlay from '~/components/Icons/IconPlay.vue';
 import IconRestart from '~/components/Icons/IconRestart.vue';
 import IconPause from '~/components/Icons/IconPause.vue';
@@ -21,6 +22,8 @@ const props = defineProps<{
   timelog: Timelog | null;
   isRead?: boolean;
   task?: boolean;
+  /** Показывать иконку привязки/смены задачи внутри блока таймера */
+  bindable?: boolean;
 }>();
 
 const timelog = ref(props.timelog || null);
@@ -33,6 +36,7 @@ type BaseModalInstance = ComponentPublicInstance<{
 const emit = defineEmits<{
   (e: 'create-timelog' | 'continue-timelog'): void;
   (e: 'reset-timelog', timelogId: number): void;
+  (e: 'bind-task', timelog: Timelog): void;
 }>();
 
 const restartTimerModal = ref<BaseModalInstance | null>(null);
@@ -145,6 +149,17 @@ const isTracking = computed(() => {
   return timelog.value?.status === TIMELOG_STATUSES.in_progress;
 });
 
+const canBindTask = computed(
+  () => props.bindable && !props.isRead && timelog.value && timelog.value.status !== TIMELOG_STATUSES.completed,
+);
+
+const bindTitle = computed(() => (timelog.value?.task_id ? 'Сменить задачу' : 'Привязать к задаче'));
+
+const onBindTask = () => {
+  if (!timelog.value) return;
+  emit('bind-task', timelog.value);
+};
+
 onMounted(() => {
   initFromTimelog();
 });
@@ -201,6 +216,9 @@ onBeforeUnmount(() => {
           <IconTimer v-if="isTracking" />
         </div>
       </template>
+      <button v-if="canBindTask" type="button" class="timelog__bind" :title="bindTitle" @click.stop="onBindTask">
+        <IconLink />
+      </button>
     </div>
   </div>
   <teleport to="#teleports">
@@ -274,6 +292,24 @@ onBeforeUnmount(() => {
   &__pause {
     display: flex;
     cursor: pointer;
+  }
+
+  &__bind {
+    display: flex;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+
+    svg {
+      width: 16px;
+      height: 16px;
+      stroke: var(--white-50);
+    }
+
+    &:hover svg {
+      stroke: var(--light-text-backgroung-primary);
+    }
   }
   &__timer {
     @include flex(rn, a-center);

@@ -18,6 +18,15 @@ export const useTimelogStore = defineStore('timelog', () => {
     return ev;
   };
 
+  /**
+   * Кладёт таймлог в список активных без дублей: тот же таймлог параллельно
+   * приходит через websocket-событие `timelog_updated`.
+   */
+  const upsertCurrentTimelog = (timelog: Timelog, prepend = false) => {
+    const others = currentTimelogs.value.filter((t) => t.id !== timelog.id);
+    currentTimelogs.value = prepend ? [timelog, ...others] : [...others, timelog];
+  };
+
   const findTimelogsByTask = async (task_id: number) => {
     const response = await $fetch<{ totalTimeSpent: string; timelogs: Timelog[] }>(`/api/timelogs/tasks/${task_id}/`, {
       credentials: 'include',
@@ -67,6 +76,7 @@ export const useTimelogStore = defineStore('timelog', () => {
 
   return {
     currentTimelogs,
+    upsertCurrentTimelog,
     timelogs,
     createTimelog,
     deleteTimelog,
