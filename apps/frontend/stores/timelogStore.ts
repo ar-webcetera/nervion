@@ -46,10 +46,15 @@ export const useTimelogStore = defineStore('timelog', () => {
       baseURL: config.public.API_URL,
     });
   };
-  const updateTimelog = async (id: number, { status, summary }: Partial<Timelog>) => {
-    const body: Partial<Timelog> = {};
+  const updateTimelog = async (
+    id: number,
+    { status, summary, task_id, title }: Partial<Timelog> & { task_id?: number | null; title?: string },
+  ) => {
+    const body: Record<string, unknown> = {};
     if (status) body.status = status;
-    if (summary) body.summary = summary;
+    if (summary !== undefined) body.summary = summary;
+    if (task_id !== undefined) body.task_id = task_id;
+    if (title !== undefined) body.title = title;
 
     const ev = await $fetch<Timelog>(`/api/timelogs/${id}`, {
       method: 'PATCH',

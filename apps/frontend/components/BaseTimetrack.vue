@@ -178,7 +178,13 @@ onBeforeUnmount(() => {
 
 <template>
   <div :class="['timelog', { timelog_play: !timelog, timelog_task: task }]">
-    <div v-if="displaySeconds && !isTracking && !isRead" class="timelog__send" @click="endModal!.open()"><IconSendTime /></div>
+    <div
+      v-if="displaySeconds && !isTracking && !isRead && timelog && timelog.task_id"
+      class="timelog__send"
+      @click="endModal!.open()"
+    >
+      <IconSendTime />
+    </div>
     <div class="timelog__block">
       <div v-if="!isTracking && !isRead" class="timelog__play" @click="onStart">
         <IconPlay />

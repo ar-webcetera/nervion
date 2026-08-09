@@ -1,16 +1,28 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNumber, IsOptional } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, MaxLength, ValidateIf } from 'class-validator';
 import { TIMELOG_STATUSES } from '../../common/enums/statuses.enum';
 
 export class UpdateTimelogDto {
+  @ValidateIf((_, value) => value !== null)
   @IsNumber({}, { message: 'ID задачи должен быть цифрой' })
   @ApiProperty({
-    description: 'Статус таймлога',
+    description: 'ID задачи. Пришлите null, чтобы отвязать таймер от задачи',
     example: 1,
     required: false,
+    nullable: true,
   })
   @IsOptional()
-  task_id?: number;
+  task_id?: number | null;
+
+  @IsString({ message: 'title должен быть строкой' })
+  @IsOptional()
+  @MaxLength(255)
+  @ApiProperty({
+    description: 'Черновое название таймера (только для неприкреплённых)',
+    example: 'Созвон с командой',
+    required: false,
+  })
+  title?: string;
 
   @IsNumber({}, { message: 'ID автора должен быть цифрой' })
   @ApiProperty({

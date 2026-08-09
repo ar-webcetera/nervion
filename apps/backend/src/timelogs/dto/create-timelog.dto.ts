@@ -1,14 +1,26 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsDateString, IsNumber, IsOptional } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, MaxLength } from 'class-validator';
 import { TIMELOG_STATUSES } from '../../common/enums/statuses.enum';
 
 export class CreateTimelogDto {
   @IsNumber({}, { message: 'ID задачи должен быть цифрой' })
+  @IsOptional()
   @ApiProperty({
-    description: 'ID задачи',
+    description: 'ID задачи (опционально: можно запустить таймер без привязки к задаче)',
     example: 1,
+    required: false,
   })
-  task_id: number;
+  task_id?: number;
+
+  @IsString({ message: 'title должен быть строкой' })
+  @IsOptional()
+  @MaxLength(255)
+  @ApiProperty({
+    description: 'Черновое название таймера для неприкреплённых записей',
+    example: 'Разбор почты',
+    required: false,
+  })
+  title?: string;
 
   @IsNumber({}, { message: 'ID автора должен быть цифрой' })
   @ApiProperty({

@@ -15,19 +15,26 @@ import { BillingReviewStatus } from '@tracker/contracts';
 
 @Index('unique_active_timelogs_per_task_author', ['task_id', 'author_id'], {
   unique: true,
-  where: `"status" IN ('in_progress')`,
+  where: `"status" = 'in_progress' AND "task_id" IS NOT NULL`,
+})
+@Index('unique_active_unbound_timelog_per_author', ['author_id'], {
+  unique: true,
+  where: `"status" = 'in_progress' AND "task_id" IS NULL`,
 })
 @Entity({ name: 'timelogs' })
 export class Timelogs {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ type: 'int', name: 'task_id' })
-  task_id: number;
+  @Column({ type: 'int', name: 'task_id', nullable: true })
+  task_id: number | null;
 
-  @ManyToOne(() => Tasks, (t) => t.timelog, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Tasks, (t) => t.timelog, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'task_id' })
-  task: Tasks;
+  task: Tasks | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  title: string | null;
 
   @Column({
     type: 'enum',

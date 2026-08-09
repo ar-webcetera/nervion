@@ -293,6 +293,21 @@ export const useTaskStore = defineStore('task', () => {
     return response || [];
   };
 
+  /** Поиск задач без записи результата в общий список `tasks` */
+  const searchTasks = async (title: string, limit = 20) => {
+    const trimmed = title.trim();
+    if (!trimmed) return [];
+    const headers = useRequestHeaders(['cookie']);
+    const response = await $fetch<Task[]>(`/api/tasks/`, {
+      baseURL: config.public.API_URL,
+      method: 'GET',
+      credentials: 'include',
+      headers,
+      params: { title: trimmed, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    });
+    return (response ?? []).slice(0, limit);
+  };
+
   const getKanban = async (params: Partial<KanbanParams>) => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<KanbanColumn[]>(`/api/tasks/kanban`, {
@@ -635,6 +650,7 @@ export const useTaskStore = defineStore('task', () => {
     deleteTask,
     tasksWithTimelogs,
     fetchTasksWithTimelogs,
+    searchTasks,
     currentTaskId,
     currentTaskDate,
     getKanban,

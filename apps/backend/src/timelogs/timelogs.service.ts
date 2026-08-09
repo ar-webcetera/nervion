@@ -1,5 +1,19 @@
-import { ConflictException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { AuditActionType, AuditEntityType, BillingReviewStatus, TaskBillingType } from '@tracker/contracts';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
+import {
+  AuditActionType,
+  AuditEntityType,
+  BillingReviewStatus,
+  TaskBillingType,
+  UNBOUND_TIMELOG_TITLE,
+} from '@tracker/contracts';
 import * as XLSX from 'xlsx';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, FindOptionsWhere, In, QueryFailedError, Repository } from 'typeorm';
@@ -40,6 +54,9 @@ export class TimelogsService {
       change_status_at: Date.now(),
     };
     if (createTimelogDto.author_id) {
+      if (currentUser && currentUser.role !== ROLES.admin && createTimelogDto.author_id !== currentUser.id) {
+        throw new ForbiddenException('Нельзя создавать таймлог от имени другого пользователя');
+      }
       const author = await this.usersRepository.findOneBy({ id: createTimelogDto.author_id });
       if (author) {
         data.author = author;
@@ -59,6 +76,7 @@ export class TimelogsService {
     if (createTimelogDto.task_id) {
       const task = await this.tasksRepository.findOneBy({ id: createTimelogDto.task_id });
       if (task) {
+        await this.assertTaskAccess(task, currentUser);
         data.task = task;
         if (createTimelogDto.status === TIMELOG_STATUSES.completed && task.billing_type === TaskBillingType.HOURLY) {
           data.billing_status = BillingReviewStatus.PENDING;
@@ -72,6 +90,13 @@ export class TimelogsService {
           HttpStatus.NOT_FOUND,
         );
       }
+      data.title = null;
+    } else {
+      if (createTimelogDto.status === TIMELOG_STATUSES.completed) {
+        throw new BadRequestException('Нельзя зафиксировать таймлог без привязки к задаче. Сначала привяжите таймер к задаче.');
+      }
+      const raw = createTimelogDto.title?.trim();
+      data.title = raw && raw.length > 0 ? raw : UNBOUND_TIMELOG_TITLE;
     }
 
     let newTimelog: Timelogs;
@@ -81,6 +106,9 @@ export class TimelogsService {
       if (error instanceof QueryFailedError) {
         const pgCode = (error.driverError as { code?: string } | undefined)?.code;
         if (pgCode === '23505') {
+          if (!createTimelogDto.task_id) {
+            throw new ConflictException('У вас уже есть активный таймер без задачи. Остановите его перед запуском нового.');
+          }
           throw new ConflictException('У вас уже есть активный таймер по этой задаче. Остановите его перед запуском нового.');
         }
       }
@@ -160,7 +188,35 @@ export class TimelogsService {
         HttpStatus.NOT_FOUND,
       );
     }
+    this.assertIsOwner(timelog, currentUser);
+
     const beforePayload = this.serializeTimelogForAudit(timelog);
+
+    const isCompleted = timelog.status === TIMELOG_STATUSES.completed;
+
+    if (updateTimelogDto.task_id !== undefined) {
+      if (isCompleted) {
+        throw new BadRequestException('Нельзя менять задачу у зафиксированного таймлога.');
+      }
+      if (updateTimelogDto.task_id === null) {
+        timelog.task_id = null;
+        timelog.title = timelog.title?.trim() || UNBOUND_TIMELOG_TITLE;
+      } else {
+        const task = await this.tasksRepository.findOneBy({ id: updateTimelogDto.task_id });
+        if (!task) {
+          throw new HttpException({ message: [`Задача с id=${updateTimelogDto.task_id} не найдена`] }, HttpStatus.NOT_FOUND);
+        }
+        await this.assertTaskAccess(task, currentUser);
+        timelog.task_id = task.id;
+        timelog.title = null;
+      }
+    }
+
+    if (updateTimelogDto.title !== undefined && !isCompleted && timelog.task_id === null) {
+      const raw = updateTimelogDto.title.trim();
+      timelog.title = raw.length > 0 ? raw : UNBOUND_TIMELOG_TITLE;
+    }
+
     if (updateTimelogDto.status === TIMELOG_STATUSES.in_progress) {
       timelog.status = TIMELOG_STATUSES.in_progress;
       timelog.change_status_at = Date.now();
@@ -176,6 +232,9 @@ export class TimelogsService {
     }
 
     if (updateTimelogDto.status === TIMELOG_STATUSES.completed) {
+      if (!timelog.task_id) {
+        throw new BadRequestException('Нельзя зафиксировать таймлог без привязки к задаче. Сначала привяжите таймер к задаче.');
+      }
       timelog.status = TIMELOG_STATUSES.completed;
       timelog.summary = updateTimelogDto.summary ?? '';
       timelog.change_status_at = Date.now();
@@ -186,7 +245,18 @@ export class TimelogsService {
       }
     }
 
-    const updatedTimelog = await this.timelogRepository.save(timelog);
+    let updatedTimelog: Timelogs;
+    try {
+      updatedTimelog = await this.timelogRepository.save(timelog);
+    } catch (error) {
+      if (error instanceof QueryFailedError) {
+        const pgCode = (error.driverError as { code?: string } | undefined)?.code;
+        if (pgCode === '23505') {
+          throw new ConflictException('У вас уже есть активный таймер по этой задаче. Остановите его перед запуском нового.');
+        }
+      }
+      throw error;
+    }
     const timelogWithTask = await this.timelogRepository.findOne({ where: { id }, relations: ['task'] });
     void this.auditLogsService.record({
       actionType: AuditActionType.TIMELOG_UPDATED,
@@ -238,6 +308,7 @@ export class TimelogsService {
         'SUM(timelog.time_spent) as total_seconds',
       ])
       .where('author.id IS NOT NULL')
+      .andWhere('timelog.task_id IS NOT NULL')
       .groupBy('fullName, date')
       .orderBy('date', 'DESC')
       .getRawMany();
@@ -271,6 +342,8 @@ export class TimelogsService {
 
   async deleteTimelog(id: number, currentUser?: AuthenticatedUser) {
     const timelog = await this.timelogRepository.findOne({ where: { id }, relations: ['task'] });
+    if (timelog) this.assertIsOwner(timelog, currentUser);
+
     const result = await this.timelogRepository.delete({ id });
 
     if (timelog) {
@@ -373,10 +446,32 @@ export class TimelogsService {
     return summary;
   }
 
+  /** Редактировать таймлог может только его автор или админ */
+  private assertIsOwner(timelog: Timelogs, currentUser?: AuthenticatedUser) {
+    if (!currentUser || currentUser.role === ROLES.admin) return;
+    if (timelog.author_id !== currentUser.id) {
+      throw new ForbiddenException('Нельзя изменять таймлог другого пользователя');
+    }
+  }
+
+  /** Привязать таймлог можно только к задаче из доступного пользователю проекта */
+  private async assertTaskAccess(task: Tasks, currentUser?: AuthenticatedUser) {
+    if (!currentUser || currentUser.role === ROLES.admin) return;
+    if (task.project_id === null) return;
+    const membership = await this.projectMembersRepository.findOne({
+      where: { project: { id: task.project_id }, user: { id: currentUser.id } },
+      select: ['id'],
+    });
+    if (!membership) {
+      throw new ForbiddenException('Нет доступа к проекту этой задачи');
+    }
+  }
+
   private serializeTimelogForAudit(timelog: Partial<Timelogs>) {
     return {
       author_id: timelog.author_id ?? null,
       task_id: timelog.task_id ?? null,
+      title: timelog.title ?? null,
       status: timelog.status ?? null,
       time_spent: Number(timelog.time_spent ?? 0),
       summary: timelog.summary ?? null,

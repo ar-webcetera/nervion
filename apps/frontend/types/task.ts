@@ -12,7 +12,8 @@ export interface Timelog {
   id: number;
   author_id: number;
   author: User;
-  task_id: number;
+  task_id: number | null;
+  title?: string | null;
   tracking_date?: string | null;
   status: TIMELOG_STATUSES | TIMELOG_STATUSES[];
   time_spent: number;
