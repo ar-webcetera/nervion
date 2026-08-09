@@ -445,7 +445,9 @@ onBeforeUnmount(() => {
 
 .tracker-modal {
   z-index: 3;
-  min-width: 560px;
+  // Фиксируем ширину: иначе длинное название таймера растягивает панель
+  width: 560px;
+  max-width: calc(100vw - 120px);
   top: 0;
   left: calc(100% + 24px);
   position: absolute;
@@ -534,6 +536,7 @@ onBeforeUnmount(() => {
   @include flex(rn, a-center, between);
   gap: 12px;
   min-height: 56px;
+  min-width: 0;
   // Справа отступ даёт собственный margin блока таймера, как в строке задачи
   padding: 8px 0 8px 16px;
   border-radius: 8px;
@@ -551,6 +554,8 @@ onBeforeUnmount(() => {
     @extend %text-s-medium;
     color: var(--light-text-backgroung-primary);
     cursor: text;
+    // min-width нужен, чтобы flex-элемент сжимался и включался ellipsis
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -563,7 +568,8 @@ onBeforeUnmount(() => {
     border: 1px solid var(--light-text-backgroung-primary-10);
     border-radius: 4px;
     padding: 2px 6px;
-    width: 220px;
+    flex: 1;
+    min-width: 0;
   }
 
   &__badge {
@@ -573,11 +579,13 @@ onBeforeUnmount(() => {
     border-radius: 4px;
     background: var(--light-text-backgroung-primary-10);
     white-space: nowrap;
+    flex-shrink: 0;
   }
 
   &__right {
     @include flex(rn, a-center);
     gap: 8px;
+    flex-shrink: 0;
   }
 }
 
