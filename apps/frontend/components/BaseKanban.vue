@@ -510,7 +510,6 @@ const dragend = () => {
     width: 100%;
     height: 100%;
     padding: 12px 0;
-    border-radius: 12px;
     cursor: pointer;
     transition: background 0.15s;
 

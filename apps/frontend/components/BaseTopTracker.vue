@@ -293,9 +293,8 @@ onBeforeUnmount(() => {
         <p>У вас нет активных таймеров</p>
       </div>
     </div>
-  </div>
 
-  <teleport to="#teleports">
+    <teleport to="#teleports">
     <BaseModal ref="newTimerModal">
       <div class="new-timer-modal">
         <h2>Новый таймер</h2>
@@ -357,7 +356,8 @@ onBeforeUnmount(() => {
         </template>
       </div>
     </BaseModal>
-  </teleport>
+    </teleport>
+  </div>
 </template>
 
 <style scoped lang="scss">
@@ -533,7 +533,9 @@ onBeforeUnmount(() => {
 .unbound-row {
   @include flex(rn, a-center, between);
   gap: 12px;
-  padding: 8px 12px;
+  min-height: 56px;
+  // Справа отступ даёт собственный margin блока таймера, как в строке задачи
+  padding: 8px 0 8px 16px;
   border-radius: 8px;
   border: 1px dashed var(--light-text-backgroung-primary-10);
   background: var(--light-text-backgroung-primary-5);
@@ -658,7 +660,8 @@ onBeforeUnmount(() => {
   }
 
   &__item {
-    @include flex(cn);
+    // Глобальный стиль button центрирует содержимое и запрещает перенос
+    @include flex(cn, a-start);
     gap: 2px;
     padding: 10px 12px;
     border-radius: 8px;
@@ -667,6 +670,8 @@ onBeforeUnmount(() => {
     color: var(--light-text-backgroung-primary);
     cursor: pointer;
     text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
 
     &:hover {
       background: var(--light-text-backgroung-primary-5);

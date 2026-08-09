@@ -111,10 +111,11 @@ const folderUnreadCount = (folder: FolderKey) => {
   return 0;
 };
 
-const mailStats = ref<MailStatsResponse | null>(null);
+// useState, а не ref: статистика грузится ещё на SSR, и обычный ref не переживает гидратацию
+const mailStats = useState<MailStatsResponse | null>('mail-stats', () => null);
 const pendingStats = ref(false);
-const statsFrom = ref('');
-const statsTo = ref('');
+const statsFrom = useState<string>('mail-stats-from', () => '');
+const statsTo = useState<string>('mail-stats-to', () => '');
 
 const formatStatsDay = (iso: string) =>
   new Intl.DateTimeFormat('ru-RU', { timeZone: MAIL_TZ, day: '2-digit', month: '2-digit', year: 'numeric' }).format(
