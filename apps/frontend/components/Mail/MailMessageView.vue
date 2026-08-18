@@ -48,9 +48,13 @@ const senderLabel = computed(() => {
   return props.message.from_address;
 });
 
+const formatAddress = (item: MailMessage['to_addresses'][number]) =>
+  item.name ? `${item.name} <${item.address}>` : item.address;
+
 const recipientsLabel = computed(() =>
-  props.message.to_addresses.map((item) => (item.name ? `${item.name} <${item.address}>` : item.address)).join(', '),
+  props.message.to_addresses.map(formatAddress).join(', '),
 );
+const ccRecipientsLabel = computed(() => (props.message.cc_addresses ?? []).map(formatAddress).join(', '));
 
 const formattedDate = computed(() =>
   new Intl.DateTimeFormat('ru-RU', {
@@ -98,6 +102,7 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
         <div class="mail-message__meta">
           <span class="mail-message__sender">{{ senderLabel }}</span>
           <span class="mail-message__recipients">кому: {{ recipientsLabel }}</span>
+          <span v-if="ccRecipientsLabel" class="mail-message__recipients">копия: {{ ccRecipientsLabel }}</span>
         </div>
       </div>
       <div class="mail-message__info">
