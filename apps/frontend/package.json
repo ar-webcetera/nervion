@@ -50,6 +50,7 @@
     "lowlight": "^3.3.0",
     "mediasoup-client": "^3.18.7",
     "pinia": "^3.0.3",
+    "sanitize-html": "2.17.7",
     "socket.io-client": "^4.8.1",
     "vee-validate": "^4.12.8",
     "vue-cal": "^5.0.1-rc.14"
@@ -59,6 +60,7 @@
     "@nuxtjs/eslint-config-typescript": "^12.1.0",
     "@types/date-fns": "^2.6.3",
     "@types/express": "^5.0.3",
+    "@types/sanitize-html": "2.16.1",
     "@vite-pwa/nuxt": "^1.0.4",
     "nuxt": "3.15.0",
     "postcss": "^8.4.49",

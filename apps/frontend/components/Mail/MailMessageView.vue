@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { MailDeliveryStatus } from '@tracker/contracts';
 import { MAIL_DIRECTIONS, type MailMessage } from '~/types/mail';
+import { sanitizeMailHtml } from '~/utils/sanitizeMailHtml';
 
-const props = defineProps<{
-  message: MailMessage;
-  retrying?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    message: MailMessage;
+    retrying?: boolean;
+    linksDisabled?: boolean;
+  }>(),
+  {
+    retrying: false,
+    linksDisabled: false,
+  },
+);
 
 const emit = defineEmits<{
   forward: [message: MailMessage];
@@ -14,8 +22,6 @@ const emit = defineEmits<{
 }>();
 
 const config = useRuntimeConfig();
-const iframeRef = ref<HTMLIFrameElement | null>(null);
-const iframeHeight = ref(120);
 const avatarFailed = ref(false);
 
 const isInbound = computed(() => props.message.direction === MAIL_DIRECTIONS.inbound);
@@ -59,23 +65,10 @@ const formattedDate = computed(() =>
     .replace(',', ''),
 );
 
-const iframeContent = computed(() => {
-  if (!props.message.html_body) {
-    return '';
-  }
-
-  return `<!doctype html><html><head><base target="_blank"><style>
-    body { margin: 12px; font-family: Arial, sans-serif; font-size: 14px; color: #222; background: #fff; word-break: break-word; }
-    img { max-width: 100%; height: auto; }
-  </style></head><body>${props.message.html_body}</body></html>`;
-});
-
-const adjustIframeHeight = () => {
-  const body = iframeRef.value?.contentWindow?.document?.body;
-  if (body) {
-    iframeHeight.value = Math.min(body.scrollHeight + 32, 3000);
-  }
-};
+const sanitizedHtml = computed(() =>
+  props.message.html_body ? sanitizeMailHtml(props.message.html_body, { disableLinks: props.linksDisabled }) : '',
+);
+const hasLinks = computed(() => sanitizedHtml.value.includes('<a'));
 
 const attachmentUrl = (attachmentId: number) => `${config.public.API_URL}/api/mailbox/attachments/${attachmentId}`;
 
@@ -131,16 +124,11 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
       </div>
     </div>
 
-    <iframe
-      v-if="message.html_body"
-      ref="iframeRef"
-      class="mail-message__html"
-      sandbox="allow-same-origin"
-      referrerpolicy="no-referrer"
-      :srcdoc="iframeContent"
-      :style="{ height: `${iframeHeight}px` }"
-      @load="adjustIframeHeight"
-    />
+    <p v-if="linksDisabled && hasLinks" class="mail-message__links-notice">
+      Ссылки отключены, потому что письмо находится в спаме.
+    </p>
+    <!-- eslint-disable-next-line vue/no-v-html -->
+    <div v-if="message.html_body" class="mail-message__html" v-html="sanitizedHtml" />
     <div v-else class="mail-message__text">{{ message.text_body }}</div>
 
     <div v-if="visibleAttachments.length" class="mail-message__attachments">
@@ -278,10 +266,136 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
 
   &__html {
     width: 100%;
-    min-height: 70vh;
-    border: none;
+    min-width: 0;
+    padding: 16px;
+    overflow-x: auto;
     border-radius: 8px;
     background: var(--light-text-backgroung-primary);
+    color: var(--dark-text-background-primary);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    @extend %text-m-regular;
+
+    :deep(*) {
+      max-width: 100% !important;
+      box-sizing: border-box;
+    }
+
+    :deep(div),
+    :deep(article),
+    :deep(section),
+    :deep(header),
+    :deep(footer),
+    :deep(main),
+    :deep(p) {
+      min-width: 0 !important;
+    }
+
+    :deep(h1) {
+      margin: 0 0 16px;
+      @extend %display-xs-bold;
+    }
+
+    :deep(h2) {
+      margin: 0 0 12px;
+      @extend %text-xl-bold;
+    }
+
+    :deep(h3) {
+      margin: 0 0 12px;
+      @extend %text-l-bold;
+    }
+
+    :deep(h4),
+    :deep(h5),
+    :deep(h6) {
+      margin: 0 0 8px;
+      @extend %text-m-bold;
+    }
+
+    :deep(p) {
+      margin: 0 0 12px;
+    }
+
+    :deep(ul),
+    :deep(ol) {
+      margin: 0 0 12px;
+      padding-left: 24px;
+      list-style-position: outside;
+    }
+
+    :deep(ul) {
+      list-style-type: disc;
+    }
+
+    :deep(ol) {
+      list-style-type: decimal;
+    }
+
+    :deep(li + li) {
+      margin-top: 4px;
+    }
+
+    :deep(img) {
+      max-width: 100% !important;
+      height: auto !important;
+    }
+
+    :deep(table) {
+      min-width: 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      border-collapse: collapse;
+    }
+
+    :deep(td),
+    :deep(th) {
+      min-width: 96px !important;
+      overflow-wrap: break-word;
+      word-break: normal;
+    }
+
+    :deep(pre) {
+      max-width: 100%;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    :deep(a) {
+      color: var(--primary);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      overflow-wrap: anywhere;
+    }
+
+    :deep(a:hover) {
+      color: var(--primary-hover);
+    }
+
+    :deep(a:focus-visible) {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+
+    :deep(a[data-link-disabled='true']) {
+      color: var(--dark-text-background-primary);
+      cursor: not-allowed;
+      text-decoration-style: dotted;
+    }
+
+    @media (max-width: $screen-mobile-l) {
+      padding: 12px;
+    }
+  }
+
+  &__links-notice {
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--status-in-progress);
+    color: var(--dark-text-background-primary);
+    @extend %text-xs-medium;
   }
 
   &__text {

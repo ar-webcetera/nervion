@@ -1636,6 +1636,7 @@ watch(
             :key="message.id"
             :message="message"
             :retrying="retryingMessageIds.has(message.id)"
+            :links-disabled="currentFolder === 'spam'"
             @forward="forwardMessage"
             @delete="askDeleteMessage"
             @retry="retryMessage"
