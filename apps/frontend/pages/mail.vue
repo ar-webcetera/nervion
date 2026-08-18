@@ -30,9 +30,7 @@ const {
   currentThread,
   messages,
   folders,
-  inboxUnreadCount,
-  spamUnreadCount,
-  trashUnreadCount,
+  accountUnreadCounts,
   pendingThreads,
   pendingMessages,
 } = storeToRefs(mailStore);
@@ -56,9 +54,10 @@ const syncUrl = () => {
 };
 
 const initialAccount = Number(route.query.account);
-const selectedAccountId = useState<number>('mail-selected-account-id', () =>
-  Number.isInteger(initialAccount) && initialAccount > 0 ? initialAccount : 0,
-);
+const selectedAccountId = useState<number>('mail-selected-account-id', () => 0);
+if (Number.isInteger(initialAccount) && initialAccount > 0) {
+  selectedAccountId.value = initialAccount;
+}
 const search = ref('');
 const initialThread = Number(route.query.thread);
 const selectedThreadId = ref<number | null>(Number.isInteger(initialThread) && initialThread > 0 ? initialThread : null);
@@ -120,10 +119,13 @@ const currentCustomFolderId = computed(() => {
   const id = Number(currentFolder.value.slice('custom-'.length));
   return Number.isInteger(id) && id > 0 ? id : null;
 });
+const selectedAccountUnreadCounts = computed(
+  () => accountUnreadCounts.value[selectedAccountId.value] ?? { count: 0, inbox: 0, spam: 0, trash: 0 },
+);
 const folderUnreadCount = (folder: ViewFolderKey) => {
-  if (folder === 'inbox') return inboxUnreadCount.value;
-  if (folder === 'spam') return spamUnreadCount.value;
-  if (folder === 'trash') return trashUnreadCount.value;
+  if (folder === 'inbox') return selectedAccountUnreadCounts.value.inbox;
+  if (folder === 'spam') return selectedAccountUnreadCounts.value.spam;
+  if (folder === 'trash') return selectedAccountUnreadCounts.value.trash;
   return 0;
 };
 
@@ -513,7 +515,7 @@ const pollThreads = () => {
       })
       .catch(() => {});
   }
-  void mailStore.fetchUnreadCount(selectedAccountId.value).catch(() => {});
+  void mailStore.fetchAccountUnreadCount(selectedAccountId.value).catch(() => {});
 };
 
 const editDraft = (draft: MailMessage) => {
@@ -572,7 +574,6 @@ const loadMailPageData = async () => {
     selectedAccountId.value = accounts.value[0]?.id ?? 0;
   }
   if (!selectedAccountId.value) {
-    mailboxInitialized = true;
     return;
   }
   composeForm.account_id ||= selectedAccountId.value;
@@ -582,7 +583,7 @@ const loadMailPageData = async () => {
   }
   const tasks: Promise<unknown>[] = [
     isStatsFolder.value ? loadStats() : loadThreads(),
-    mailStore.fetchUnreadCount(selectedAccountId.value),
+    mailStore.fetchAccountUnreadCount(selectedAccountId.value),
     mailStore.fetchContacts(),
   ];
   if (!isStatsFolder.value && selectedThreadId.value) {
@@ -605,31 +606,15 @@ const loadMailPageData = async () => {
     const draft = messages.value.find((message) => message.status === 'draft');
     if (draft) editDraft(draft);
   }
-  mailboxInitialized = true;
 };
 
 await useAsyncData('mailbox-init', async () => {
   await loadMailPageData();
   return true;
 });
+mailboxInitialized = true;
 
 onMounted(() => {
-  mailboxInitialized = true;
-  if (!selectedAccountId.value && accounts.value.length) {
-    selectedAccountId.value = accounts.value[0].id;
-  } else if (selectedAccountId.value && !folders.value.length && !threads.value.length) {
-    void Promise.all([
-      mailStore.fetchFolders(selectedAccountId.value),
-      mailStore.fetchUnreadCount(selectedAccountId.value),
-      mailStore.fetchContacts(),
-    ])
-      .then(() => (isStatsFolder.value ? loadStats() : loadThreads()))
-      .catch((error) => $toast.error(getErrorMessage(error)));
-  }
-  if (!composeForm.account_id && accounts.value.length) {
-    composeForm.account_id = accounts.value[0].id;
-  }
-
   if (selectedThreadId.value) {
     const draft = messages.value.find((message) => message.status === 'draft');
     if (draft) {
@@ -657,7 +642,7 @@ watch(selectedAccountId, async (accountId) => {
   if (currentCustomFolderId.value) currentFolder.value = 'inbox';
   composeForm.account_id = accountId;
   try {
-    await Promise.all([mailStore.fetchFolders(accountId), mailStore.fetchUnreadCount(accountId)]);
+    await Promise.all([mailStore.fetchFolders(accountId), mailStore.fetchAccountUnreadCount(accountId)]);
     if (isStatsFolder.value) await loadStats();
     else await loadThreads();
   } catch (error) {
@@ -751,7 +736,7 @@ const deleteDraft = async () => {
   composeDraftId.value = null;
   composeThreadId.value = null;
   try {
-    await mailStore.deleteMessage(id);
+    await mailStore.deleteMessage(id, selectedAccountId.value);
     await loadThreads();
     syncUrl();
   } catch (e) {
@@ -1064,7 +1049,7 @@ const confirmDelete = async () => {
     if (deleteTarget.value.kind === 'threads') {
       const selectedIds = deleteTarget.value.ids;
       if (deleteTarget.value.permanent) {
-        await Promise.all(selectedIds.map((threadId) => mailStore.deleteThread(threadId)));
+        await Promise.all(selectedIds.map((threadId) => mailStore.deleteThread(threadId, selectedAccountId.value)));
       } else {
         await Promise.all(
           selectedIds.map((threadId) =>
@@ -1075,9 +1060,9 @@ const confirmDelete = async () => {
       if (selectedThreadId.value && selectedIds.includes(selectedThreadId.value)) selectedThreadId.value = null;
       clearThreadSelection();
     } else if (deleteTarget.value.kind === 'message') {
-      await mailStore.deleteMessage(deleteTarget.value.id);
+      await mailStore.deleteMessage(deleteTarget.value.id, selectedAccountId.value);
     } else if (deleteTarget.value.permanent) {
-      await mailStore.deleteThread(deleteTarget.value.id);
+      await mailStore.deleteThread(deleteTarget.value.id, selectedAccountId.value);
       selectedThreadId.value = null;
     } else {
       await mailStore.moveThreadToFolder(
@@ -1344,25 +1329,34 @@ watch(
       </div>
 
       <template v-else>
-        <div v-if="selectedThreadsCount" class="mail-page__selection-bar">
-          <span class="mail-page__selection-count">Выбрано: {{ selectedThreadsCount }}</span>
-          <select
-            v-model="moveTarget"
-            class="mail-page__move-select"
-            :disabled="movingThreads"
-            aria-label="Переместить выбранные письма"
-            @change="moveThreads([...selectedThreadIds])"
-          >
-            <option value="" disabled>Переместить…</option>
-            <option :value="MailSystemFolder.INBOX">Входящие</option>
-            <option :value="MailSystemFolder.SPAM">Спам</option>
-            <option :value="MailSystemFolder.TRASH">Корзина</option>
-            <option v-for="folder in folders" :key="folder.id" :value="`custom-${folder.id}`">{{ folder.name }}</option>
-          </select>
-          <button class="mail-page__selection-clear" type="button" @click="clearThreadSelection">Снять</button>
-          <button class="mail-page__selection-delete" type="button" @click="askDeleteSelectedThreads">
-            {{ isTrashFolder ? 'Удалить навсегда' : 'Удалить выбранные' }}
-          </button>
+        <div
+          v-if="selectedThreadsCount"
+          class="mail-page__selection-bar"
+          role="group"
+          aria-label="Действия с выбранными письмами"
+        >
+          <span class="mail-page__selection-count">
+            <span>Выбрано</span>
+            <strong>{{ selectedThreadsCount }}</strong>
+          </span>
+          <div class="mail-page__selection-actions">
+            <select
+              v-model="moveTarget"
+              class="mail-page__move-select"
+              :disabled="movingThreads"
+              aria-label="Переместить выбранные письма"
+              @change="moveThreads([...selectedThreadIds])"
+            >
+              <option value="" disabled>Переместить…</option>
+              <option :value="MailSystemFolder.INBOX">Входящие</option>
+              <option :value="MailSystemFolder.SPAM">Спам</option>
+              <option :value="MailSystemFolder.TRASH">Корзина</option>
+              <option v-for="folder in folders" :key="folder.id" :value="`custom-${folder.id}`">{{ folder.name }}</option>
+            </select>
+            <button class="mail-page__selection-delete" type="button" @click="askDeleteSelectedThreads">
+              {{ isTrashFolder ? 'Удалить навсегда' : 'Удалить' }}
+            </button>
+          </div>
         </div>
 
         <div class="mail-page__threads" @scroll.passive="handleThreadsScroll">
@@ -2310,54 +2304,74 @@ watch(
   }
 
   &__selection-bar {
-    @include flex(rn, a-center);
+    @include flex(cn);
     gap: 8px;
-    padding: 8px 16px;
+    padding: 12px 16px;
     border-bottom: 1px solid var(--light-text-backgroung-primary-10);
     background: var(--light-text-backgroung-primary-5);
-
-    @media (max-width: $screen-mobile-l) {
-      flex-wrap: wrap;
-    }
+    box-shadow: inset 3px 0 0 var(--primary);
   }
 
   &__selection-count {
-    flex: 1;
+    @include flex(rn, a-center);
+    gap: 8px;
     color: var(--light-text-backgroung-primary);
     font-variant-numeric: tabular-nums;
     @extend %text-s-medium;
+
+    strong {
+      min-width: 24px;
+      height: 24px;
+      padding: 0 7px;
+      border-radius: 999px;
+      background: var(--primary-25);
+      color: var(--light-text-backgroung-primary);
+      font-variant-numeric: tabular-nums;
+      @include flex(center);
+      @extend %p12-medium;
+    }
   }
 
-  &__selection-clear,
+  &__selection-actions {
+    @include flex(rn, stretch);
+    gap: 8px;
+    min-width: 0;
+
+    .mail-page__move-select {
+      flex: 1;
+      min-width: 0;
+      max-width: none;
+      min-height: 44px;
+    }
+
+    @media (max-width: $screen-mobile-s) {
+      flex-direction: column;
+    }
+  }
+
   &__selection-delete {
-    min-height: 36px;
-    padding: 8px 10px;
+    flex-shrink: 0;
+    min-height: 44px;
+    padding: 10px 12px;
     border: none;
     border-radius: 8px;
     background: transparent;
+    color: var(--danger-delete);
     cursor: pointer;
+    white-space: nowrap;
     @extend %p12-medium;
+
+    &:hover {
+      background: var(--danger-delete-25);
+    }
 
     &:focus-visible {
       outline: 2px solid var(--primary-50);
       outline-offset: 2px;
     }
-  }
 
-  &__selection-clear {
-    color: var(--light-text-backgroung-primary-50);
-
-    &:hover {
-      color: var(--light-text-backgroung-primary);
-      background: var(--light-text-backgroung-primary-5);
-    }
-  }
-
-  &__selection-delete {
-    color: var(--danger-delete);
-
-    &:hover {
-      background: var(--danger-delete-25);
+    &:active {
+      background: var(--danger-delete-50);
     }
   }
 

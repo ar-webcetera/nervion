@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
-import type { MailFolder, MailSpamRuleScope, MailStatsResponse, MailSystemFolder, MailUnreadCounts } from '@tracker/contracts';
+import { MailSystemFolder } from '@tracker/contracts';
+import type { MailFolder, MailSpamRuleScope, MailStatsResponse, MailUnreadCounts } from '@tracker/contracts';
 import type {
   MailAccount,
   MailAccountPayload,
@@ -21,6 +22,29 @@ interface ThreadDetailResponse {
   messages: MailMessage[];
 }
 
+const normalizeUnreadCounts = (counts: MailUnreadCounts): MailUnreadCounts => {
+  const inbox = Number(counts.inbox ?? counts.count) || 0;
+  return {
+    count: inbox,
+    inbox,
+    spam: Number(counts.spam) || 0,
+    trash: Number(counts.trash) || 0,
+  };
+};
+
+const decrementUnreadCounts = (counts: MailUnreadCounts, folder: MailSystemFolder, amount: number): MailUnreadCounts => {
+  const next = { ...counts };
+  if (folder === MailSystemFolder.SPAM) {
+    next.spam = Math.max(0, next.spam - amount);
+  } else if (folder === MailSystemFolder.TRASH) {
+    next.trash = Math.max(0, next.trash - amount);
+  } else {
+    next.inbox = Math.max(0, next.inbox - amount);
+    next.count = next.inbox;
+  }
+  return next;
+};
+
 export const useMailStore = defineStore('mail', () => {
   const config = useRuntimeConfig();
 
@@ -32,18 +56,16 @@ export const useMailStore = defineStore('mail', () => {
   const threadsTotal = ref(0);
   const currentThread = ref<MailThread | null>(null);
   const messages = ref<MailMessage[]>([]);
-  const unreadCount = ref(0);
-  const inboxUnreadCount = ref(0);
-  const trashUnreadCount = ref(0);
-  const spamUnreadCount = ref(0);
+  const accountUnreadCounts = ref<Record<number, MailUnreadCounts>>({});
   const pendingThreads = ref(false);
   const pendingMessages = ref(false);
   const threadsPage = ref(1);
   const threadsLimit = ref(30);
   let threadsRequestVersion = 0;
+  const accountUnreadRequestVersions = new Map<number, number>();
 
   const requestOptions = () => ({
-    baseURL: config.public.API_URL as string,
+    baseURL: useApiBaseUrl(),
     credentials: 'include' as const,
     headers: useRequestHeaders(['cookie']),
   });
@@ -148,7 +170,7 @@ export const useMailStore = defineStore('mail', () => {
     });
     threads.value = threads.value.filter((item) => item.id !== threadId);
     threadsTotal.value = Math.max(0, threadsTotal.value - 1);
-    await fetchUnreadCount(accountId);
+    await fetchAccountUnreadCount(accountId);
   };
 
   const markThreadSpam = async (threadId: number, scope: MailSpamRuleScope, accountId: number) => {
@@ -159,27 +181,27 @@ export const useMailStore = defineStore('mail', () => {
     });
     threads.value = threads.value.filter((item) => item.id !== threadId);
     threadsTotal.value = Math.max(0, threadsTotal.value - 1);
-    await fetchUnreadCount(accountId);
+    await fetchAccountUnreadCount(accountId);
   };
 
   const markThreadNotSpam = async (threadId: number, accountId: number) => {
     await $fetch(`/api/mailbox/threads/${threadId}/not-spam`, { ...requestOptions(), method: 'POST' });
     threads.value = threads.value.filter((item) => item.id !== threadId);
     threadsTotal.value = Math.max(0, threadsTotal.value - 1);
-    await fetchUnreadCount(accountId);
+    await fetchAccountUnreadCount(accountId);
   };
 
-  const deleteThread = async (threadId: number) => {
+  const deleteThread = async (threadId: number, accountId: number) => {
     await $fetch(`/api/mailbox/threads/${threadId}`, { ...requestOptions(), method: 'DELETE' });
     threads.value = threads.value.filter((item) => item.id !== threadId);
     threadsTotal.value = Math.max(0, threadsTotal.value - 1);
-    await fetchUnreadCount();
+    await fetchAccountUnreadCount(accountId);
   };
 
-  const deleteMessage = async (messageId: number) => {
+  const deleteMessage = async (messageId: number, accountId: number) => {
     await $fetch(`/api/mailbox/messages/${messageId}`, { ...requestOptions(), method: 'DELETE' });
     messages.value = messages.value.filter((item) => item.id !== messageId);
-    await fetchUnreadCount();
+    await fetchAccountUnreadCount(accountId);
   };
 
   const saveDraft = async (payload: {
@@ -234,13 +256,15 @@ export const useMailStore = defineStore('mail', () => {
     const thread =
       threads.value.find((item) => item.id === threadId) ?? (currentThread.value?.id === threadId ? currentThread.value : null);
     if (thread?.unread_count) {
-      if (thread.folder === 'trash') {
-        trashUnreadCount.value = Math.max(0, trashUnreadCount.value - thread.unread_count);
-      } else {
-        const nextInbox = Math.max(0, inboxUnreadCount.value - thread.unread_count);
-        inboxUnreadCount.value = nextInbox;
-        unreadCount.value = nextInbox;
+      const accountCounts = accountUnreadCounts.value[thread.account_id];
+      if (accountCounts) {
+        accountUnreadRequestVersions.set(thread.account_id, (accountUnreadRequestVersions.get(thread.account_id) ?? 0) + 1);
+        accountUnreadCounts.value = {
+          ...accountUnreadCounts.value,
+          [thread.account_id]: decrementUnreadCounts(accountCounts, thread.folder, thread.unread_count),
+        };
       }
+
       thread.unread_count = 0;
     }
   };
@@ -268,18 +292,19 @@ export const useMailStore = defineStore('mail', () => {
     return message;
   };
 
-  const fetchUnreadCount = async (accountId?: number) => {
+  const fetchAccountUnreadCount = async (accountId: number) => {
+    const requestVersion = (accountUnreadRequestVersions.get(accountId) ?? 0) + 1;
+    accountUnreadRequestVersions.set(accountId, requestVersion);
     const response = await $fetch<MailUnreadCounts>('/api/mailbox/unread-count', {
       ...requestOptions(),
-      query: { account_id: accountId || undefined },
+      query: { account_id: accountId },
     });
-    const inbox = Number(response.inbox ?? response.count) || 0;
-    const trash = Number(response.trash) || 0;
-    inboxUnreadCount.value = inbox;
-    trashUnreadCount.value = trash;
-    spamUnreadCount.value = Number(response.spam) || 0;
-    // count всегда = inbox, даже если бэкенд ещё отдаёт сумму по папкам
-    unreadCount.value = inbox;
+    if (accountUnreadRequestVersions.get(accountId) !== requestVersion) return response;
+
+    accountUnreadCounts.value = {
+      ...accountUnreadCounts.value,
+      [accountId]: normalizeUnreadCounts(response),
+    };
     return response;
   };
 
@@ -325,10 +350,7 @@ export const useMailStore = defineStore('mail', () => {
     currentThread,
     messages,
     folders,
-    unreadCount,
-    inboxUnreadCount,
-    trashUnreadCount,
-    spamUnreadCount,
+    accountUnreadCounts,
     pendingThreads,
     pendingMessages,
     fetchAccounts,
@@ -337,7 +359,7 @@ export const useMailStore = defineStore('mail', () => {
     markThreadRead,
     sendMail,
     retryMessage,
-    fetchUnreadCount,
+    fetchAccountUnreadCount,
     fetchStats,
     createAccount,
     updateAccount,

@@ -5,10 +5,12 @@ import type { Notification } from '~/types/notification';
 export const useNotificationStore = defineStore('notification', () => {
   const config = useRuntimeConfig();
   const notifications = ref<Notification[]>([]);
+  const selectedMailAccountId = useState<number>('mail-selected-account-id', () => 0);
 
   const syncMailUnreadCount = async () => {
+    if (!selectedMailAccountId.value) return;
     const mailStore = useMailStore();
-    await mailStore.fetchUnreadCount().catch(() => {});
+    await mailStore.fetchAccountUnreadCount(selectedMailAccountId.value).catch(() => {});
   };
 
   const getAllNotifications = async () => {

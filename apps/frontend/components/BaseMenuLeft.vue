@@ -27,11 +27,12 @@ const hideChrome = computed(() => Boolean(chatId.value) || mailDetailOpen.value 
 const isMenuVisible = (key: string) => !(userStore.user?.hidden_menu_items ?? []).includes(key);
 
 const mailStore = useMailStore();
+const selectedMailAccountId = useState<number>('mail-selected-account-id', () => 0);
 
 const totalUnreadCount = computed(() => {
   return chatStore.chatList.filter((chat) => chat.unreadMessagesCount > 0).length;
 });
-const mailInboxUnreadCount = computed(() => Number(mailStore.inboxUnreadCount) || 0);
+const mailInboxUnreadCount = computed(() => Number(mailStore.accountUnreadCounts[selectedMailAccountId.value]?.inbox) || 0);
 const router = useRouter();
 const route = useRoute();
 const { $toast } = useNuxtApp();
@@ -41,7 +42,8 @@ const { openPopup, closePopup, isPopupOpen } = useProfile();
 let mailUnreadTimer: ReturnType<typeof setInterval> | null = null;
 
 const refreshMailUnread = () => {
-  void mailStore.fetchUnreadCount().catch(() => {});
+  if (!selectedMailAccountId.value) return;
+  void mailStore.fetchAccountUnreadCount(selectedMailAccountId.value).catch(() => {});
 };
 
 const handleMailPageShow = () => {

@@ -27,6 +27,7 @@ const changelogStore = useChangelogStore();
 const route = useRoute();
 const router = useRouter();
 const { $toast } = useNuxtApp();
+const selectedMailAccountId = useState<number>('mail-selected-account-id', () => 0);
 const syncUnreadInFlight = ref(false);
 let lastSyncAt = 0;
 let syncIntervalId: ReturnType<typeof setInterval> | null = null;
@@ -48,7 +49,11 @@ const syncUnreadState = async (force = false) => {
 
   try {
     const mailStore = useMailStore();
-    await Promise.allSettled([getAllNotifications(), fetchChatList(), mailStore.fetchUnreadCount()]);
+    const jobs: Promise<unknown>[] = [getAllNotifications(), fetchChatList()];
+    if (selectedMailAccountId.value) {
+      jobs.push(mailStore.fetchAccountUnreadCount(selectedMailAccountId.value));
+    }
+    await Promise.allSettled(jobs);
   } finally {
     lastSyncAt = Date.now();
     syncUnreadInFlight.value = false;
