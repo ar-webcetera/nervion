@@ -24,12 +24,16 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { ROLES } from '../common/enums/roles.enum';
 import { RequestWithCookies } from '../common/types/request';
 import { CreateMailAccountDto } from './dto/create-mail-account.dto';
+import { CreateMailFolderDto } from './dto/create-mail-folder.dto';
 import { FindThreadsDto } from './dto/find-threads.dto';
+import { MailboxAccountQueryDto, MailboxOptionalAccountQueryDto } from './dto/mailbox-account-query.dto';
 import { MailboxStatsDto } from './dto/mailbox-stats.dto';
+import { MarkMailSpamDto } from './dto/mark-mail-spam.dto';
+import { MoveMailThreadDto } from './dto/move-mail-thread.dto';
 import { SaveDraftDto } from './dto/save-draft.dto';
 import { SendMailDto } from './dto/send-mail.dto';
 import { UpdateMailAccountDto } from './dto/update-mail-account.dto';
-import { MAIL_FOLDERS } from './entities/mail-thread.entity';
+import { UpdateMailFolderDto } from './dto/update-mail-folder.dto';
 import { MailDeliveryService } from './mail-delivery.service';
 import { MailboxService } from './mailbox.service';
 
@@ -84,6 +88,31 @@ export class MailboxController {
     return this.mailboxService.updateAccount(id, dto);
   }
 
+  @Get('folders')
+  @ApiOperation({ summary: 'Список пользовательских папок выбранного ящика' })
+  listFolders(@Req() req: RequestWithCookies, @Query() dto: MailboxAccountQueryDto) {
+    return this.mailboxService.listFolders(req.user, dto.account_id);
+  }
+
+  @Post('folders')
+  @ApiOperation({ summary: 'Создать пользовательскую папку' })
+  createFolder(@Req() req: RequestWithCookies, @Body() dto: CreateMailFolderDto) {
+    return this.mailboxService.createFolder(req.user, dto);
+  }
+
+  @Patch('folders/:id')
+  @ApiOperation({ summary: 'Переименовать пользовательскую папку' })
+  updateFolder(@Req() req: RequestWithCookies, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateMailFolderDto) {
+    return this.mailboxService.updateFolder(req.user, id, dto);
+  }
+
+  @Delete('folders/:id')
+  @ApiOperation({ summary: 'Удалить пользовательскую папку и вернуть её переписки во Входящие' })
+  async deleteFolder(@Req() req: RequestWithCookies, @Param('id', ParseIntPipe) id: number) {
+    await this.mailboxService.deleteFolder(req.user, id);
+    return { success: true };
+  }
+
   @Get('threads')
   @ApiOperation({ summary: 'Список цепочек писем с фильтрами и пагинацией' })
   @ApiResponse({ status: 200, description: 'Список цепочек писем' })
@@ -131,24 +160,41 @@ export class MailboxController {
   }
 
   @Patch('threads/:id/folder')
-  @ApiOperation({ summary: 'Переместить цепочку писем в папку (входящие или корзина)' })
+  @ApiOperation({ summary: 'Переместить цепочку писем в системную или пользовательскую папку' })
   @ApiParam({ name: 'id', description: 'ID цепочки писем', type: Number })
   @ApiBody({
     schema: {
       type: 'object',
-      properties: { folder: { type: 'string', enum: ['inbox', 'trash'], description: 'Целевая папка' } },
+      properties: {
+        system_folder: { type: 'string', enum: ['inbox', 'spam', 'trash'], description: 'Системная папка' },
+        custom_folder_id: { type: 'number', description: 'ID пользовательской папки' },
+      },
     },
   })
   @ApiResponse({ status: 200, description: 'Цепочка перемещена' })
   @ApiResponse({ status: 400, description: 'Недопустимая папка' })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
   @ApiResponse({ status: 404, description: 'Цепочка не найдена' })
-  moveToFolder(@Req() req: RequestWithCookies, @Param('id', ParseIntPipe) id: number, @Body('folder') folder: MAIL_FOLDERS) {
-    if (folder !== MAIL_FOLDERS.inbox && folder !== MAIL_FOLDERS.trash) {
-      throw new BadRequestException('Недопустимая папка');
-    }
+  moveToFolder(@Req() req: RequestWithCookies, @Param('id', ParseIntPipe) id: number, @Body() dto: MoveMailThreadDto) {
+    return this.mailboxService.moveThreadToFolder(req.user, id, dto);
+  }
 
-    return this.mailboxService.moveThreadToFolder(req.user, id, folder);
+  @Post('threads/:id/spam')
+  @ApiOperation({ summary: 'Пометить отправителя или его домен как спам' })
+  markSpam(@Req() req: RequestWithCookies, @Param('id', ParseIntPipe) id: number, @Body() dto: MarkMailSpamDto) {
+    return this.mailboxService.markThreadAsSpam(req.user, id, dto);
+  }
+
+  @Post('threads/:id/not-spam')
+  @ApiOperation({ summary: 'Убрать переписку из спама и удалить подходящие пользовательские правила' })
+  markNotSpam(@Req() req: RequestWithCookies, @Param('id', ParseIntPipe) id: number) {
+    return this.mailboxService.markThreadAsNotSpam(req.user, id);
+  }
+
+  @Post('messages/:id/retry')
+  @ApiOperation({ summary: 'Повторить отправку недоставленного письма' })
+  retryMessage(@Req() req: RequestWithCookies, @Param('id', ParseIntPipe) id: number) {
+    return this.mailboxService.retryMessage(req.user, id);
   }
 
   @Delete('threads/:id')
@@ -224,11 +270,11 @@ export class MailboxController {
   @ApiOperation({ summary: 'Количество непрочитанных писем по папкам' })
   @ApiResponse({
     status: 200,
-    description: 'Непрочитанные во входящих (`count`/`inbox`) и отдельно в корзине (`trash`)',
+    description: 'Непрочитанные во входящих (`count`/`inbox`), спаме (`spam`) и корзине (`trash`)',
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  getUnreadCount(@Req() req: RequestWithCookies) {
-    return this.mailboxService.getUnreadCounts(req.user);
+  getUnreadCount(@Req() req: RequestWithCookies, @Query() dto: MailboxOptionalAccountQueryDto) {
+    return this.mailboxService.getUnreadCounts(req.user, dto.account_id);
   }
 
   @Get('stats')

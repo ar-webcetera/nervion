@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import { MailDeliveryStatus } from '@tracker/contracts';
 import { MAIL_DIRECTIONS, type MailMessage } from '~/types/mail';
 
 const props = defineProps<{
   message: MailMessage;
+  retrying?: boolean;
 }>();
 
 const emit = defineEmits<{
   forward: [message: MailMessage];
   delete: [message: MailMessage];
+  retry: [message: MailMessage];
 }>();
 
 const config = useRuntimeConfig();
@@ -16,6 +19,9 @@ const iframeHeight = ref(120);
 const avatarFailed = ref(false);
 
 const isInbound = computed(() => props.message.direction === MAIL_DIRECTIONS.inbound);
+const canRetry = computed(
+  () => !isInbound.value && (props.message.status === 'failed' || props.message.delivery_status === MailDeliveryStatus.BOUNCED),
+);
 const senderInitials = computed(() => {
   const name = props.message.from_name?.trim();
   if (name) {
@@ -110,12 +116,16 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
           :click-count="message.click_count"
         />
         <span class="mail-message__date">{{ formattedDate }}</span>
-        <button class="mail-message__action" title="Переслать" @click="emit('forward', message)">Переслать</button>
         <button
-          class="mail-message__action mail-message__action_danger"
-          title="Удалить письмо"
-          @click="emit('delete', message)"
+          v-if="canRetry"
+          class="mail-message__action mail-message__action_retry"
+          :disabled="retrying"
+          @click="emit('retry', message)"
         >
+          {{ retrying ? 'Отправляем…' : 'Отправить ещё раз' }}
+        </button>
+        <button class="mail-message__action" title="Переслать" @click="emit('forward', message)">Переслать</button>
+        <button class="mail-message__action mail-message__action_danger" title="Удалить письмо" @click="emit('delete', message)">
           Удалить
         </button>
       </div>
@@ -254,6 +264,15 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
 
     &_danger:hover {
       color: var(--danger-delete);
+    }
+
+    &_retry {
+      color: var(--primary);
+    }
+
+    &:disabled {
+      cursor: wait;
+      opacity: 0.55;
     }
   }
 

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import type { MailStatsResponse, MailUnreadCounts } from '@tracker/contracts';
+import type { MailFolder, MailSpamRuleScope, MailStatsResponse, MailSystemFolder, MailUnreadCounts } from '@tracker/contracts';
 import type {
   MailAccount,
   MailAccountPayload,
@@ -27,6 +27,7 @@ export const useMailStore = defineStore('mail', () => {
   const accounts = ref<MailAccount[]>([]);
   const manageAccounts = ref<MailAccount[]>([]);
   const contacts = ref<string[]>([]);
+  const folders = ref<MailFolder[]>([]);
   const threads = ref<MailThread[]>([]);
   const threadsTotal = ref(0);
   const currentThread = ref<MailThread | null>(null);
@@ -34,6 +35,7 @@ export const useMailStore = defineStore('mail', () => {
   const unreadCount = ref(0);
   const inboxUnreadCount = ref(0);
   const trashUnreadCount = ref(0);
+  const spamUnreadCount = ref(0);
   const pendingThreads = ref(false);
   const pendingMessages = ref(false);
   const threadsPage = ref(1);
@@ -56,17 +58,16 @@ export const useMailStore = defineStore('mail', () => {
     return manageAccounts.value;
   };
 
-  const fetchThreads = async (
-    params: {
-      folder?: string;
-      account_id?: number;
-      search?: string;
-      page?: number;
-      limit?: number;
-      silent?: boolean;
-      append?: boolean;
-    } = {},
-  ) => {
+  const fetchThreads = async (params: {
+    folder?: string;
+    custom_folder_id?: number;
+    account_id: number;
+    search?: string;
+    page?: number;
+    limit?: number;
+    silent?: boolean;
+    append?: boolean;
+  }) => {
     const requestVersion = params.append ? threadsRequestVersion : ++threadsRequestVersion;
     if (!params.silent) {
       pendingThreads.value = true;
@@ -76,7 +77,8 @@ export const useMailStore = defineStore('mail', () => {
         ...requestOptions(),
         query: {
           folder: params.folder || undefined,
-          account_id: params.account_id || undefined,
+          custom_folder_id: params.custom_folder_id || undefined,
+          account_id: params.account_id,
           search: params.search || undefined,
           page: params.page || undefined,
           limit: params.limit || undefined,
@@ -101,15 +103,70 @@ export const useMailStore = defineStore('mail', () => {
     }
   };
 
-  const moveThreadToFolder = async (threadId: number, folder: 'inbox' | 'trash') => {
+  const fetchFolders = async (accountId: number) => {
+    folders.value = await $fetch<MailFolder[]>('/api/mailbox/folders', {
+      ...requestOptions(),
+      query: { account_id: accountId },
+    });
+    return folders.value;
+  };
+
+  const createFolder = async (accountId: number, name: string) => {
+    const folder = await $fetch<MailFolder>('/api/mailbox/folders', {
+      ...requestOptions(),
+      method: 'POST',
+      body: { account_id: accountId, name },
+    });
+    folders.value = [...folders.value, folder].sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    return folder;
+  };
+
+  const renameFolder = async (folderId: number, name: string) => {
+    const folder = await $fetch<MailFolder>(`/api/mailbox/folders/${folderId}`, {
+      ...requestOptions(),
+      method: 'PATCH',
+      body: { name },
+    });
+    folders.value = folders.value
+      .map((item) => (item.id === folderId ? folder : item))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    return folder;
+  };
+
+  const deleteFolder = async (folderId: number) => {
+    await $fetch(`/api/mailbox/folders/${folderId}`, { ...requestOptions(), method: 'DELETE' });
+    folders.value = folders.value.filter((item) => item.id !== folderId);
+  };
+
+  type FolderTarget = { system_folder: MailSystemFolder } | { custom_folder_id: number };
+
+  const moveThreadToFolder = async (threadId: number, target: FolderTarget, accountId: number) => {
     await $fetch(`/api/mailbox/threads/${threadId}/folder`, {
       ...requestOptions(),
       method: 'PATCH',
-      body: { folder },
+      body: target,
     });
     threads.value = threads.value.filter((item) => item.id !== threadId);
     threadsTotal.value = Math.max(0, threadsTotal.value - 1);
-    await fetchUnreadCount();
+    await fetchUnreadCount(accountId);
+  };
+
+  const markThreadSpam = async (threadId: number, scope: MailSpamRuleScope, accountId: number) => {
+    await $fetch(`/api/mailbox/threads/${threadId}/spam`, {
+      ...requestOptions(),
+      method: 'POST',
+      body: { scope },
+    });
+    threads.value = threads.value.filter((item) => item.id !== threadId);
+    threadsTotal.value = Math.max(0, threadsTotal.value - 1);
+    await fetchUnreadCount(accountId);
+  };
+
+  const markThreadNotSpam = async (threadId: number, accountId: number) => {
+    await $fetch(`/api/mailbox/threads/${threadId}/not-spam`, { ...requestOptions(), method: 'POST' });
+    threads.value = threads.value.filter((item) => item.id !== threadId);
+    threadsTotal.value = Math.max(0, threadsTotal.value - 1);
+    await fetchUnreadCount(accountId);
   };
 
   const deleteThread = async (threadId: number) => {
@@ -175,8 +232,7 @@ export const useMailStore = defineStore('mail', () => {
     await $fetch(`/api/mailbox/threads/${threadId}/read`, { ...requestOptions(), method: 'PATCH' });
 
     const thread =
-      threads.value.find((item) => item.id === threadId) ??
-      (currentThread.value?.id === threadId ? currentThread.value : null);
+      threads.value.find((item) => item.id === threadId) ?? (currentThread.value?.id === threadId ? currentThread.value : null);
     if (thread?.unread_count) {
       if (thread.folder === 'trash') {
         trashUnreadCount.value = Math.max(0, trashUnreadCount.value - thread.unread_count);
@@ -203,12 +259,25 @@ export const useMailStore = defineStore('mail', () => {
     return message;
   };
 
-  const fetchUnreadCount = async () => {
-    const response = await $fetch<MailUnreadCounts>('/api/mailbox/unread-count', requestOptions());
+  const retryMessage = async (messageId: number) => {
+    const message = await $fetch<MailMessage>(`/api/mailbox/messages/${messageId}/retry`, {
+      ...requestOptions(),
+      method: 'POST',
+    });
+    messages.value = [...messages.value, message];
+    return message;
+  };
+
+  const fetchUnreadCount = async (accountId?: number) => {
+    const response = await $fetch<MailUnreadCounts>('/api/mailbox/unread-count', {
+      ...requestOptions(),
+      query: { account_id: accountId || undefined },
+    });
     const inbox = Number(response.inbox ?? response.count) || 0;
     const trash = Number(response.trash) || 0;
     inboxUnreadCount.value = inbox;
     trashUnreadCount.value = trash;
+    spamUnreadCount.value = Number(response.spam) || 0;
     // count всегда = inbox, даже если бэкенд ещё отдаёт сумму по папкам
     unreadCount.value = inbox;
     return response;
@@ -255,9 +324,11 @@ export const useMailStore = defineStore('mail', () => {
     threadsLimit,
     currentThread,
     messages,
+    folders,
     unreadCount,
     inboxUnreadCount,
     trashUnreadCount,
+    spamUnreadCount,
     pendingThreads,
     pendingMessages,
     fetchAccounts,
@@ -265,11 +336,14 @@ export const useMailStore = defineStore('mail', () => {
     fetchThread,
     markThreadRead,
     sendMail,
+    retryMessage,
     fetchUnreadCount,
     fetchStats,
     createAccount,
     updateAccount,
     moveThreadToFolder,
+    markThreadSpam,
+    markThreadNotSpam,
     deleteThread,
     deleteMessage,
     saveDraft,
@@ -277,5 +351,9 @@ export const useMailStore = defineStore('mail', () => {
     uploadAttachment,
     contacts,
     fetchContacts,
+    fetchFolders,
+    createFolder,
+    renameFolder,
+    deleteFolder,
   };
 });

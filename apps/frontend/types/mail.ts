@@ -1,4 +1,4 @@
-import type { MailDeliveryStatus } from '@tracker/contracts';
+import type { MailDeliveryStatus, MailSystemFolder } from '@tracker/contracts';
 
 export enum MAIL_ACCOUNT_TYPES {
   personal = 'personal',
@@ -11,6 +11,7 @@ export enum MAIL_DIRECTIONS {
 }
 
 export type { MailDeliveryStatus };
+export type { MailSystemFolder };
 
 export interface MailAccountUser {
   id: number;
@@ -63,6 +64,9 @@ export interface MailMessage {
   open_count?: number;
   click_count?: number;
   last_delivery_event_at?: string | null;
+  is_spam: boolean;
+  spam_score: number;
+  spam_reasons: string[];
   createdAt: string;
   sender_avatar_url?: string | null;
   attachments?: MailAttachment[];
@@ -72,10 +76,13 @@ export interface MailThread {
   id: number;
   subject: string;
   account_id: number;
-  folder: 'inbox' | 'trash';
+  folder: MailSystemFolder;
+  custom_folder_id: number | null;
   counterparty_address: string | null;
   counterparty_avatar_url?: string | null;
   last_message_at: string;
+  last_inbound_at: string | null;
+  list_activity_at?: string;
   account?: MailAccount;
   unread_count?: number;
   delivery_status?: MailDeliveryStatus | null;

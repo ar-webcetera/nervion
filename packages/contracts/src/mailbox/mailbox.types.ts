@@ -1,10 +1,20 @@
-import type { MailDeliveryStatus } from './mailbox.enums';
+import type { MailDeliveryStatus } from "./mailbox.enums";
 
 export interface MailUnreadCounts {
   /** Непрочитанные во «Входящих» (то же, что `inbox`; для бейджа в меню). */
   count: number;
   inbox: number;
+  spam: number;
   trash: number;
+}
+
+/** Пользовательская папка внутри конкретного почтового ящика. */
+export interface MailFolder {
+  id: number;
+  account_id: number;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /** Сводка доставки на исходящем письме / в списке «Отправленные». */

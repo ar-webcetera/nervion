@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
-import type { MailStatsResponse } from '@tracker/contracts';
+import { MailSpamRuleScope, MailSystemFolder, type MailFolder, type MailStatsResponse } from '@tracker/contracts';
 import BaseModal from '~/components/BaseModal.vue';
 import MailDeliveryBadge from '~/components/Mail/MailDeliveryBadge.vue';
 import MailMessageView from '~/components/Mail/MailMessageView.vue';
@@ -29,7 +29,9 @@ const {
   threadsLimit,
   currentThread,
   messages,
+  folders,
   inboxUnreadCount,
+  spamUnreadCount,
   trashUnreadCount,
   pendingThreads,
   pendingMessages,
@@ -54,7 +56,9 @@ const syncUrl = () => {
 };
 
 const initialAccount = Number(route.query.account);
-const selectedAccountId = ref(Number.isInteger(initialAccount) && initialAccount > 0 ? initialAccount : 0);
+const selectedAccountId = useState<number>('mail-selected-account-id', () =>
+  Number.isInteger(initialAccount) && initialAccount > 0 ? initialAccount : 0,
+);
 const search = ref('');
 const initialThread = Number(route.query.thread);
 const selectedThreadId = ref<number | null>(Number.isInteger(initialThread) && initialThread > 0 ? initialThread : null);
@@ -97,16 +101,28 @@ const FOLDERS = [
   { key: 'inbox', label: 'Входящие' },
   { key: 'sent', label: 'Отправленные' },
   { key: 'drafts', label: 'Черновики' },
+  { key: 'spam', label: 'Спам' },
   { key: 'trash', label: 'Корзина' },
   { key: 'stats', label: 'Статистика' },
 ] as const;
 type FolderKey = (typeof FOLDERS)[number]['key'];
+type CustomFolderKey = `custom-${number}`;
+type ViewFolderKey = FolderKey | CustomFolderKey;
 type ThreadFolderKey = Exclude<FolderKey, 'stats'>;
-const initialFolder = FOLDERS.find((item) => item.key === route.query.folder)?.key ?? 'inbox';
-const currentFolder = ref<FolderKey>(initialFolder);
+const routeFolder = String(route.query.folder ?? '');
+const initialFolder: ViewFolderKey =
+  FOLDERS.find((item) => item.key === routeFolder)?.key ??
+  (/^custom-\d+$/.test(routeFolder) ? (routeFolder as CustomFolderKey) : 'inbox');
+const currentFolder = ref<ViewFolderKey>(initialFolder);
 const isStatsFolder = computed(() => currentFolder.value === 'stats');
-const folderUnreadCount = (folder: FolderKey) => {
+const currentCustomFolderId = computed(() => {
+  if (!currentFolder.value.startsWith('custom-')) return null;
+  const id = Number(currentFolder.value.slice('custom-'.length));
+  return Number.isInteger(id) && id > 0 ? id : null;
+});
+const folderUnreadCount = (folder: ViewFolderKey) => {
   if (folder === 'inbox') return inboxUnreadCount.value;
+  if (folder === 'spam') return spamUnreadCount.value;
   if (folder === 'trash') return trashUnreadCount.value;
   return 0;
 };
@@ -149,7 +165,7 @@ const loadStats = async () => {
       statsTo.value = range.to;
     }
     mailStats.value = await mailStore.fetchStats({
-      account_id: selectedAccountId.value || undefined,
+      account_id: selectedAccountId.value,
       from: statsFrom.value,
       to: statsTo.value,
     });
@@ -411,12 +427,16 @@ const selectedThreadIds = ref<Set<number>>(new Set());
 const selectedThreadsCount = computed(() => selectedThreadIds.value.size);
 
 const threadQuery = () => ({
-  folder: (currentFolder.value === 'stats' ? 'sent' : currentFolder.value) as ThreadFolderKey,
-  account_id: selectedAccountId.value || undefined,
+  folder: (currentCustomFolderId.value ? undefined : currentFolder.value === 'stats' ? 'sent' : currentFolder.value) as
+    | ThreadFolderKey
+    | undefined,
+  custom_folder_id: currentCustomFolderId.value || undefined,
+  account_id: selectedAccountId.value,
   search: search.value || undefined,
 });
 
 const loadThreads = async () => {
+  if (!selectedAccountId.value) return;
   if (isStatsFolder.value) {
     await loadStats();
     return;
@@ -464,7 +484,7 @@ const handleThreadsScroll = (event: Event) => {
   if (distanceToBottom <= 160) void loadMoreThreads();
 };
 
-const selectFolder = async (folder: FolderKey) => {
+const selectFolder = async (folder: ViewFolderKey) => {
   if (currentFolder.value === folder) return;
   await autosaveDraft();
   composeMode.value = false;
@@ -483,6 +503,7 @@ const POLL_INTERVAL_MS = 30000;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const pollThreads = () => {
+  if (!selectedAccountId.value) return;
   if (!isStatsFolder.value) {
     void mailStore
       .fetchThreads({
@@ -492,7 +513,7 @@ const pollThreads = () => {
       })
       .catch(() => {});
   }
-  void mailStore.fetchUnreadCount().catch(() => {});
+  void mailStore.fetchUnreadCount(selectedAccountId.value).catch(() => {});
 };
 
 const editDraft = (draft: MailMessage) => {
@@ -544,11 +565,24 @@ const openThreadById = async (id: number, unread = false) => {
   }
 };
 
+let mailboxInitialized = false;
 const loadMailPageData = async () => {
+  await mailStore.fetchAccounts();
+  if (!accounts.value.some((account) => account.id === selectedAccountId.value)) {
+    selectedAccountId.value = accounts.value[0]?.id ?? 0;
+  }
+  if (!selectedAccountId.value) {
+    mailboxInitialized = true;
+    return;
+  }
+  composeForm.account_id ||= selectedAccountId.value;
+  await mailStore.fetchFolders(selectedAccountId.value);
+  if (currentCustomFolderId.value && !folders.value.some((folder) => folder.id === currentCustomFolderId.value)) {
+    currentFolder.value = 'inbox';
+  }
   const tasks: Promise<unknown>[] = [
-    mailStore.fetchAccounts(),
     isStatsFolder.value ? loadStats() : loadThreads(),
-    mailStore.fetchUnreadCount(),
+    mailStore.fetchUnreadCount(selectedAccountId.value),
     mailStore.fetchContacts(),
   ];
   if (!isStatsFolder.value && selectedThreadId.value) {
@@ -571,6 +605,7 @@ const loadMailPageData = async () => {
     const draft = messages.value.find((message) => message.status === 'draft');
     if (draft) editDraft(draft);
   }
+  mailboxInitialized = true;
 };
 
 await useAsyncData('mailbox-init', async () => {
@@ -579,6 +614,18 @@ await useAsyncData('mailbox-init', async () => {
 });
 
 onMounted(() => {
+  mailboxInitialized = true;
+  if (!selectedAccountId.value && accounts.value.length) {
+    selectedAccountId.value = accounts.value[0].id;
+  } else if (selectedAccountId.value && !folders.value.length && !threads.value.length) {
+    void Promise.all([
+      mailStore.fetchFolders(selectedAccountId.value),
+      mailStore.fetchUnreadCount(selectedAccountId.value),
+      mailStore.fetchContacts(),
+    ])
+      .then(() => (isStatsFolder.value ? loadStats() : loadThreads()))
+      .catch((error) => $toast.error(getErrorMessage(error)));
+  }
   if (!composeForm.account_id && accounts.value.length) {
     composeForm.account_id = accounts.value[0].id;
   }
@@ -604,7 +651,19 @@ onUnmounted(() => {
   void autosaveDraft();
 });
 
-watch(selectedAccountId, loadThreads);
+watch(selectedAccountId, async (accountId) => {
+  if (!mailboxInitialized || !accountId) return;
+  selectedThreadId.value = null;
+  if (currentCustomFolderId.value) currentFolder.value = 'inbox';
+  composeForm.account_id = accountId;
+  try {
+    await Promise.all([mailStore.fetchFolders(accountId), mailStore.fetchUnreadCount(accountId)]);
+    if (isStatsFolder.value) await loadStats();
+    else await loadThreads();
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  }
+});
 watch([currentFolder, selectedAccountId, selectedThreadId, composeMode, composeThreadId], syncUrl);
 
 watch(search, () => {
@@ -831,6 +890,134 @@ const saveDraftAction = async () => {
   }
 };
 
+const showFolderCreator = ref(false);
+const newFolderName = ref('');
+const savingFolder = ref(false);
+
+const createFolder = async () => {
+  const name = newFolderName.value.trim();
+  if (!name || !selectedAccountId.value) return;
+  savingFolder.value = true;
+  try {
+    const folder = await mailStore.createFolder(selectedAccountId.value, name);
+    newFolderName.value = '';
+    showFolderCreator.value = false;
+    await selectFolder(`custom-${folder.id}`);
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  } finally {
+    savingFolder.value = false;
+  }
+};
+
+const renameFolder = async (folder: MailFolder) => {
+  const name = prompt('Новое название папки', folder.name)?.trim();
+  if (!name || name === folder.name) return;
+  try {
+    await mailStore.renameFolder(folder.id, name);
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  }
+};
+
+const removeFolder = async (folder: MailFolder) => {
+  if (!confirm(`Удалить папку «${folder.name}»? Письма вернутся во «Входящие».`)) return;
+  try {
+    await mailStore.deleteFolder(folder.id);
+    if (currentCustomFolderId.value === folder.id) await selectFolder('inbox');
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  }
+};
+
+const moveTarget = ref('');
+const movingThreads = ref(false);
+
+const folderTarget = (value: string) => {
+  if (value.startsWith('custom-')) return { custom_folder_id: Number(value.slice('custom-'.length)) };
+  return { system_folder: value as MailSystemFolder };
+};
+
+const moveThreads = async (threadIds: number[]) => {
+  if (!moveTarget.value || !selectedAccountId.value || !threadIds.length) return;
+  movingThreads.value = true;
+  try {
+    if (moveTarget.value === MailSystemFolder.SPAM) {
+      await Promise.all(
+        threadIds.map((threadId) => mailStore.markThreadSpam(threadId, MailSpamRuleScope.SENDER, selectedAccountId.value)),
+      );
+    } else {
+      await Promise.all(
+        threadIds.map((threadId) =>
+          mailStore.moveThreadToFolder(threadId, folderTarget(moveTarget.value), selectedAccountId.value),
+        ),
+      );
+    }
+    if (selectedThreadId.value && threadIds.includes(selectedThreadId.value)) selectedThreadId.value = null;
+    clearThreadSelection();
+    moveTarget.value = '';
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  } finally {
+    movingThreads.value = false;
+  }
+};
+
+const spamSenderDomain = computed(() => {
+  const inbound = [...messages.value].reverse().find((message) => message.direction === MAIL_DIRECTIONS.inbound);
+  return inbound?.from_address.split('@').at(-1)?.toLowerCase() ?? '';
+});
+
+const markCurrentThreadSpam = async (scope: MailSpamRuleScope) => {
+  if (!currentThread.value || !selectedAccountId.value) return;
+  if (
+    scope === MailSpamRuleScope.DOMAIN &&
+    !confirm(`Отправлять в спам все письма с домена ${spamSenderDomain.value || 'этого отправителя'}?`)
+  ) {
+    return;
+  }
+  movingThreads.value = true;
+  try {
+    await mailStore.markThreadSpam(currentThread.value.id, scope, selectedAccountId.value);
+    selectedThreadId.value = null;
+    $toast.success(scope === MailSpamRuleScope.DOMAIN ? 'Домен добавлен в спам' : 'Отправитель добавлен в спам');
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  } finally {
+    movingThreads.value = false;
+  }
+};
+
+const markCurrentThreadNotSpam = async () => {
+  if (!currentThread.value || !selectedAccountId.value) return;
+  movingThreads.value = true;
+  try {
+    await mailStore.markThreadNotSpam(currentThread.value.id, selectedAccountId.value);
+    selectedThreadId.value = null;
+    $toast.success('Переписка возвращена во Входящие');
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  } finally {
+    movingThreads.value = false;
+  }
+};
+
+const retryingMessageIds = ref<Set<number>>(new Set());
+const retryMessage = async (message: MailMessage) => {
+  if (retryingMessageIds.value.has(message.id)) return;
+  retryingMessageIds.value = new Set(retryingMessageIds.value).add(message.id);
+  try {
+    await mailStore.retryMessage(message.id);
+    $toast.success('Письмо отправлено повторно');
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  } finally {
+    const next = new Set(retryingMessageIds.value);
+    next.delete(message.id);
+    retryingMessageIds.value = next;
+  }
+};
+
 const confirmModal = ref<InstanceType<typeof BaseModal> | null>(null);
 type DeleteTarget =
   | { kind: 'thread' | 'message'; permanent: boolean; id: number; label: string }
@@ -879,7 +1066,11 @@ const confirmDelete = async () => {
       if (deleteTarget.value.permanent) {
         await Promise.all(selectedIds.map((threadId) => mailStore.deleteThread(threadId)));
       } else {
-        await Promise.all(selectedIds.map((threadId) => mailStore.moveThreadToFolder(threadId, 'trash')));
+        await Promise.all(
+          selectedIds.map((threadId) =>
+            mailStore.moveThreadToFolder(threadId, { system_folder: MailSystemFolder.TRASH }, selectedAccountId.value),
+          ),
+        );
       }
       if (selectedThreadId.value && selectedIds.includes(selectedThreadId.value)) selectedThreadId.value = null;
       clearThreadSelection();
@@ -889,7 +1080,11 @@ const confirmDelete = async () => {
       await mailStore.deleteThread(deleteTarget.value.id);
       selectedThreadId.value = null;
     } else {
-      await mailStore.moveThreadToFolder(deleteTarget.value.id, 'trash');
+      await mailStore.moveThreadToFolder(
+        deleteTarget.value.id,
+        { system_folder: MailSystemFolder.TRASH },
+        selectedAccountId.value,
+      );
       selectedThreadId.value = null;
     }
     confirmModal.value?.close();
@@ -904,7 +1099,11 @@ const confirmDelete = async () => {
 const restoreThread = async () => {
   if (!currentThread.value) return;
   try {
-    await mailStore.moveThreadToFolder(currentThread.value.id, 'inbox');
+    await mailStore.moveThreadToFolder(
+      currentThread.value.id,
+      { system_folder: MailSystemFolder.INBOX },
+      selectedAccountId.value,
+    );
     selectedThreadId.value = null;
   } catch (e) {
     $toast.error(getErrorMessage(e));
@@ -1008,7 +1207,9 @@ watch(
   <div class="mail-page" :class="{ 'mail-page_detail-open': isDetailOpen }">
     <div class="mail-page__folders">
       <h1 class="mail-page__title">Почта</h1>
-      <button class="mail-page__compose-btn mail-page__compose-btn_block" @click="openComposer">Написать</button>
+      <button class="mail-page__compose-btn mail-page__compose-btn_block" :disabled="!selectedAccountId" @click="openComposer">
+        Написать
+      </button>
       <nav class="mail-page__folder-nav">
         <button
           v-for="folder in FOLDERS"
@@ -1025,12 +1226,45 @@ watch(
           </span>
         </button>
       </nav>
+      <div class="mail-page__custom-folders">
+        <div class="mail-page__custom-folders-heading">
+          <span>Мои папки</span>
+          <button
+            type="button"
+            class="mail-page__folder-add"
+            aria-label="Создать папку"
+            title="Создать папку"
+            @click="showFolderCreator = !showFolderCreator"
+          >
+            +
+          </button>
+        </div>
+        <form v-if="showFolderCreator" class="mail-page__folder-form" @submit.prevent="createFolder">
+          <input v-model="newFolderName" class="mail-page__folder-input" maxlength="80" placeholder="Название папки" autofocus />
+          <button class="mail-page__folder-save" type="submit" :disabled="savingFolder || !newFolderName.trim()">
+            {{ savingFolder ? '…' : 'Создать' }}
+          </button>
+        </form>
+        <div v-for="folder in folders" :key="folder.id" class="mail-page__custom-folder-row">
+          <button
+            type="button"
+            :class="[
+              'mail-page__folder mail-page__custom-folder-name',
+              { 'mail-page__folder_active': currentFolder === `custom-${folder.id}` },
+            ]"
+            @click="selectFolder(`custom-${folder.id}`)"
+          >
+            {{ folder.name }}
+          </button>
+          <button class="mail-page__folder-action" type="button" title="Переименовать" @click="renameFolder(folder)">✎</button>
+          <button class="mail-page__folder-action" type="button" title="Удалить" @click="removeFolder(folder)">×</button>
+        </div>
+      </div>
     </div>
 
     <div class="mail-page__list">
       <div class="mail-page__filters">
         <select v-model.number="selectedAccountId" class="mail-page__select">
-          <option :value="0">Все ящики</option>
           <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.address }}</option>
         </select>
         <template v-if="isStatsFolder">
@@ -1047,9 +1281,7 @@ watch(
       <div v-if="isStatsFolder" class="mail-page__stats">
         <div v-if="pendingStats && !mailStats" class="mail-page__placeholder">Загрузка статистики…</div>
         <template v-else-if="mailStats">
-          <p class="mail-page__stats-period">
-            {{ formatStatsDay(mailStats.from) }} - {{ formatStatsDay(mailStats.to) }}
-          </p>
+          <p class="mail-page__stats-period">{{ formatStatsDay(mailStats.from) }} - {{ formatStatsDay(mailStats.to) }}</p>
           <div class="mail-page__stats-grid">
             <div class="mail-page__stats-card">
               <span class="mail-page__stats-value">{{ mailStats.totals.sent }}</span>
@@ -1077,8 +1309,8 @@ watch(
             </div>
           </div>
           <p class="mail-page__stats-note">
-            Открытия считаются по трекинг-pixel Postbox и не равны "прочитано". Папку "Спам" провайдеры не отдают:
-            видна только жалоба, если она пришла.
+            Открытия считаются по трекинг-pixel Postbox и не равны "прочитано". Папку "Спам" провайдеры не отдают: видна только
+            жалоба, если она пришла.
           </p>
           <h3 class="mail-page__stats-heading">По ящикам</h3>
           <div v-if="!mailStats.by_account.length" class="mail-page__placeholder">За период отправок нет</div>
@@ -1101,13 +1333,7 @@ watch(
           >
             <span class="mail-page__stats-problem-top">
               <span class="mail-page__stats-problem-subject">{{ item.subject || '(без темы)' }}</span>
-              <MailDeliveryBadge
-                status="sent"
-                :delivery-status="item.delivery_status"
-                :open-count="0"
-                :click-count="0"
-                compact
-              />
+              <MailDeliveryBadge status="sent" :delivery-status="item.delivery_status" :open-count="0" :click-count="0" compact />
             </span>
             <span class="mail-page__stats-problem-meta">
               {{ item.account_address }} → {{ item.to_addresses.join(', ') || '—' }}
@@ -1118,90 +1344,102 @@ watch(
       </div>
 
       <template v-else>
-      <div v-if="selectedThreadsCount" class="mail-page__selection-bar">
-        <span class="mail-page__selection-count">Выбрано: {{ selectedThreadsCount }}</span>
-        <button class="mail-page__selection-clear" type="button" @click="clearThreadSelection">Снять</button>
-        <button class="mail-page__selection-delete" type="button" @click="askDeleteSelectedThreads">
-          {{ isTrashFolder ? 'Удалить навсегда' : 'Удалить выбранные' }}
-        </button>
-      </div>
-
-      <div class="mail-page__threads" @scroll.passive="handleThreadsScroll">
-        <div v-if="pendingThreads && !threads.length" class="mail-page__placeholder">Загрузка…</div>
-        <div v-else-if="!threads.length" class="mail-page__placeholder">Писем пока нет</div>
-        <div
-          v-for="thread in threads"
-          :key="thread.id"
-          :class="[
-            'mail-page__thread',
-            {
-              'mail-page__thread_active': thread.id === selectedThreadId,
-              'mail-page__thread_selected': selectedThreadIds.has(thread.id),
-            },
-          ]"
-          role="button"
-          tabindex="0"
-          @click="openThread(thread)"
-          @keydown.enter.self="openThread(thread)"
-        >
-          <button
-            type="button"
-            class="mail-page__thread-avatar"
-            :style="threadAvatarUrl(thread) ? {} : { backgroundColor: avatarColor(thread.counterparty_address) }"
-            :aria-label="selectedThreadIds.has(thread.id) ? 'Снять выбор' : 'Выбрать письмо'"
-            :aria-pressed="selectedThreadIds.has(thread.id)"
-            @click.stop="toggleThreadSelection(thread.id)"
+        <div v-if="selectedThreadsCount" class="mail-page__selection-bar">
+          <span class="mail-page__selection-count">Выбрано: {{ selectedThreadsCount }}</span>
+          <select
+            v-model="moveTarget"
+            class="mail-page__move-select"
+            :disabled="movingThreads"
+            aria-label="Переместить выбранные письма"
+            @change="moveThreads([...selectedThreadIds])"
           >
-            <svg
-              v-if="selectedThreadIds.has(thread.id)"
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              aria-hidden="true"
-            >
-              <path
-                d="M5 12.5l4 4L19 7"
-                stroke="currentColor"
-                stroke-width="2.2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <img
-              v-else-if="threadAvatarUrl(thread)"
-              :src="threadAvatarUrl(thread)"
-              class="mail-page__thread-avatar-img"
-              alt=""
-              loading="lazy"
-              @error="onAvatarError(thread.counterparty_address)"
-            />
-            <template v-else>{{ avatarInitials(thread.counterparty_address) }}</template>
+            <option value="" disabled>Переместить…</option>
+            <option :value="MailSystemFolder.INBOX">Входящие</option>
+            <option :value="MailSystemFolder.SPAM">Спам</option>
+            <option :value="MailSystemFolder.TRASH">Корзина</option>
+            <option v-for="folder in folders" :key="folder.id" :value="`custom-${folder.id}`">{{ folder.name }}</option>
+          </select>
+          <button class="mail-page__selection-clear" type="button" @click="clearThreadSelection">Снять</button>
+          <button class="mail-page__selection-delete" type="button" @click="askDeleteSelectedThreads">
+            {{ isTrashFolder ? 'Удалить навсегда' : 'Удалить выбранные' }}
           </button>
-          <span class="mail-page__thread-body">
-            <span class="mail-page__thread-top">
-              <span class="mail-page__thread-counterparty">{{ thread.counterparty_address }}</span>
-              <span class="mail-page__thread-date">{{ threadDate(thread.last_message_at) }}</span>
-            </span>
-            <span class="mail-page__thread-bottom">
-              <span :class="['mail-page__thread-subject', { 'mail-page__thread-subject_unread': thread.unread_count }]">
-                {{ thread.subject }}
-              </span>
-              <MailDeliveryBadge
-                v-if="currentFolder === 'sent'"
-                status="sent"
-                :delivery-status="thread.delivery_status"
-                :open-count="thread.open_count"
-                :click-count="thread.click_count"
-                compact
-              />
-              <span v-if="thread.unread_count" class="mail-page__thread-badge">{{ thread.unread_count }}</span>
-            </span>
-            <span v-if="!selectedAccountId" class="mail-page__thread-account">{{ accountLabel(thread.account_id) }}</span>
-          </span>
         </div>
-        <div v-if="isLoadingMoreThreads" class="mail-page__load-more">Загружаем ещё…</div>
-      </div>
+
+        <div class="mail-page__threads" @scroll.passive="handleThreadsScroll">
+          <div v-if="pendingThreads && !threads.length" class="mail-page__placeholder">Загрузка…</div>
+          <div v-else-if="!threads.length" class="mail-page__placeholder">Писем пока нет</div>
+          <div
+            v-for="thread in threads"
+            :key="thread.id"
+            :class="[
+              'mail-page__thread',
+              {
+                'mail-page__thread_active': thread.id === selectedThreadId,
+                'mail-page__thread_selected': selectedThreadIds.has(thread.id),
+              },
+            ]"
+            role="button"
+            tabindex="0"
+            @click="openThread(thread)"
+            @keydown.enter.self="openThread(thread)"
+          >
+            <button
+              type="button"
+              class="mail-page__thread-avatar"
+              :style="threadAvatarUrl(thread) ? {} : { backgroundColor: avatarColor(thread.counterparty_address) }"
+              :aria-label="selectedThreadIds.has(thread.id) ? 'Снять выбор' : 'Выбрать письмо'"
+              :aria-pressed="selectedThreadIds.has(thread.id)"
+              @click.stop="toggleThreadSelection(thread.id)"
+            >
+              <svg
+                v-if="selectedThreadIds.has(thread.id)"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M5 12.5l4 4L19 7"
+                  stroke="currentColor"
+                  stroke-width="2.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+              <img
+                v-else-if="threadAvatarUrl(thread)"
+                :src="threadAvatarUrl(thread)"
+                class="mail-page__thread-avatar-img"
+                alt=""
+                loading="lazy"
+                @error="onAvatarError(thread.counterparty_address)"
+              />
+              <template v-else>{{ avatarInitials(thread.counterparty_address) }}</template>
+            </button>
+            <span class="mail-page__thread-body">
+              <span class="mail-page__thread-top">
+                <span class="mail-page__thread-counterparty">{{ thread.counterparty_address }}</span>
+                <span class="mail-page__thread-date">{{ threadDate(thread.list_activity_at || thread.last_message_at) }}</span>
+              </span>
+              <span class="mail-page__thread-bottom">
+                <span :class="['mail-page__thread-subject', { 'mail-page__thread-subject_unread': thread.unread_count }]">
+                  {{ thread.subject }}
+                </span>
+                <MailDeliveryBadge
+                  v-if="currentFolder === 'sent'"
+                  status="sent"
+                  :delivery-status="thread.delivery_status"
+                  :open-count="thread.open_count"
+                  :click-count="thread.click_count"
+                  compact
+                />
+                <span v-if="thread.unread_count" class="mail-page__thread-badge">{{ thread.unread_count }}</span>
+              </span>
+            </span>
+          </div>
+          <div v-if="isLoadingMoreThreads" class="mail-page__load-more">Загружаем ещё…</div>
+        </div>
       </template>
     </div>
 
@@ -1330,6 +1568,46 @@ watch(
             <span class="mail-page__detail-account">{{ accountLabel(currentThread?.account_id ?? 0) }}</span>
           </div>
           <div class="mail-page__detail-actions">
+            <button
+              v-if="currentFolder === 'spam'"
+              class="mail-page__icon-btn"
+              :disabled="movingThreads"
+              @click="markCurrentThreadNotSpam"
+            >
+              Не спам
+            </button>
+            <template v-else-if="!isTrashFolder && spamSenderDomain">
+              <button
+                class="mail-page__icon-btn"
+                :disabled="movingThreads"
+                title="Будущие письма этого отправителя тоже попадут в спам"
+                @click="markCurrentThreadSpam(MailSpamRuleScope.SENDER)"
+              >
+                В спам
+              </button>
+              <button
+                class="mail-page__icon-btn"
+                :disabled="movingThreads"
+                :title="`Блокировать всех отправителей с домена ${spamSenderDomain}`"
+                @click="markCurrentThreadSpam(MailSpamRuleScope.DOMAIN)"
+              >
+                Спам-домен
+              </button>
+            </template>
+            <select
+              v-if="currentThread && !isTrashFolder"
+              v-model="moveTarget"
+              class="mail-page__move-select"
+              :disabled="movingThreads"
+              aria-label="Переместить переписку"
+              @change="moveThreads([currentThread.id])"
+            >
+              <option value="" disabled>Переместить…</option>
+              <option :value="MailSystemFolder.INBOX">Входящие</option>
+              <option :value="MailSystemFolder.SPAM">Спам</option>
+              <option :value="MailSystemFolder.TRASH">Корзина</option>
+              <option v-for="folder in folders" :key="folder.id" :value="`custom-${folder.id}`">{{ folder.name }}</option>
+            </select>
             <button v-if="isTrashFolder" class="mail-page__icon-btn" title="Восстановить" @click="restoreThread">
               Восстановить
             </button>
@@ -1352,8 +1630,10 @@ watch(
             v-for="message in messages"
             :key="message.id"
             :message="message"
+            :retrying="retryingMessageIds.has(message.id)"
             @forward="forwardMessage"
             @delete="askDeleteMessage"
+            @retry="retryMessage"
           />
         </div>
 
@@ -1594,6 +1874,115 @@ watch(
     }
   }
 
+  &__custom-folders {
+    @include flex(cn);
+    gap: 2px;
+    min-width: 0;
+
+    @media (max-width: $screen-tablet) {
+      flex-direction: row;
+      align-items: center;
+      flex-shrink: 0;
+    }
+  }
+
+  &__custom-folders-heading {
+    @include flex(rn, between, a-center);
+    padding: 10px 8px 4px 12px;
+    color: var(--light-text-backgroung-primary-50);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    @extend %p12-medium;
+
+    @media (max-width: $screen-tablet) {
+      padding: 0 4px 0 8px;
+      white-space: nowrap;
+    }
+  }
+
+  &__folder-add,
+  &__folder-action,
+  &__folder-save {
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+
+    &:hover {
+      background: var(--light-text-backgroung-primary-10);
+      color: var(--light-text-backgroung-primary);
+    }
+  }
+
+  &__folder-add {
+    width: 28px;
+    height: 28px;
+    font-size: 20px;
+  }
+
+  &__folder-form {
+    @include flex(cn);
+    gap: 6px;
+    padding: 4px 0 8px;
+
+    @media (max-width: $screen-tablet) {
+      flex-direction: row;
+      padding: 0;
+    }
+  }
+
+  &__folder-input {
+    min-width: 0;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 7px;
+    background: var(--light-text-backgroung-primary-5);
+    color: var(--light-text-backgroung-primary);
+    outline: none;
+    @extend %text-xs-regular;
+
+    &:focus {
+      border-color: var(--primary-50);
+    }
+  }
+
+  &__folder-save {
+    padding: 7px 10px;
+    background: var(--primary-25);
+    color: var(--light-text-backgroung-primary);
+    @extend %p12-medium;
+  }
+
+  &__custom-folder-row {
+    @include flex(rn, a-center);
+    min-width: 0;
+
+    &:hover .mail-page__folder-action,
+    &:focus-within .mail-page__folder-action {
+      opacity: 1;
+    }
+  }
+
+  &__custom-folder-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__folder-action {
+    width: 26px;
+    height: 30px;
+    flex: 0 0 26px;
+    opacity: 0;
+
+    @media (hover: none), (max-width: $screen-tablet) {
+      opacity: 1;
+    }
+  }
+
   &__list {
     @include flex(cn);
     height: 100%;
@@ -1713,6 +2102,22 @@ watch(
 
   &__select option {
     background: var(--dark-text-background-primary);
+  }
+
+  &__move-select {
+    min-height: 36px;
+    max-width: 150px;
+    padding: 7px 28px 7px 10px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+    background: var(--dark-text-background-primary);
+    color: var(--light-text-backgroung-primary);
+    outline: none;
+    @extend %p12-regular;
+
+    &:focus {
+      border-color: var(--primary-50);
+    }
   }
 
   &__combobox {
@@ -1910,6 +2315,10 @@ watch(
     padding: 8px 16px;
     border-bottom: 1px solid var(--light-text-backgroung-primary-10);
     background: var(--light-text-backgroung-primary-5);
+
+    @media (max-width: $screen-mobile-l) {
+      flex-wrap: wrap;
+    }
   }
 
   &__selection-count {
@@ -2107,8 +2516,10 @@ watch(
     flex-shrink: 0;
 
     @media (max-width: $screen-tablet) {
-      order: 2;
-      margin-left: auto;
+      order: 4;
+      flex-basis: 100%;
+      flex-wrap: wrap;
+      margin-left: 0;
     }
   }
 

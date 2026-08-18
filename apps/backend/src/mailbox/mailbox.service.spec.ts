@@ -15,6 +15,10 @@ import { MailDeliveryService } from './mail-delivery.service';
 import { PushService } from '../push/push.service';
 import { InboundMailData } from './mailbox.types';
 import { Users } from '../users/entities/users.entity';
+import { MailFolders } from './entities/mail-folder.entity';
+import { MailSpamService } from './mail-spam.service';
+import { MailSpamRules } from './entities/mail-spam-rule.entity';
+import { MailDeliveryStatus, MailSpamRuleScope } from '@tracker/contracts';
 
 type MessagesQueryBuilderMock = {
   createQueryBuilder: jest.Mock;
@@ -26,9 +30,13 @@ type MessagesQueryBuilderMock = {
   andWhere: jest.Mock;
   orderBy: jest.Mock;
   groupBy: jest.Mock;
+  skip: jest.Mock;
+  take: jest.Mock;
+  loadRelationCountAndMap: jest.Mock;
   getMany: jest.Mock;
   getOne: jest.Mock;
   getRawMany: jest.Mock;
+  getManyAndCount: jest.Mock;
 };
 
 const createMessagesQueryBuilderMock = (): MessagesQueryBuilderMock => {
@@ -42,9 +50,13 @@ const createMessagesQueryBuilderMock = (): MessagesQueryBuilderMock => {
   qb.andWhere = jest.fn(() => qb);
   qb.orderBy = jest.fn(() => qb);
   qb.groupBy = jest.fn(() => qb);
+  qb.skip = jest.fn(() => qb);
+  qb.take = jest.fn(() => qb);
+  qb.loadRelationCountAndMap = jest.fn(() => qb);
   qb.getMany = jest.fn().mockResolvedValue([]);
   qb.getOne = jest.fn().mockResolvedValue(null);
   qb.getRawMany = jest.fn().mockResolvedValue([]);
+  qb.getManyAndCount = jest.fn().mockResolvedValue([[], 0]);
   return qb;
 };
 
@@ -53,6 +65,7 @@ describe('MailboxService', () => {
   let messagesQueryBuilder: MessagesQueryBuilderMock;
   let notificationsQueryBuilder: MessagesQueryBuilderMock;
   let usersQueryBuilder: MessagesQueryBuilderMock;
+  let threadsQueryBuilder: MessagesQueryBuilderMock;
 
   const mockAccountsRepository = {
     findOne: jest.fn(),
@@ -63,6 +76,22 @@ describe('MailboxService', () => {
     findOne: jest.fn(),
     save: jest.fn(),
     update: jest.fn(),
+    createQueryBuilder: jest.fn(),
+  };
+
+  const mockFoldersRepository = {
+    create: jest.fn((value: Partial<MailFolders>) => value),
+    find: jest.fn(),
+    findOne: jest.fn(),
+    save: jest.fn(),
+    remove: jest.fn(),
+  };
+
+  const mockSpamRulesRepository = {
+    create: jest.fn((value: Partial<MailSpamRules>) => value),
+    findOne: jest.fn(),
+    save: jest.fn(),
+    delete: jest.fn(),
   };
 
   const mockMessagesRepository = {
@@ -100,11 +129,15 @@ describe('MailboxService', () => {
     attachDeliverySummaries: jest.fn().mockResolvedValue(new Map()),
     getStats: jest.fn(),
   };
+  const mockMailSpamService = {
+    assess: jest.fn().mockReturnValue({ isSpam: false, score: 0, reasons: [] }),
+  };
   const mockConfigService = {
     get: jest.fn(),
   };
   const mockPushService = {
     sendToUser: jest.fn(),
+    sendToUsers: jest.fn(),
   };
 
   const baseInbound = (): InboundMailData => ({
@@ -127,12 +160,15 @@ describe('MailboxService', () => {
     messagesQueryBuilder = createMessagesQueryBuilderMock();
     notificationsQueryBuilder = createMessagesQueryBuilderMock();
     usersQueryBuilder = createMessagesQueryBuilderMock();
+    threadsQueryBuilder = createMessagesQueryBuilderMock();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MailboxService,
         { provide: getRepositoryToken(MailAccounts), useValue: mockAccountsRepository },
         { provide: getRepositoryToken(MailThreads), useValue: mockThreadsRepository },
+        { provide: getRepositoryToken(MailFolders), useValue: mockFoldersRepository },
+        { provide: getRepositoryToken(MailSpamRules), useValue: mockSpamRulesRepository },
         { provide: getRepositoryToken(MailMessages), useValue: mockMessagesRepository },
         { provide: getRepositoryToken(MailAttachments), useValue: mockAttachmentsRepository },
         { provide: getRepositoryToken(Notifications), useValue: mockNotificationsRepository },
@@ -140,6 +176,7 @@ describe('MailboxService', () => {
         { provide: StorageService, useValue: mockStorageService },
         { provide: PostboxService, useValue: mockPostboxService },
         { provide: MailDeliveryService, useValue: mockMailDeliveryService },
+        { provide: MailSpamService, useValue: mockMailSpamService },
         { provide: ConfigService, useValue: mockConfigService },
         { provide: PushService, useValue: mockPushService },
       ],
@@ -151,8 +188,10 @@ describe('MailboxService', () => {
     mockMessagesRepository.createQueryBuilder.mockImplementation(() => messagesQueryBuilder);
     mockNotificationsRepository.createQueryBuilder.mockImplementation(() => notificationsQueryBuilder);
     mockUsersRepository.createQueryBuilder.mockImplementation(() => usersQueryBuilder);
+    mockThreadsRepository.createQueryBuilder.mockImplementation(() => threadsQueryBuilder);
     mockThreadsRepository.create.mockImplementation((value: Partial<MailThreads>) => value);
     mockMessagesRepository.create.mockImplementation((value: Partial<MailMessages>) => value);
+    mockSpamRulesRepository.findOne.mockResolvedValue(null);
     mockThreadsRepository.save.mockImplementation((value: Partial<MailThreads>) =>
       Promise.resolve({
         id: 3,
@@ -248,7 +287,10 @@ describe('MailboxService', () => {
         },
         { is_read: true },
       );
-      expect(mockThreadsRepository.update).toHaveBeenCalledWith({ id: In([3, 4]) }, { folder: MAIL_FOLDERS.trash });
+      expect(mockThreadsRepository.update).toHaveBeenCalledWith(
+        { id: In([3, 4]) },
+        { folder: MAIL_FOLDERS.trash, custom_folder_id: null },
+      );
     });
 
     it('должен возвращать пустой список без обновлений, если писем нет', async () => {
@@ -538,6 +580,94 @@ describe('MailboxService', () => {
     });
   });
 
+  describe('folders and inbox ordering', () => {
+    it('запрашивает папки только для выбранного ящика', async () => {
+      mockFoldersRepository.find.mockResolvedValue([{ id: 7, account_id: 1, name: 'Клиенты' }]);
+
+      await service.listFolders({ id: 10, role: 'employee' } as never, 1);
+
+      expect(mockFoldersRepository.find).toHaveBeenCalledWith({ where: { account_id: 1 }, order: { name: 'ASC' } });
+    });
+
+    it('сортирует Входящие по последнему входящему письму', async () => {
+      await service.findThreads({ id: 10, role: 'employee' } as never, { account_id: 1 });
+
+      expect(threadsQueryBuilder.orderBy).toHaveBeenCalledWith('thread.last_inbound_at', 'DESC', 'NULLS LAST');
+    });
+  });
+
+  describe('manual spam rules', () => {
+    const prepareInboundThread = (address: string) => {
+      mockThreadsRepository.findOne.mockResolvedValue({
+        id: 3,
+        account_id: 1,
+        counterparty_address: address,
+        account: { id: 1, allowedUsers: [{ id: 10 }] },
+      });
+      mockMessagesRepository.find.mockResolvedValue([
+        { id: 9, thread_id: 3, direction: MAIL_DIRECTIONS.inbound, from_address: address },
+      ]);
+      usersQueryBuilder.getMany.mockResolvedValue([]);
+    };
+
+    it('создаёт доменное правило и переносит подходящие входящие цепочки', async () => {
+      prepareInboundThread('sales@agency.example');
+      mockSpamRulesRepository.save.mockImplementation((value: Partial<MailSpamRules>) => Promise.resolve({ id: 5, ...value }));
+      messagesQueryBuilder.getRawMany.mockResolvedValue([{ thread_id: 3 }, { thread_id: 4 }]);
+
+      await service.markThreadAsSpam({ id: 10, role: 'employee' } as never, 3, {
+        scope: MailSpamRuleScope.DOMAIN,
+      });
+
+      expect(mockSpamRulesRepository.create).toHaveBeenCalledWith({
+        account_id: 1,
+        scope: MailSpamRuleScope.DOMAIN,
+        value: 'agency.example',
+      });
+      expect(mockThreadsRepository.update).toHaveBeenCalledWith(
+        { id: In([3, 4]) },
+        { folder: MAIL_FOLDERS.spam, custom_folder_id: null },
+      );
+    });
+
+    it('не разрешает заблокировать весь общедоступный почтовый домен', async () => {
+      prepareInboundThread('client@gmail.com');
+
+      await expect(
+        service.markThreadAsSpam({ id: 10, role: 'employee' } as never, 3, {
+          scope: MailSpamRuleScope.DOMAIN,
+        }),
+      ).rejects.toThrow('Нельзя заблокировать общедоступный почтовый домен целиком');
+    });
+  });
+
+  describe('retryMessage', () => {
+    it('повторяет bounce-письмо в той же цепочке', async () => {
+      mockMessagesRepository.findOne.mockResolvedValue({
+        id: 9,
+        thread_id: 3,
+        direction: MAIL_DIRECTIONS.outbound,
+        status: MAIL_MESSAGE_STATUSES.sent,
+        delivery_status: MailDeliveryStatus.BOUNCED,
+        to_addresses: [{ address: 'client@example.com' }],
+        cc_addresses: [],
+        subject: 'Договор',
+        text_body: 'Текст',
+        html_body: null,
+        attachments: [],
+        thread: { id: 3, account_id: 1, subject: 'Договор', account: { id: 1, allowedUsers: [{ id: 10 }] } },
+      });
+      const resent = { id: 10 } as MailMessages;
+      const sendSpy = jest.spyOn(service, 'sendMail').mockResolvedValue(resent);
+
+      await expect(service.retryMessage({ id: 10, role: 'employee' } as never, 9)).resolves.toBe(resent);
+      expect(sendSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 10 }),
+        expect.objectContaining({ account_id: 1, thread_id: 3, to: ['client@example.com'], subject: 'Договор' }),
+      );
+    });
+  });
+
   describe('avatars', () => {
     it('должен добавлять аватар пользователя при совпадении email без учёта регистра', async () => {
       mockThreadsRepository.findOne.mockResolvedValue({
@@ -579,6 +709,7 @@ describe('MailboxService', () => {
       await expect(service.getUnreadCounts({ id: 10 } as never)).resolves.toEqual({
         count: 4,
         inbox: 4,
+        spam: 0,
         trash: 2,
       });
       expect(messagesQueryBuilder.groupBy).toHaveBeenCalledWith('thread.folder');

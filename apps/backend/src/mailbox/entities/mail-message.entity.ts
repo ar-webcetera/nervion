@@ -89,6 +89,15 @@ export class MailMessages {
   @Column({ type: 'jsonb', name: 'auth_results', nullable: true })
   auth_results: MailAuthResults | null;
 
+  @Column({ type: 'boolean', name: 'is_spam', default: false })
+  is_spam: boolean;
+
+  @Column({ type: 'real', name: 'spam_score', default: 0 })
+  spam_score: number;
+
+  @Column({ type: 'jsonb', name: 'spam_reasons', default: [] })
+  spam_reasons: string[];
+
   @Column({ type: 'boolean', name: 'is_read', default: false })
   is_read: boolean;
 

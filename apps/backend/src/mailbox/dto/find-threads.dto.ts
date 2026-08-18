@@ -1,11 +1,12 @@
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum MAIL_FOLDER_FILTER {
   inbox = 'inbox',
   sent = 'sent',
   drafts = 'drafts',
+  spam = 'spam',
   trash = 'trash',
 }
 
@@ -19,11 +20,16 @@ export class FindThreadsDto {
   @IsEnum(MAIL_FOLDER_FILTER)
   folder?: MAIL_FOLDER_FILTER;
 
-  @ApiPropertyOptional({ description: 'ID почтового ящика для фильтрации', example: 1 })
+  @ApiProperty({ description: 'ID выбранного почтового ящика', example: 1 })
+  @IsInt()
+  @Type(() => Number)
+  account_id: number;
+
+  @ApiPropertyOptional({ description: 'ID пользовательской папки', example: 3 })
   @IsOptional()
   @IsInt()
   @Type(() => Number)
-  account_id?: number;
+  custom_folder_id?: number;
 
   @ApiPropertyOptional({ description: 'ID задачи для фильтрации привязанных цепочек', example: 42 })
   @IsOptional()

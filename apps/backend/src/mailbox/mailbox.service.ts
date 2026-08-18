@@ -11,8 +11,8 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import type { MailUnreadCounts } from '@tracker/contracts';
-import { Brackets, In, IsNull, Repository } from 'typeorm';
+import { MailDeliveryStatus, MailSpamRuleScope, MailSystemFolder, type MailUnreadCounts } from '@tracker/contracts';
+import { Brackets, ILike, In, IsNull, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { Notifications } from '../notifications/entities/notification.entity';
 import { PushService } from '../push/push.service';
@@ -25,19 +25,44 @@ import { SendMailDto } from './dto/send-mail.dto';
 import { UpdateMailAccountDto } from './dto/update-mail-account.dto';
 import { MailAccounts, MAIL_ACCOUNT_TYPES } from './entities/mail-account.entity';
 import { MailAttachments } from './entities/mail-attachment.entity';
+import { MailFolders } from './entities/mail-folder.entity';
+import { MailSpamRules } from './entities/mail-spam-rule.entity';
 import { MailMessages, MAIL_DIRECTIONS, MAIL_MESSAGE_STATUSES } from './entities/mail-message.entity';
 import { MailThreads, MAIL_FOLDERS } from './entities/mail-thread.entity';
 import { Users } from '../users/entities/users.entity';
 import { InboundMailData } from './mailbox.types';
 import { buildReferencesHeader, canAccessAccount, extractReferencedIds, parseTaskIdFromAddress } from './mailbox.utils';
 import { MailDeliveryService } from './mail-delivery.service';
+import { MailSpamService } from './mail-spam.service';
 import { PostboxService } from './postbox.service';
-import { MailDeliveryStatus } from '@tracker/contracts';
+import { CreateMailFolderDto } from './dto/create-mail-folder.dto';
+import { MoveMailThreadDto } from './dto/move-mail-thread.dto';
+import { UpdateMailFolderDto } from './dto/update-mail-folder.dto';
+import { MarkMailSpamDto } from './dto/mark-mail-spam.dto';
 
 const DEFAULT_THREADS_LIMIT = 30;
 const MAX_THREADS_LIMIT = 100;
 const MAX_OUTBOUND_ATTACHMENTS_BYTES = 7_000_000;
 const OUTBOUND_ATTACHMENTS_TOO_LARGE_MESSAGE = 'Вложения занимают больше 7 МБ. Уменьшите файлы или отправьте ссылку на них.';
+const RESERVED_FOLDER_NAMES = new Set(['входящие', 'отправленные', 'черновики', 'спам', 'корзина', 'статистика']);
+const PUBLIC_MAIL_DOMAINS = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'mail.ru',
+  'inbox.ru',
+  'list.ru',
+  'bk.ru',
+  'yandex.ru',
+  'ya.ru',
+  'rambler.ru',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'icloud.com',
+  'yahoo.com',
+  'proton.me',
+  'protonmail.com',
+]);
 
 @Injectable()
 export class MailboxService {
@@ -48,6 +73,10 @@ export class MailboxService {
     private readonly accountsRepository: Repository<MailAccounts>,
     @InjectRepository(MailThreads)
     private readonly threadsRepository: Repository<MailThreads>,
+    @InjectRepository(MailFolders)
+    private readonly foldersRepository: Repository<MailFolders>,
+    @InjectRepository(MailSpamRules)
+    private readonly spamRulesRepository: Repository<MailSpamRules>,
     @InjectRepository(MailMessages)
     private readonly messagesRepository: Repository<MailMessages>,
     @InjectRepository(MailAttachments)
@@ -59,6 +88,7 @@ export class MailboxService {
     private readonly storageService: StorageService,
     private readonly postboxService: PostboxService,
     private readonly mailDeliveryService: MailDeliveryService,
+    private readonly mailSpamService: MailSpamService,
     private readonly configService: ConfigService,
     private readonly pushService: PushService,
   ) {}
@@ -117,6 +147,60 @@ export class MailboxService {
       order: { id: 'ASC' },
       relations: { allowedUsers: true },
     });
+  }
+
+  async listFolders(user: AuthenticatedUser, accountId: number): Promise<MailFolders[]> {
+    await this.getAccountForUser(user, accountId);
+    return this.foldersRepository.find({ where: { account_id: accountId }, order: { name: 'ASC' } });
+  }
+
+  async createFolder(user: AuthenticatedUser, dto: CreateMailFolderDto): Promise<MailFolders> {
+    await this.getAccountForUser(user, dto.account_id);
+    const name = this.normalizeFolderName(dto.name);
+    await this.assertFolderNameAvailable(dto.account_id, name);
+
+    return this.foldersRepository.save(this.foldersRepository.create({ account_id: dto.account_id, name }));
+  }
+
+  async updateFolder(user: AuthenticatedUser, folderId: number, dto: UpdateMailFolderDto): Promise<MailFolders> {
+    const folder = await this.getFolderForUser(user, folderId);
+    const name = this.normalizeFolderName(dto.name);
+    await this.assertFolderNameAvailable(folder.account_id, name, folder.id);
+    folder.name = name;
+    return this.foldersRepository.save(folder);
+  }
+
+  async deleteFolder(user: AuthenticatedUser, folderId: number): Promise<void> {
+    const folder = await this.getFolderForUser(user, folderId);
+    await this.threadsRepository.update(
+      { custom_folder_id: folder.id },
+      { custom_folder_id: null, folder: MailSystemFolder.INBOX },
+    );
+    await this.foldersRepository.remove(folder);
+  }
+
+  private normalizeFolderName(value: string): string {
+    const name = value.trim().replace(/\s+/g, ' ');
+    if (!name) throw new BadRequestException('Введите название папки');
+    if (RESERVED_FOLDER_NAMES.has(name.toLowerCase())) {
+      throw new BadRequestException('Это название занято системной папкой');
+    }
+    return name;
+  }
+
+  private async assertFolderNameAvailable(accountId: number, name: string, exceptId?: number): Promise<void> {
+    const existing = await this.foldersRepository.findOne({ where: { account_id: accountId, name: ILike(name) } });
+    if (existing && existing.id !== exceptId) throw new BadRequestException(`Папка «${name}» уже существует`);
+  }
+
+  private async getFolderForUser(user: AuthenticatedUser, folderId: number): Promise<MailFolders> {
+    const folder = await this.foldersRepository.findOne({
+      where: { id: folderId },
+      relations: { account: { allowedUsers: true } },
+    });
+    if (!folder) throw new NotFoundException('Папка не найдена');
+    if (!canAccessAccount(user, folder.account)) throw new ForbiddenException('Нет доступа к этой папке');
+    return folder;
   }
 
   async createAccount(dto: CreateMailAccountDto): Promise<MailAccounts> {
@@ -210,6 +294,20 @@ export class MailboxService {
     const thread = await this.resolveInboundThread(account, data);
     const linkedNotification = await this.findLinkedNotification(account.address, data.notificationId);
     const notificationAlreadyRead = linkedNotification?.is_read === true;
+    const matchingSpamRule = linkedNotification ? null : await this.findMatchingSpamRule(account.id, data.from.address);
+    const spam = linkedNotification
+      ? { isSpam: false, score: 0, reasons: [] }
+      : matchingSpamRule
+        ? {
+            isSpam: true,
+            score: 100,
+            reasons: [
+              matchingSpamRule.scope === MailSpamRuleScope.DOMAIN
+                ? `Домен ${matchingSpamRule.value} заблокирован пользователем`
+                : `Отправитель ${matchingSpamRule.value} заблокирован пользователем`,
+            ],
+          }
+        : this.mailSpamService.assess(data);
 
     const message = await this.messagesRepository.save(
       this.messagesRepository.create({
@@ -228,6 +326,9 @@ export class MailboxService {
         html_body: data.html,
         raw_s3_key: data.rawS3Key,
         auth_results: data.authResults,
+        is_spam: spam.isSpam,
+        spam_score: spam.score,
+        spam_reasons: spam.reasons,
         is_read: notificationAlreadyRead,
         status: MAIL_MESSAGE_STATUSES.received,
       }),
@@ -235,18 +336,39 @@ export class MailboxService {
 
     await this.saveAttachments(account, thread, message, data);
 
-    thread.last_message_at = new Date();
+    const receivedAt = new Date();
+    thread.last_message_at = receivedAt;
+    thread.last_inbound_at = receivedAt;
     if (notificationAlreadyRead) {
       thread.folder = MAIL_FOLDERS.trash;
+      thread.custom_folder_id = null;
+    } else if (spam.isSpam && !thread.custom_folder_id && thread.folder === MAIL_FOLDERS.inbox) {
+      thread.folder = MAIL_FOLDERS.spam;
     }
     if (!thread.counterparty_address) {
       thread.counterparty_address = data.from.address;
     }
     await this.threadsRepository.save(thread);
 
-    await this.notifyInboundMessage(account.id, thread.id, message.id, data);
+    if (!spam.isSpam) {
+      await this.notifyInboundMessage(account.id, thread.id, message.id, data);
+    }
 
     return message;
+  }
+
+  private senderDomain(address: string): string | null {
+    const normalized = this.normalizeEmail(address);
+    const separator = normalized.lastIndexOf('@');
+    return separator > 0 && separator < normalized.length - 1 ? normalized.slice(separator + 1) : null;
+  }
+
+  private findMatchingSpamRule(accountId: number, address: string): Promise<MailSpamRules | null> {
+    const sender = this.normalizeEmail(address);
+    const domain = this.senderDomain(sender);
+    const where = [{ account_id: accountId, scope: MailSpamRuleScope.SENDER, value: sender }];
+    if (domain) where.push({ account_id: accountId, scope: MailSpamRuleScope.DOMAIN, value: domain });
+    return this.spamRulesRepository.findOne({ where });
   }
 
   private findLinkedNotification(accountAddress: string, notificationId: number | null): Promise<Notifications | null> {
@@ -283,7 +405,7 @@ export class MailboxService {
       },
       { is_read: true },
     );
-    await this.threadsRepository.update({ id: In(threadIds) }, { folder: MAIL_FOLDERS.trash });
+    await this.threadsRepository.update({ id: In(threadIds) }, { folder: MAIL_FOLDERS.trash, custom_folder_id: null });
 
     return threadIds;
   }
@@ -347,6 +469,7 @@ export class MailboxService {
         task_id: taskId ?? null,
         counterparty_address: data.from.address,
         last_message_at: new Date(),
+        last_inbound_at: new Date(),
       }),
     );
   }
@@ -577,6 +700,7 @@ export class MailboxService {
   }
 
   async findThreads(user: AuthenticatedUser, dto: FindThreadsDto) {
+    await this.getAccountForUser(user, dto.account_id);
     const limit = Math.min(dto.limit ?? DEFAULT_THREADS_LIMIT, MAX_THREADS_LIMIT);
     const page = dto.page ?? 1;
 
@@ -586,7 +710,6 @@ export class MailboxService {
       .loadRelationCountAndMap('thread.unread_count', 'thread.messages', 'unread', (qb) =>
         qb.where('unread.is_read = false AND unread.direction = :inbound', { inbound: MAIL_DIRECTIONS.inbound }),
       )
-      .orderBy('thread.last_message_at', 'DESC')
       .skip((page - 1) * limit)
       .take(limit);
 
@@ -595,10 +718,19 @@ export class MailboxService {
     });
 
     const folder = dto.folder ?? MAIL_FOLDER_FILTER.inbox;
-    if (folder === MAIL_FOLDER_FILTER.trash) {
+    if (dto.custom_folder_id) {
+      const customFolder = await this.getFolderForUser(user, dto.custom_folder_id);
+      if (customFolder.account_id !== dto.account_id) throw new BadRequestException('Папка не относится к выбранному ящику');
+      query.andWhere('thread.custom_folder_id = :customFolderId', { customFolderId: customFolder.id });
+    } else if (folder === MAIL_FOLDER_FILTER.trash) {
       query.andWhere('thread.folder = :trashFolder', { trashFolder: MAIL_FOLDERS.trash });
+      query.andWhere('thread.custom_folder_id IS NULL');
+    } else if (folder === MAIL_FOLDER_FILTER.spam) {
+      query.andWhere('thread.folder = :spamFolder', { spamFolder: MAIL_FOLDERS.spam });
+      query.andWhere('thread.custom_folder_id IS NULL');
     } else {
       query.andWhere('thread.folder = :inboxFolder', { inboxFolder: MAIL_FOLDERS.inbox });
+      query.andWhere('thread.custom_folder_id IS NULL');
 
       if (folder === MAIL_FOLDER_FILTER.inbox) {
         query.andWhere(
@@ -621,8 +753,12 @@ export class MailboxService {
       }
     }
 
-    if (dto.account_id) {
-      query.andWhere('thread.account_id = :accountId', { accountId: dto.account_id });
+    query.andWhere('thread.account_id = :accountId', { accountId: dto.account_id });
+
+    if (!dto.custom_folder_id && folder === MAIL_FOLDER_FILTER.inbox) {
+      query.orderBy('thread.last_inbound_at', 'DESC', 'NULLS LAST');
+    } else {
+      query.orderBy('thread.last_message_at', 'DESC');
     }
 
     if (dto.task_id) {
@@ -652,6 +788,10 @@ export class MailboxService {
         const delivery = deliveryByThread?.get(thread.id);
         return {
           ...thread,
+          list_activity_at:
+            !dto.custom_folder_id && folder === MAIL_FOLDER_FILTER.inbox
+              ? (thread.last_inbound_at ?? thread.last_message_at)
+              : thread.last_message_at,
           counterparty_avatar_url: avatarByAddress.get(this.normalizeEmail(thread.counterparty_address)) ?? null,
           delivery_status: delivery?.delivery_status ?? null,
           open_count: delivery?.open_count ?? 0,
@@ -722,12 +862,124 @@ export class MailboxService {
     );
   }
 
-  async moveThreadToFolder(user: AuthenticatedUser, threadId: number, folder: MAIL_FOLDERS): Promise<MailThreads> {
+  async moveThreadToFolder(user: AuthenticatedUser, threadId: number, target: MoveMailThreadDto): Promise<MailThreads> {
     const { thread } = await this.getThreadWithMessages(user, threadId);
 
-    thread.folder = folder;
+    const hasSystemFolder = target.system_folder !== undefined;
+    const hasCustomFolder = target.custom_folder_id !== undefined;
+    if (hasSystemFolder === hasCustomFolder) {
+      throw new BadRequestException('Укажите одну целевую папку');
+    }
+
+    if (target.custom_folder_id !== undefined) {
+      const folder = await this.getFolderForUser(user, target.custom_folder_id);
+      if (folder.account_id !== thread.account_id) throw new BadRequestException('Папка не относится к ящику переписки');
+      thread.folder = MailSystemFolder.INBOX;
+      thread.custom_folder_id = folder.id;
+    } else {
+      thread.folder = target.system_folder!;
+      thread.custom_folder_id = null;
+    }
 
     return this.threadsRepository.save(thread);
+  }
+
+  async markThreadAsSpam(user: AuthenticatedUser, threadId: number, dto: MarkMailSpamDto) {
+    const { thread, messages } = await this.getThreadWithMessages(user, threadId);
+    const inbound = [...messages].reverse().find((message) => message.direction === MAIL_DIRECTIONS.inbound);
+    if (!inbound) throw new BadRequestException('В переписке нет входящего отправителя');
+
+    const sender = this.normalizeEmail(inbound.from_address);
+    const domain = this.senderDomain(sender);
+    if (dto.scope === MailSpamRuleScope.DOMAIN && (!domain || PUBLIC_MAIL_DOMAINS.has(domain))) {
+      throw new BadRequestException('Нельзя заблокировать общедоступный почтовый домен целиком');
+    }
+    const value = dto.scope === MailSpamRuleScope.DOMAIN ? domain! : sender;
+    const existing = await this.spamRulesRepository.findOne({
+      where: { account_id: thread.account_id, scope: dto.scope, value },
+    });
+    const rule =
+      existing ??
+      (await this.spamRulesRepository.save(
+        this.spamRulesRepository.create({ account_id: thread.account_id, scope: dto.scope, value }),
+      ));
+
+    const matchingMessages = await this.messagesRepository
+      .createQueryBuilder('message')
+      .select('message.thread_id', 'thread_id')
+      .innerJoin('message.thread', 'thread')
+      .where('thread.account_id = :accountId', { accountId: thread.account_id })
+      .andWhere('message.direction = :direction', { direction: MAIL_DIRECTIONS.inbound })
+      .andWhere('message.deleted_at IS NULL')
+      .andWhere(
+        dto.scope === MailSpamRuleScope.DOMAIN
+          ? 'LOWER(message.from_address) LIKE :senderPattern'
+          : 'LOWER(message.from_address) = :senderPattern',
+        { senderPattern: dto.scope === MailSpamRuleScope.DOMAIN ? `%@${value}` : value },
+      )
+      .getRawMany<{ thread_id: number | string }>();
+    const threadIds = [...new Set([thread.id, ...matchingMessages.map((item) => Number(item.thread_id))])].filter(
+      Number.isInteger,
+    );
+    await this.threadsRepository.update({ id: In(threadIds) }, { folder: MailSystemFolder.SPAM, custom_folder_id: null });
+
+    return { rule, moved_thread_count: threadIds.length };
+  }
+
+  async markThreadAsNotSpam(user: AuthenticatedUser, threadId: number): Promise<MailThreads> {
+    const { thread, messages } = await this.getThreadWithMessages(user, threadId);
+    const inbound = [...messages].reverse().find((message) => message.direction === MAIL_DIRECTIONS.inbound);
+    if (inbound) {
+      const sender = this.normalizeEmail(inbound.from_address);
+      const domain = this.senderDomain(sender);
+      await this.spamRulesRepository.delete({
+        account_id: thread.account_id,
+        scope: MailSpamRuleScope.SENDER,
+        value: sender,
+      });
+      if (domain) {
+        await this.spamRulesRepository.delete({
+          account_id: thread.account_id,
+          scope: MailSpamRuleScope.DOMAIN,
+          value: domain,
+        });
+      }
+    }
+
+    thread.folder = MailSystemFolder.INBOX;
+    thread.custom_folder_id = null;
+    return this.threadsRepository.save(thread);
+  }
+
+  async retryMessage(user: AuthenticatedUser, messageId: number): Promise<MailMessages> {
+    const message = await this.messagesRepository.findOne({
+      where: { id: messageId },
+      relations: { attachments: true, thread: { account: { allowedUsers: true } } },
+    });
+    if (!message) throw new NotFoundException('Письмо не найдено');
+    if (!canAccessAccount(user, message.thread.account)) throw new ForbiddenException('Нет доступа к этому письму');
+    const canRetry =
+      message.direction === MAIL_DIRECTIONS.outbound &&
+      (message.status === MAIL_MESSAGE_STATUSES.failed || message.delivery_status === MailDeliveryStatus.BOUNCED);
+    if (!canRetry) throw new BadRequestException('Повторная отправка доступна только для недоставленного письма');
+
+    return this.sendMail(user, {
+      account_id: message.thread.account_id,
+      to: message.to_addresses.map((item) => item.address),
+      cc: message.cc_addresses.map((item) => item.address),
+      subject: message.subject ?? message.thread.subject,
+      text: message.text_body ?? undefined,
+      html: message.html_body ?? undefined,
+      thread_id: message.thread_id,
+      attachments: (message.attachments ?? []).map((attachment) => ({
+        s3_key: attachment.s3_key,
+        filename: attachment.filename,
+        content_type: attachment.content_type,
+        size: attachment.size,
+        content_id: attachment.content_id,
+        is_inline: attachment.is_inline,
+      })),
+    });
   }
 
   async deleteThreadPermanently(user: AuthenticatedUser, threadId: number): Promise<void> {
@@ -921,7 +1173,7 @@ export class MailboxService {
     return { attachment, stream };
   }
 
-  async getUnreadCounts(user: AuthenticatedUser): Promise<MailUnreadCounts> {
+  async getUnreadCounts(user: AuthenticatedUser, accountId?: number): Promise<MailUnreadCounts> {
     const query = this.messagesRepository
       .createQueryBuilder('message')
       .select('thread.folder', 'folder')
@@ -930,18 +1182,25 @@ export class MailboxService {
       .innerJoin('thread.account', 'account')
       .where('message.is_read = false')
       .andWhere('message.direction = :inbound', { inbound: MAIL_DIRECTIONS.inbound })
+      .andWhere('thread.custom_folder_id IS NULL')
       .groupBy('thread.folder');
 
     query.andWhere('account.id IN (SELECT mail_account_id FROM mail_account_access WHERE user_id = :userId)', {
       userId: user.id,
     });
 
+    if (accountId) {
+      await this.getAccountForUser(user, accountId);
+      query.andWhere('thread.account_id = :accountId', { accountId });
+    }
+
     const rows = await query.getRawMany<{ folder: MAIL_FOLDERS; count: string }>();
-    const counts: MailUnreadCounts = { count: 0, inbox: 0, trash: 0 };
+    const counts: MailUnreadCounts = { count: 0, inbox: 0, spam: 0, trash: 0 };
 
     for (const row of rows) {
       const count = Number(row.count) || 0;
       if (row.folder === MAIL_FOLDERS.inbox) counts.inbox = count;
+      if (row.folder === MAIL_FOLDERS.spam) counts.spam = count;
       if (row.folder === MAIL_FOLDERS.trash) counts.trash = count;
     }
 

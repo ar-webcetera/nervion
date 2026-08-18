@@ -12,6 +12,7 @@ import {
 } from 'typeorm';
 import { Users } from '../../users/entities/users.entity';
 import { MailThreads } from './mail-thread.entity';
+import { MailFolders } from './mail-folder.entity';
 
 export enum MAIL_ACCOUNT_TYPES {
   personal = 'personal',
@@ -60,6 +61,9 @@ export class MailAccounts {
 
   @OneToMany(() => MailThreads, (thread) => thread.account)
   threads: MailThreads[];
+
+  @OneToMany(() => MailFolders, (folder) => folder.account)
+  folders: MailFolders[];
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;
