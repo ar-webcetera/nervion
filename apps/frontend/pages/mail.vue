@@ -59,6 +59,7 @@ if (Number.isInteger(initialAccount) && initialAccount > 0) {
   selectedAccountId.value = initialAccount;
 }
 const search = ref('');
+const threadsLoadError = useState<string | null>('mail-threads-load-error', () => null);
 const initialThread = Number(route.query.thread);
 const selectedThreadId = ref<number | null>(Number.isInteger(initialThread) && initialThread > 0 ? initialThread : null);
 const replyText = ref('');
@@ -444,10 +445,12 @@ const loadThreads = async () => {
     return;
   }
   selectedThreadIds.value = new Set();
+  threadsLoadError.value = null;
   try {
     await mailStore.fetchThreads(threadQuery());
   } catch (e) {
-    $toast.error(getErrorMessage(e));
+    threadsLoadError.value = getErrorMessage(e);
+    if (import.meta.client) $toast.error(threadsLoadError.value);
   }
 };
 
@@ -1361,6 +1364,14 @@ watch(
 
         <div class="mail-page__threads" @scroll.passive="handleThreadsScroll">
           <div v-if="pendingThreads && !threads.length" class="mail-page__placeholder">Загрузка…</div>
+          <div
+            v-else-if="threadsLoadError && !threads.length"
+            class="mail-page__placeholder mail-page__placeholder_error"
+            role="alert"
+          >
+            <span>Не удалось загрузить письма</span>
+            <button type="button" class="mail-page__retry" @click="loadThreads">Повторить</button>
+          </div>
           <div v-else-if="!threads.length" class="mail-page__placeholder">Писем пока нет</div>
           <div
             v-for="thread in threads"
@@ -2777,9 +2788,36 @@ watch(
     color: var(--light-text-backgroung-primary-50);
     @extend %text-s-regular;
 
+    &_error {
+      @include flex(cn, a-start);
+      gap: 12px;
+      color: var(--light-text-backgroung-primary);
+    }
+
     &_center {
       margin: auto;
       text-align: center;
+    }
+  }
+
+  &__retry {
+    min-height: 44px;
+    padding: 10px 14px;
+    border: 1px solid var(--light-text-backgroung-primary-25);
+    border-radius: 8px;
+    background: var(--light-text-backgroung-primary-5);
+    color: var(--light-text-backgroung-primary);
+    cursor: pointer;
+    @extend %text-s-medium;
+
+    &:hover {
+      border-color: var(--primary-50);
+      background: var(--primary-25);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-50);
+      outline-offset: 2px;
     }
   }
 }

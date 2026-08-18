@@ -127,7 +127,7 @@ describe('MailDeliveryService', () => {
     );
   });
 
-  it('в сводке треда берёт жалобу, даже если последнее письмо только sent', async () => {
+  it('в сводке треда берёт доставку, открытия и клики последнего отправленного письма', async () => {
     const qb = {
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
@@ -138,9 +138,9 @@ describe('MailDeliveryService', () => {
       getRawMany: jest.fn().mockResolvedValue([
         {
           thread_id: '2830',
-          delivery_status: MailDeliveryStatus.COMPLAINED,
-          open_count: '0',
-          click_count: '0',
+          delivery_status: MailDeliveryStatus.SENT,
+          open_count: '1',
+          click_count: '2',
         },
       ]),
     };
@@ -149,10 +149,22 @@ describe('MailDeliveryService', () => {
     const map = await service.attachDeliverySummaries([2830]);
 
     expect(map.get(2830)).toEqual({
-      delivery_status: MailDeliveryStatus.COMPLAINED,
-      open_count: 0,
-      click_count: 0,
+      delivery_status: MailDeliveryStatus.SENT,
+      open_count: 1,
+      click_count: 2,
     });
+    expect(qb.addSelect).toHaveBeenCalledWith(
+      '(ARRAY_AGG(message.delivery_status ORDER BY message.created_at DESC, message.id DESC))[1]',
+      'delivery_status',
+    );
+    expect(qb.addSelect).toHaveBeenCalledWith(
+      '(ARRAY_AGG(message.open_count ORDER BY message.created_at DESC, message.id DESC))[1]',
+      'open_count',
+    );
+    expect(qb.addSelect).toHaveBeenCalledWith(
+      '(ARRAY_AGG(message.click_count ORDER BY message.created_at DESC, message.id DESC))[1]',
+      'click_count',
+    );
     expect(qb.groupBy).toHaveBeenCalledWith('message.thread_id');
   });
 

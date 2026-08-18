@@ -47,6 +47,8 @@ const decrementUnreadCounts = (counts: MailUnreadCounts, folder: MailSystemFolde
 
 export const useMailStore = defineStore('mail', () => {
   const config = useRuntimeConfig();
+  const apiBaseUrl = useApiBaseUrl();
+  const requestHeaders = useRequestHeaders(['cookie']);
 
   const accounts = ref<MailAccount[]>([]);
   const manageAccounts = ref<MailAccount[]>([]);
@@ -65,9 +67,9 @@ export const useMailStore = defineStore('mail', () => {
   const accountUnreadRequestVersions = new Map<number, number>();
 
   const requestOptions = () => ({
-    baseURL: useApiBaseUrl(),
+    baseURL: apiBaseUrl,
     credentials: 'include' as const,
-    headers: useRequestHeaders(['cookie']),
+    headers: requestHeaders,
   });
 
   const fetchAccounts = async () => {

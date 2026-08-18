@@ -526,22 +526,14 @@ export class MailDeliveryService {
     const result = new Map<number, { delivery_status: MailDeliveryStatus | null; open_count: number; click_count: number }>();
     if (threadIds.length === 0) return result;
 
-    // По треду: худший статус среди всех исходящих (жалоба/bounce важнее ответа «отправлено»)
-    // и сумма открытий/кликов.
-    const statusRankSql = `CASE message.delivery_status
-      WHEN '${MailDeliveryStatus.COMPLAINED}' THEN 4
-      WHEN '${MailDeliveryStatus.BOUNCED}' THEN 3
-      WHEN '${MailDeliveryStatus.DELIVERED}' THEN 2
-      WHEN '${MailDeliveryStatus.SENT}' THEN 1
-      ELSE 0
-    END`;
+    const latestMessageOrder = 'message.created_at DESC, message.id DESC';
 
     const rows = await this.messagesRepository
       .createQueryBuilder('message')
       .select('message.thread_id', 'thread_id')
-      .addSelect(`(ARRAY_AGG(message.delivery_status ORDER BY (${statusRankSql}) DESC NULLS LAST))[1]`, 'delivery_status')
-      .addSelect('COALESCE(SUM(message.open_count), 0)::int', 'open_count')
-      .addSelect('COALESCE(SUM(message.click_count), 0)::int', 'click_count')
+      .addSelect(`(ARRAY_AGG(message.delivery_status ORDER BY ${latestMessageOrder}))[1]`, 'delivery_status')
+      .addSelect(`(ARRAY_AGG(message.open_count ORDER BY ${latestMessageOrder}))[1]`, 'open_count')
+      .addSelect(`(ARRAY_AGG(message.click_count ORDER BY ${latestMessageOrder}))[1]`, 'click_count')
       .where('message.thread_id IN (:...threadIds)', { threadIds })
       .andWhere('message.direction = :outbound', { outbound: MAIL_DIRECTIONS.outbound })
       .andWhere('message.status = :sentStatus', { sentStatus: MAIL_MESSAGE_STATUSES.sent })
