@@ -63,6 +63,8 @@ const threadsLoadError = useState<string | null>('mail-threads-load-error', () =
 const initialThread = Number(route.query.thread);
 const selectedThreadId = ref<number | null>(Number.isInteger(initialThread) && initialThread > 0 ? initialThread : null);
 const replyText = ref('');
+const replyTo = ref('');
+const replyCc = ref('');
 const sendingReply = ref(false);
 const replyInput = ref<HTMLTextAreaElement | null>(null);
 const replyOpen = ref(false);
@@ -84,7 +86,10 @@ const clearReplyAttachments = () => {
   replyAttachments.value = [];
 };
 
-const openReply = async () => {
+const openReply = async (includeAllRecipients = false) => {
+  const recipients = includeAllRecipients ? replyAllRecipients.value : replySenderRecipients.value;
+  replyTo.value = recipients.to.join(', ');
+  replyCc.value = recipients.cc.join(', ');
   replyOpen.value = true;
   await nextTick();
   replyInput.value?.focus();
@@ -94,6 +99,8 @@ const openReply = async () => {
 const cancelReply = () => {
   replyOpen.value = false;
   replyText.value = '';
+  replyTo.value = '';
+  replyCc.value = '';
   clearReplyAttachments();
 };
 
@@ -661,14 +668,62 @@ watch(search, () => {
 
 const openThread = (thread: MailThread) => openThreadById(thread.id, Boolean(thread.unread_count));
 
-const replyRecipient = computed(() => {
-  const lastInbound = [...messages.value].reverse().find((message) => message.direction === MAIL_DIRECTIONS.inbound);
-  return lastInbound?.from_address || currentThread.value?.counterparty_address || '';
+const lastInboundMessage = computed(() =>
+  [...messages.value].reverse().find((message) => message.direction === MAIL_DIRECTIONS.inbound),
+);
+
+const replyRecipient = computed(
+  () => lastInboundMessage.value?.from_address || currentThread.value?.counterparty_address || '',
+);
+
+const ownMailAddresses = computed(() => {
+  const addresses = accounts.value.map((account) => account.address);
+  if (currentThread.value?.account?.address) addresses.push(currentThread.value.account.address);
+  return new Set(addresses.map((address) => address.trim().toLowerCase()).filter(Boolean));
+});
+
+interface ReplyRecipients {
+  to: string[];
+  cc: string[];
+}
+
+const collectReplyAddresses = (includeAllRecipients: boolean): ReplyRecipients => {
+  const to: string[] = [];
+  const cc: string[] = [];
+  const seen = new Set<string>();
+  const add = (target: string[], address: string) => {
+    const trimmedAddress = address.trim();
+    const addressKey = trimmedAddress.toLowerCase();
+    if (!trimmedAddress || ownMailAddresses.value.has(addressKey) || seen.has(addressKey)) return;
+    seen.add(addressKey);
+    target.push(trimmedAddress);
+  };
+
+  add(to, replyRecipient.value);
+  if (includeAllRecipients && lastInboundMessage.value) {
+    for (const recipient of lastInboundMessage.value.to_addresses) add(to, recipient.address);
+    for (const recipient of lastInboundMessage.value.cc_addresses) add(cc, recipient.address);
+  }
+
+  return { to, cc };
+};
+
+const replySenderRecipients = computed(() => collectReplyAddresses(false));
+const replyAllRecipients = computed(() => collectReplyAddresses(true));
+const hasReplyAllRecipients = computed(() => {
+  const senderOnlyCount = replySenderRecipients.value.to.length;
+  return replyAllRecipients.value.to.length + replyAllRecipients.value.cc.length > senderOnlyCount;
 });
 
 const sendReply = async () => {
   const text = replyText.value.trim();
-  if ((!text && !replyAttachments.value.length) || !currentThread.value || !replyRecipient.value) return;
+  const recipients = splitAddresses(replyTo.value);
+  const ccRecipients = splitAddresses(replyCc.value);
+  if (!recipients.length) {
+    $toast.error('Укажите хотя бы одного получателя');
+    return;
+  }
+  if ((!text && !replyAttachments.value.length) || !currentThread.value) return;
 
   sendingReply.value = true;
   try {
@@ -678,7 +733,8 @@ const sendReply = async () => {
 
     await mailStore.sendMail({
       account_id: currentThread.value.account_id,
-      to: [replyRecipient.value],
+      to: recipients,
+      cc: ccRecipients.length ? ccRecipients : undefined,
       subject,
       text: text || undefined,
       html: text ? textToHtml(text) : undefined,
@@ -686,6 +742,8 @@ const sendReply = async () => {
       attachments: replyAttachments.value.map(({ previewUrl: _previewUrl, ...attachment }) => attachment),
     });
     replyText.value = '';
+    replyTo.value = '';
+    replyCc.value = '';
     replyOpen.value = false;
     clearReplyAttachments();
   } catch (e) {
@@ -698,6 +756,8 @@ const sendReply = async () => {
 watch(selectedThreadId, () => {
   replyOpen.value = false;
   replyText.value = '';
+  replyTo.value = '';
+  replyCc.value = '';
   clearReplyAttachments();
 });
 
@@ -1644,14 +1704,42 @@ watch(
         </div>
 
         <div v-if="!isTrashFolder && !replyOpen" class="mail-page__reply-trigger">
-          <button class="mail-page__compose-btn" @click="openReply">Ответить</button>
+          <template v-if="hasReplyAllRecipients">
+            <button class="mail-page__compose-btn" type="button" @click="openReply(true)">Ответить всем</button>
+            <button class="mail-page__icon-btn" type="button" @click="openReply(false)">Ответить отправителю</button>
+          </template>
+          <button v-else class="mail-page__compose-btn" type="button" @click="openReply(false)">Ответить</button>
         </div>
         <div v-if="!isTrashFolder && replyOpen" class="mail-page__reply">
+          <div class="mail-page__reply-recipients">
+            <label class="mail-page__reply-recipient">
+              <span class="mail-page__reply-recipient-label">Кому</span>
+              <input
+                v-model="replyTo"
+                class="mail-page__reply-recipient-input"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="client@example.com"
+              />
+            </label>
+            <label class="mail-page__reply-recipient">
+              <span class="mail-page__reply-recipient-label">Копия</span>
+              <input
+                v-model="replyCc"
+                class="mail-page__reply-recipient-input"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Необязательно"
+              />
+            </label>
+          </div>
           <textarea
             ref="replyInput"
             v-model="replyText"
             class="mail-page__reply-input"
-            :placeholder="`Ответить ${replyRecipient}`"
+            placeholder="Напишите ответ"
             rows="4"
             @keydown.ctrl.enter="sendReply"
           />
@@ -1703,7 +1791,12 @@ watch(
               </button>
               <button
                 class="mail-page__compose-btn"
-                :disabled="sendingReply || uploadingReplyAttach || (!replyText.trim() && !replyAttachments.length)"
+                :disabled="
+                  sendingReply ||
+                  uploadingReplyAttach ||
+                  !splitAddresses(replyTo).length ||
+                  (!replyText.trim() && !replyAttachments.length)
+                "
                 @click="sendReply"
               >
                 {{ sendingReply ? 'Отправка…' : 'Отправить' }}
@@ -2642,12 +2735,68 @@ watch(
   }
 
   &__reply-trigger {
+    @include flex(rn, a-center);
+    flex-wrap: wrap;
+    gap: 8px;
     padding: 12px 24px 20px;
     border-top: 1px solid var(--light-text-backgroung-primary-10);
+
+    .mail-page__compose-btn,
+    .mail-page__icon-btn {
+      min-height: 44px;
+    }
 
     @media (max-width: $screen-tablet) {
       padding-left: 16px;
       padding-right: 16px;
+    }
+  }
+
+  &__reply-recipients {
+    overflow: hidden;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+    background: var(--dark-text-background-primary);
+
+    &:focus-within {
+      border-color: var(--primary-50);
+    }
+  }
+
+  &__reply-recipient {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 12px;
+    @include flex(rn, a-center);
+    gap: 12px;
+
+    & + & {
+      border-top: 1px solid var(--light-text-backgroung-primary-10);
+    }
+  }
+
+  &__reply-recipient-label {
+    flex: 0 0 54px;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+
+  &__reply-recipient-input {
+    min-width: 0;
+    flex: 1;
+    padding: 10px 0;
+    border: none;
+    background: transparent;
+    color: var(--light-text-backgroung-primary);
+    outline: none;
+    @extend %text-s-regular;
+
+    &::placeholder {
+      color: var(--light-text-backgroung-primary-50);
+    }
+
+    @media (hover: none) and (pointer: coarse) {
+      font-size: 16px;
     }
   }
 
