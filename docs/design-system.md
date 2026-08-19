@@ -189,6 +189,11 @@
 /* нативный <select>: option { background: var(--dark-text-background-primary); } */
 ```
 
+Обычный нативный `<select>` уже получает глобальную стрелку размером `16px`,
+отступ `16px` от правого края и зарезервированное место под неё. Не переопределяйте
+для него `appearance`, `background-image`, `background-position` и `padding-right`
+локально. Для составного выбора с поиском или сбросом используйте `BaseSelect`.
+
 Готовый дропдаун с поиском и сбросом - `BaseSelect` (`v-model`, `:options`, `placeholder`, `large`, `arrow`, `reset-button`). Предпочитать его нативному `<select>` в формах.
 
 ### Бейдж / счётчик

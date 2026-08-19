@@ -142,8 +142,17 @@ button {
   }
 }
 
-select {
+html select:not([multiple]):not([size]) {
+  --native-select-arrow-inset: 16px;
+  --native-select-arrow-size: 16px;
+
+  appearance: none;
   color-scheme: dark;
+  padding-right: calc(var(--native-select-arrow-inset) + var(--native-select-arrow-size) + 8px);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23FEFEFE' stroke-opacity='.5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--native-select-arrow-inset) center;
+  background-size: var(--native-select-arrow-size);
 }
 
 @media (hover: none) and (pointer: coarse) {
