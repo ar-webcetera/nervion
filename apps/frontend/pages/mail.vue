@@ -2,6 +2,7 @@
 import { storeToRefs } from 'pinia';
 import { MailSpamRuleScope, MailSystemFolder, type MailFolder, type MailStatsResponse } from '@tracker/contracts';
 import BaseModal from '~/components/BaseModal.vue';
+import MailActionIcon from '~/components/Mail/MailActionIcon.vue';
 import MailDeliveryBadge from '~/components/Mail/MailDeliveryBadge.vue';
 import MailMessageView from '~/components/Mail/MailMessageView.vue';
 import { ROLES } from '~/types/user';
@@ -1018,11 +1019,18 @@ const moveThreads = async (threadIds: number[]) => {
   }
 };
 
-const askMoveSelectedThreads = () => {
-  if (!selectedThreadsCount.value) return;
+const openMoveDialog = (threadIds: number[]) => {
+  if (!threadIds.length) return;
   moveTarget.value = '';
-  moveThreadIds.value = [...selectedThreadIds.value];
+  moveThreadIds.value = [...threadIds];
   moveModal.value?.open();
+};
+
+const askMoveSelectedThreads = () => openMoveDialog([...selectedThreadIds.value]);
+
+const askMoveCurrentThread = () => {
+  if (!currentThread.value) return;
+  openMoveDialog([currentThread.value.id]);
 };
 
 const resetMoveDialog = () => {
@@ -1031,7 +1039,7 @@ const resetMoveDialog = () => {
   moveThreadIds.value = [];
 };
 
-const confirmMoveSelectedThreads = async () => {
+const confirmMoveThreads = async () => {
   if (!(await moveThreads(moveThreadIds.value))) return;
   moveModal.value?.close();
   moveThreadIds.value = [];
@@ -1436,31 +1444,23 @@ watch(
           </span>
           <div class="mail-page__selection-actions">
             <button
-              class="mail-page__selection-action"
+              class="mail-page__action-button"
               type="button"
               :disabled="movingThreads"
               aria-label="Переместить выбранные письма"
               title="Переместить"
               @click="askMoveSelectedThreads"
             >
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M3.75 6.75h6l1.8 2h8.7v9.5H3.75V6.75Z" />
-                <path d="m9 13 2 2 4-4" />
-              </svg>
+              <MailActionIcon name="move" />
             </button>
             <button
-              class="mail-page__selection-action mail-page__selection-action_danger"
+              class="mail-page__action-button mail-page__action-button_danger"
               type="button"
               :aria-label="isTrashFolder ? 'Удалить выбранные письма навсегда' : 'Удалить выбранные письма'"
               :title="isTrashFolder ? 'Удалить навсегда' : 'Удалить'"
               @click="askDeleteSelectedThreads"
             >
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M4.5 7.25h15" />
-                <path d="M9 3.75h6l.75 3.5h-7.5L9 3.75Z" />
-                <path d="m7 7.25.75 13h8.5l.75-13" />
-                <path d="M10 11v5.5M14 11v5.5" />
-              </svg>
+              <MailActionIcon name="delete" />
             </button>
           </div>
         </div>
@@ -1678,49 +1678,66 @@ watch(
           <div class="mail-page__detail-actions">
             <button
               v-if="currentFolder === 'spam'"
-              class="mail-page__icon-btn"
+              class="mail-page__action-button"
+              type="button"
               :disabled="movingThreads"
+              aria-label="Отметить переписку как не спам"
+              title="Не спам"
               @click="markCurrentThreadNotSpam"
             >
-              Не спам
+              <MailActionIcon name="not-spam" />
             </button>
             <template v-else-if="!isTrashFolder && spamSenderDomain">
               <button
-                class="mail-page__icon-btn"
+                class="mail-page__action-button"
+                type="button"
                 :disabled="movingThreads"
-                title="Будущие письма этого отправителя тоже попадут в спам"
+                aria-label="Отправить письмо и будущие письма отправителя в спам"
+                title="В спам"
                 @click="askMarkCurrentThreadSpam(MailSpamRuleScope.SENDER)"
               >
-                В спам
+                <MailActionIcon name="spam-sender" />
               </button>
               <button
-                class="mail-page__icon-btn"
+                class="mail-page__action-button"
+                type="button"
                 :disabled="movingThreads"
-                :title="`Блокировать всех отправителей с домена ${spamSenderDomain}`"
+                :aria-label="`Отправить в спам письма с домена ${spamSenderDomain}`"
+                :title="`Спам-домен: ${spamSenderDomain}`"
                 @click="askMarkCurrentThreadSpam(MailSpamRuleScope.DOMAIN)"
               >
-                Спам-домен
+                <MailActionIcon name="spam-domain" />
               </button>
             </template>
-            <select
+            <button
               v-if="currentThread && !isTrashFolder"
-              v-model="moveTarget"
-              class="mail-page__move-select"
+              class="mail-page__action-button"
+              type="button"
               :disabled="movingThreads"
               aria-label="Переместить переписку"
-              @change="moveThreads([currentThread.id])"
+              title="Переместить"
+              @click="askMoveCurrentThread"
             >
-              <option value="" disabled>Переместить…</option>
-              <option :value="MailSystemFolder.INBOX">Входящие</option>
-              <option :value="MailSystemFolder.SPAM">Спам</option>
-              <option :value="MailSystemFolder.TRASH">Корзина</option>
-              <option v-for="folder in folders" :key="folder.id" :value="`custom-${folder.id}`">{{ folder.name }}</option>
-            </select>
-            <button v-if="isTrashFolder" class="mail-page__icon-btn" title="Восстановить" @click="restoreThread">
-              Восстановить
+              <MailActionIcon name="move" />
             </button>
-            <button class="mail-page__icon-btn mail-page__icon-btn_danger" title="Удалить" @click="askDeleteThread">
-              {{ isTrashFolder ? 'Удалить навсегда' : 'Удалить' }}
+            <button
+              v-if="isTrashFolder"
+              class="mail-page__action-button"
+              type="button"
+              aria-label="Восстановить переписку"
+              title="Восстановить"
+              @click="restoreThread"
+            >
+              <MailActionIcon name="restore" />
+            </button>
+            <button
+              class="mail-page__action-button mail-page__action-button_danger"
+              type="button"
+              :aria-label="isTrashFolder ? 'Удалить переписку навсегда' : 'Удалить переписку'"
+              :title="isTrashFolder ? 'Удалить навсегда' : 'Удалить'"
+              @click="askDeleteThread"
+            >
+              <MailActionIcon name="delete" />
             </button>
           </div>
         </div>
@@ -1857,8 +1874,12 @@ watch(
 
     <BaseModal ref="moveModal" :dismissible="!movingThreads" @close="resetMoveDialog">
       <div class="mail-confirm" :aria-busy="movingThreads">
-        <h2 class="mail-confirm__title">Переместить выбранные письма</h2>
-        <p class="mail-confirm__text">Выберите новую папку для {{ moveThreadIds.length }} выбранных цепочек.</p>
+        <h2 class="mail-confirm__title">
+          {{ moveThreadIds.length > 1 ? 'Переместить выбранные письма' : 'Переместить переписку' }}
+        </h2>
+        <p class="mail-confirm__text">
+          {{ moveThreadIds.length > 1 ? `Выберите новую папку. Выбрано цепочек: ${moveThreadIds.length}.` : 'Выберите новую папку.' }}
+        </p>
         <label class="mail-confirm__field">
           <span class="mail-confirm__label">Папка</span>
           <select v-model="moveTarget" class="mail-page__select" :disabled="movingThreads">
@@ -1879,7 +1900,7 @@ watch(
             class="mail-page__compose-btn mail-confirm__submit"
             type="button"
             :disabled="movingThreads || !moveTarget"
-            @click="confirmMoveSelectedThreads"
+            @click="confirmMoveThreads"
           >
             <span v-if="movingThreads" class="mail-confirm__spinner mail-confirm__spinner_small" aria-hidden="true" />
             {{ movingThreads ? 'Перемещаем…' : 'Переместить' }}
@@ -2551,7 +2572,7 @@ watch(
     gap: 4px;
   }
 
-  &__selection-action {
+  &__action-button {
     width: 44px;
     height: 44px;
     padding: 0;
@@ -2560,20 +2581,15 @@ watch(
     background: transparent;
     color: var(--light-text-backgroung-primary-50);
     cursor: pointer;
+    transition:
+      color 0.16s ease,
+      border-color 0.16s ease,
+      background-color 0.16s ease;
     @include flex(center);
-
-    svg {
-      width: 20px;
-      height: 20px;
-      stroke: currentColor;
-      stroke-width: 1.7;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
 
     &:hover {
       border-color: var(--light-text-backgroung-primary-10);
-      background: var(--light-text-backgroung-primary-5);
+      background: var(--light-text-backgroung-primary-10);
       color: var(--light-text-backgroung-primary);
     }
 
@@ -2756,8 +2772,8 @@ watch(
   }
 
   &__detail-actions {
-    @include flex(rn);
-    gap: 8px;
+    @include flex(rn, a-center);
+    gap: 4px;
     flex-shrink: 0;
 
     @media (max-width: $screen-tablet) {
