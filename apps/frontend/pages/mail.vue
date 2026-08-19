@@ -668,13 +668,16 @@ watch(search, () => {
 
 const openThread = (thread: MailThread) => openThreadById(thread.id, Boolean(thread.unread_count));
 
-const lastInboundMessage = computed(() =>
-  [...messages.value].reverse().find((message) => message.direction === MAIL_DIRECTIONS.inbound),
+const orderedMessages = computed(() =>
+  [...messages.value].sort((first, second) => {
+    const dateDifference = new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
+    return dateDifference || second.id - first.id;
+  }),
 );
 
-const replyRecipient = computed(
-  () => lastInboundMessage.value?.from_address || currentThread.value?.counterparty_address || '',
-);
+const lastInboundMessage = computed(() => orderedMessages.value.find((message) => message.direction === MAIL_DIRECTIONS.inbound));
+
+const replyRecipient = computed(() => lastInboundMessage.value?.from_address || currentThread.value?.counterparty_address || '');
 
 const ownMailAddresses = computed(() => {
   const addresses = accounts.value.map((account) => account.address);
@@ -980,6 +983,8 @@ const removeFolder = async (folder: MailFolder) => {
 
 const moveTarget = ref('');
 const movingThreads = ref(false);
+const moveModal = ref<InstanceType<typeof BaseModal> | null>(null);
+const moveThreadIds = ref<number[]>([]);
 
 const folderTarget = (value: string) => {
   if (value.startsWith('custom-')) return { custom_folder_id: Number(value.slice('custom-'.length)) };
@@ -987,7 +992,7 @@ const folderTarget = (value: string) => {
 };
 
 const moveThreads = async (threadIds: number[]) => {
-  if (!moveTarget.value || !selectedAccountId.value || !threadIds.length) return;
+  if (!moveTarget.value || !selectedAccountId.value || !threadIds.length) return false;
   movingThreads.value = true;
   try {
     if (moveTarget.value === MailSystemFolder.SPAM) {
@@ -1004,31 +1009,59 @@ const moveThreads = async (threadIds: number[]) => {
     if (selectedThreadId.value && threadIds.includes(selectedThreadId.value)) selectedThreadId.value = null;
     clearThreadSelection();
     moveTarget.value = '';
+    return true;
   } catch (error) {
     $toast.error(getErrorMessage(error));
+    return false;
   } finally {
     movingThreads.value = false;
   }
 };
 
-const spamSenderDomain = computed(() => {
-  const inbound = [...messages.value].reverse().find((message) => message.direction === MAIL_DIRECTIONS.inbound);
-  return inbound?.from_address.split('@').at(-1)?.toLowerCase() ?? '';
-});
+const askMoveSelectedThreads = () => {
+  if (!selectedThreadsCount.value) return;
+  moveTarget.value = '';
+  moveThreadIds.value = [...selectedThreadIds.value];
+  moveModal.value?.open();
+};
 
-const markCurrentThreadSpam = async (scope: MailSpamRuleScope) => {
+const resetMoveDialog = () => {
+  if (movingThreads.value) return;
+  moveTarget.value = '';
+  moveThreadIds.value = [];
+};
+
+const confirmMoveSelectedThreads = async () => {
+  if (!(await moveThreads(moveThreadIds.value))) return;
+  moveModal.value?.close();
+  moveThreadIds.value = [];
+};
+
+const spamSenderAddress = computed(() => lastInboundMessage.value?.from_address ?? '');
+const spamSenderDomain = computed(() => spamSenderAddress.value.split('@').at(-1)?.toLowerCase() ?? '');
+const spamConfirmModal = ref<InstanceType<typeof BaseModal> | null>(null);
+const spamConfirmScope = ref<MailSpamRuleScope | null>(null);
+
+const askMarkCurrentThreadSpam = (scope: MailSpamRuleScope) => {
   if (!currentThread.value || !selectedAccountId.value) return;
-  if (
-    scope === MailSpamRuleScope.DOMAIN &&
-    !confirm(`Отправлять в спам все письма с домена ${spamSenderDomain.value || 'этого отправителя'}?`)
-  ) {
-    return;
-  }
+  spamConfirmScope.value = scope;
+  spamConfirmModal.value?.open();
+};
+
+const resetSpamDialog = () => {
+  if (!movingThreads.value) spamConfirmScope.value = null;
+};
+
+const confirmCurrentThreadSpam = async () => {
+  if (!currentThread.value || !selectedAccountId.value || !spamConfirmScope.value) return;
+  const scope = spamConfirmScope.value;
   movingThreads.value = true;
   try {
     await mailStore.markThreadSpam(currentThread.value.id, scope, selectedAccountId.value);
     selectedThreadId.value = null;
     $toast.success(scope === MailSpamRuleScope.DOMAIN ? 'Домен добавлен в спам' : 'Отправитель добавлен в спам');
+    spamConfirmModal.value?.close();
+    spamConfirmScope.value = null;
   } catch (error) {
     $toast.error(getErrorMessage(error));
   } finally {
@@ -1399,25 +1432,35 @@ watch(
           aria-label="Действия с выбранными письмами"
         >
           <span class="mail-page__selection-count">
-            <span>Выбрано</span>
-            <strong>{{ selectedThreadsCount }}</strong>
+            Выбрано: <strong>{{ selectedThreadsCount }}</strong>
           </span>
           <div class="mail-page__selection-actions">
-            <select
-              v-model="moveTarget"
-              class="mail-page__move-select"
+            <button
+              class="mail-page__selection-action"
+              type="button"
               :disabled="movingThreads"
               aria-label="Переместить выбранные письма"
-              @change="moveThreads([...selectedThreadIds])"
+              title="Переместить"
+              @click="askMoveSelectedThreads"
             >
-              <option value="" disabled>Переместить…</option>
-              <option :value="MailSystemFolder.INBOX">Входящие</option>
-              <option :value="MailSystemFolder.SPAM">Спам</option>
-              <option :value="MailSystemFolder.TRASH">Корзина</option>
-              <option v-for="folder in folders" :key="folder.id" :value="`custom-${folder.id}`">{{ folder.name }}</option>
-            </select>
-            <button class="mail-page__selection-delete" type="button" @click="askDeleteSelectedThreads">
-              {{ isTrashFolder ? 'Удалить навсегда' : 'Удалить' }}
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M3.75 6.75h6l1.8 2h8.7v9.5H3.75V6.75Z" />
+                <path d="m9 13 2 2 4-4" />
+              </svg>
+            </button>
+            <button
+              class="mail-page__selection-action mail-page__selection-action_danger"
+              type="button"
+              :aria-label="isTrashFolder ? 'Удалить выбранные письма навсегда' : 'Удалить выбранные письма'"
+              :title="isTrashFolder ? 'Удалить навсегда' : 'Удалить'"
+              @click="askDeleteSelectedThreads"
+            >
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4.5 7.25h15" />
+                <path d="M9 3.75h6l.75 3.5h-7.5L9 3.75Z" />
+                <path d="m7 7.25.75 13h8.5l.75-13" />
+                <path d="M10 11v5.5M14 11v5.5" />
+              </svg>
             </button>
           </div>
         </div>
@@ -1646,7 +1689,7 @@ watch(
                 class="mail-page__icon-btn"
                 :disabled="movingThreads"
                 title="Будущие письма этого отправителя тоже попадут в спам"
-                @click="markCurrentThreadSpam(MailSpamRuleScope.SENDER)"
+                @click="askMarkCurrentThreadSpam(MailSpamRuleScope.SENDER)"
               >
                 В спам
               </button>
@@ -1654,7 +1697,7 @@ watch(
                 class="mail-page__icon-btn"
                 :disabled="movingThreads"
                 :title="`Блокировать всех отправителей с домена ${spamSenderDomain}`"
-                @click="markCurrentThreadSpam(MailSpamRuleScope.DOMAIN)"
+                @click="askMarkCurrentThreadSpam(MailSpamRuleScope.DOMAIN)"
               >
                 Спам-домен
               </button>
@@ -1691,121 +1734,195 @@ watch(
 
         <div class="mail-page__messages">
           <div v-if="pendingMessages" class="mail-page__placeholder">Загрузка…</div>
-          <MailMessageView
-            v-for="message in messages"
-            :key="message.id"
-            :message="message"
-            :retrying="retryingMessageIds.has(message.id)"
-            :links-disabled="currentFolder === 'spam'"
-            @forward="forwardMessage"
-            @delete="askDeleteMessage"
-            @retry="retryMessage"
-          />
-        </div>
-
-        <div v-if="!isTrashFolder && !replyOpen" class="mail-page__reply-trigger">
-          <template v-if="hasReplyAllRecipients">
-            <button class="mail-page__compose-btn" type="button" @click="openReply(true)">Ответить всем</button>
-            <button class="mail-page__icon-btn" type="button" @click="openReply(false)">Ответить отправителю</button>
+          <template v-for="(message, messageIndex) in orderedMessages" :key="message.id">
+            <MailMessageView
+              :message="message"
+              :retrying="retryingMessageIds.has(message.id)"
+              :links-disabled="currentFolder === 'spam'"
+              @forward="forwardMessage"
+              @delete="askDeleteMessage"
+              @retry="retryMessage"
+            />
+            <template v-if="messageIndex === 0">
+              <div v-if="!isTrashFolder && !replyOpen" class="mail-page__reply-trigger">
+                <template v-if="hasReplyAllRecipients">
+                  <button class="mail-page__compose-btn" type="button" @click="openReply(true)">Ответить всем</button>
+                  <button class="mail-page__icon-btn" type="button" @click="openReply(false)">Ответить отправителю</button>
+                </template>
+                <button v-else class="mail-page__compose-btn" type="button" @click="openReply(false)">Ответить</button>
+              </div>
+              <div v-if="!isTrashFolder && replyOpen" class="mail-page__reply">
+                <div class="mail-page__reply-recipients">
+                  <label class="mail-page__reply-recipient">
+                    <span class="mail-page__reply-recipient-label">Кому</span>
+                    <input
+                      v-model="replyTo"
+                      class="mail-page__reply-recipient-input"
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                      placeholder="client@example.com"
+                    />
+                  </label>
+                  <label class="mail-page__reply-recipient">
+                    <span class="mail-page__reply-recipient-label">Копия</span>
+                    <input
+                      v-model="replyCc"
+                      class="mail-page__reply-recipient-input"
+                      type="text"
+                      autocomplete="off"
+                      spellcheck="false"
+                      placeholder="Необязательно"
+                    />
+                  </label>
+                </div>
+                <textarea
+                  ref="replyInput"
+                  v-model="replyText"
+                  class="mail-page__reply-input"
+                  placeholder="Напишите ответ"
+                  rows="4"
+                  @keydown.ctrl.enter="sendReply"
+                />
+                <div v-if="replyAttachments.length" class="mail-page__reply-attachments">
+                  <div
+                    v-for="(attachment, index) in replyAttachments"
+                    :key="attachment.s3_key"
+                    class="mail-page__reply-attachment"
+                  >
+                    <img
+                      v-if="attachment.previewUrl"
+                      class="mail-page__reply-attachment-preview"
+                      :src="attachment.previewUrl"
+                      :alt="`Превью файла ${attachment.filename}`"
+                    />
+                    <div v-else class="mail-page__reply-attachment-file" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M7 3.75h6.6L18 8.15v12.1H7V3.75Z" />
+                        <path d="M13.5 3.75v4.5H18" />
+                      </svg>
+                    </div>
+                    <div class="mail-page__reply-attachment-meta">
+                      <span class="mail-page__attach-name">{{ attachment.filename }}</span>
+                      <span class="mail-page__attach-size">{{ formatAttachSize(attachment.size) }}</span>
+                    </div>
+                    <button
+                      type="button"
+                      class="mail-page__attach-remove mail-page__reply-attachment-remove"
+                      :aria-label="`Убрать файл ${attachment.filename}`"
+                      :disabled="sendingReply"
+                      @click="removeReplyAttachment(index)"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+                <div class="mail-page__reply-actions">
+                  <input ref="replyAttachInput" type="file" multiple hidden @change="onReplyFilesPicked" />
+                  <button
+                    type="button"
+                    class="mail-page__icon-btn mail-page__reply-attach-btn"
+                    :disabled="uploadingReplyAttach || sendingReply"
+                    @click="triggerReplyAttach"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="m8.5 12.5 5.8-5.8a3.1 3.1 0 0 1 4.4 4.4l-7.5 7.5a5 5 0 0 1-7.1-7.1l7.2-7.2" />
+                    </svg>
+                    {{ uploadingReplyAttach ? 'Загрузка…' : 'Прикрепить файл' }}
+                  </button>
+                  <div class="mail-page__reply-actions-main">
+                    <button class="mail-page__icon-btn" :disabled="uploadingReplyAttach || sendingReply" @click="cancelReply">
+                      Отмена
+                    </button>
+                    <button
+                      class="mail-page__compose-btn"
+                      :disabled="
+                        sendingReply ||
+                        uploadingReplyAttach ||
+                        !splitAddresses(replyTo).length ||
+                        (!replyText.trim() && !replyAttachments.length)
+                      "
+                      @click="sendReply"
+                    >
+                      {{ sendingReply ? 'Отправка…' : 'Отправить' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </template>
           </template>
-          <button v-else class="mail-page__compose-btn" type="button" @click="openReply(false)">Ответить</button>
-        </div>
-        <div v-if="!isTrashFolder && replyOpen" class="mail-page__reply">
-          <div class="mail-page__reply-recipients">
-            <label class="mail-page__reply-recipient">
-              <span class="mail-page__reply-recipient-label">Кому</span>
-              <input
-                v-model="replyTo"
-                class="mail-page__reply-recipient-input"
-                type="text"
-                autocomplete="off"
-                spellcheck="false"
-                placeholder="client@example.com"
-              />
-            </label>
-            <label class="mail-page__reply-recipient">
-              <span class="mail-page__reply-recipient-label">Копия</span>
-              <input
-                v-model="replyCc"
-                class="mail-page__reply-recipient-input"
-                type="text"
-                autocomplete="off"
-                spellcheck="false"
-                placeholder="Необязательно"
-              />
-            </label>
-          </div>
-          <textarea
-            ref="replyInput"
-            v-model="replyText"
-            class="mail-page__reply-input"
-            placeholder="Напишите ответ"
-            rows="4"
-            @keydown.ctrl.enter="sendReply"
-          />
-          <div v-if="replyAttachments.length" class="mail-page__reply-attachments">
-            <div v-for="(attachment, index) in replyAttachments" :key="attachment.s3_key" class="mail-page__reply-attachment">
-              <img
-                v-if="attachment.previewUrl"
-                class="mail-page__reply-attachment-preview"
-                :src="attachment.previewUrl"
-                :alt="`Превью файла ${attachment.filename}`"
-              />
-              <div v-else class="mail-page__reply-attachment-file" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none">
-                  <path d="M7 3.75h6.6L18 8.15v12.1H7V3.75Z" />
-                  <path d="M13.5 3.75v4.5H18" />
-                </svg>
-              </div>
-              <div class="mail-page__reply-attachment-meta">
-                <span class="mail-page__attach-name">{{ attachment.filename }}</span>
-                <span class="mail-page__attach-size">{{ formatAttachSize(attachment.size) }}</span>
-              </div>
-              <button
-                type="button"
-                class="mail-page__attach-remove mail-page__reply-attachment-remove"
-                :aria-label="`Убрать файл ${attachment.filename}`"
-                :disabled="sendingReply"
-                @click="removeReplyAttachment(index)"
-              >
-                ×
-              </button>
-            </div>
-          </div>
-          <div class="mail-page__reply-actions">
-            <input ref="replyAttachInput" type="file" multiple hidden @change="onReplyFilesPicked" />
-            <button
-              type="button"
-              class="mail-page__icon-btn mail-page__reply-attach-btn"
-              :disabled="uploadingReplyAttach || sendingReply"
-              @click="triggerReplyAttach"
-            >
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="m8.5 12.5 5.8-5.8a3.1 3.1 0 0 1 4.4 4.4l-7.5 7.5a5 5 0 0 1-7.1-7.1l7.2-7.2" />
-              </svg>
-              {{ uploadingReplyAttach ? 'Загрузка…' : 'Прикрепить файл' }}
-            </button>
-            <div class="mail-page__reply-actions-main">
-              <button class="mail-page__icon-btn" :disabled="uploadingReplyAttach || sendingReply" @click="cancelReply">
-                Отмена
-              </button>
-              <button
-                class="mail-page__compose-btn"
-                :disabled="
-                  sendingReply ||
-                  uploadingReplyAttach ||
-                  !splitAddresses(replyTo).length ||
-                  (!replyText.trim() && !replyAttachments.length)
-                "
-                @click="sendReply"
-              >
-                {{ sendingReply ? 'Отправка…' : 'Отправить' }}
-              </button>
-            </div>
-          </div>
         </div>
       </template>
     </div>
+
+    <BaseModal ref="moveModal" :dismissible="!movingThreads" @close="resetMoveDialog">
+      <div class="mail-confirm" :aria-busy="movingThreads">
+        <h2 class="mail-confirm__title">Переместить выбранные письма</h2>
+        <p class="mail-confirm__text">Выберите новую папку для {{ moveThreadIds.length }} выбранных цепочек.</p>
+        <label class="mail-confirm__field">
+          <span class="mail-confirm__label">Папка</span>
+          <select v-model="moveTarget" class="mail-page__select" :disabled="movingThreads">
+            <option value="" disabled>Выберите папку</option>
+            <option :value="MailSystemFolder.INBOX">Входящие</option>
+            <option :value="MailSystemFolder.SPAM">Спам</option>
+            <option :value="MailSystemFolder.TRASH">Корзина</option>
+            <option v-for="folder in folders" :key="folder.id" :value="`custom-${folder.id}`">{{ folder.name }}</option>
+          </select>
+        </label>
+        <div v-if="movingThreads" class="mail-confirm__progress" role="status" aria-live="polite">
+          <span class="mail-confirm__spinner" aria-hidden="true" />
+          <span>Перемещаем письма…</span>
+        </div>
+        <div class="mail-confirm__actions">
+          <button class="mail-page__icon-btn" type="button" :disabled="movingThreads" @click="moveModal?.close()">Отмена</button>
+          <button
+            class="mail-page__compose-btn mail-confirm__submit"
+            type="button"
+            :disabled="movingThreads || !moveTarget"
+            @click="confirmMoveSelectedThreads"
+          >
+            <span v-if="movingThreads" class="mail-confirm__spinner mail-confirm__spinner_small" aria-hidden="true" />
+            {{ movingThreads ? 'Перемещаем…' : 'Переместить' }}
+          </button>
+        </div>
+      </div>
+    </BaseModal>
+
+    <BaseModal ref="spamConfirmModal" :dismissible="!movingThreads" @close="resetSpamDialog">
+      <div class="mail-confirm" :aria-busy="movingThreads">
+        <h2 class="mail-confirm__title">
+          {{ spamConfirmScope === MailSpamRuleScope.DOMAIN ? 'Заблокировать домен?' : 'Отправить в спам?' }}
+        </h2>
+        <p class="mail-confirm__text">
+          <template v-if="spamConfirmScope === MailSpamRuleScope.DOMAIN">
+            Письмо переедет в «Спам». Все следующие письма с домена
+            <strong class="mail-confirm__emphasis">{{ spamSenderDomain }}</strong> тоже будут попадать туда.
+          </template>
+          <template v-else>
+            Письмо переедет в «Спам». Следующие письма от
+            <strong class="mail-confirm__emphasis">{{ spamSenderAddress }}</strong> тоже будут попадать туда.
+          </template>
+        </p>
+        <div v-if="movingThreads" class="mail-confirm__progress" role="status" aria-live="polite">
+          <span class="mail-confirm__spinner" aria-hidden="true" />
+          <span>Добавляем правило спама…</span>
+        </div>
+        <div class="mail-confirm__actions">
+          <button class="mail-page__icon-btn" type="button" :disabled="movingThreads" @click="spamConfirmModal?.close()">
+            Отмена
+          </button>
+          <button
+            class="mail-page__icon-btn mail-page__icon-btn_danger mail-confirm__submit"
+            type="button"
+            :disabled="movingThreads"
+            @click="confirmCurrentThreadSpam"
+          >
+            <span v-if="movingThreads" class="mail-confirm__spinner mail-confirm__spinner_small" aria-hidden="true" />
+            {{ movingThreads ? 'Перемещаем…' : spamConfirmScope === MailSpamRuleScope.DOMAIN ? 'Заблокировать домен' : 'В спам' }}
+          </button>
+        </div>
+      </div>
+    </BaseModal>
 
     <BaseModal ref="confirmModal" :dismissible="!isDeleting">
       <div class="mail-confirm" :aria-busy="isDeleting">
@@ -2409,65 +2526,55 @@ watch(
   }
 
   &__selection-bar {
-    @include flex(cn);
-    gap: 8px;
-    padding: 12px 16px;
+    min-height: 60px;
+    padding: 8px 12px 8px 16px;
     border-bottom: 1px solid var(--light-text-backgroung-primary-10);
     background: var(--light-text-backgroung-primary-5);
-    box-shadow: inset 3px 0 0 var(--primary);
+    @include flex(rn, between, a-center);
+    gap: 12px;
   }
 
   &__selection-count {
-    @include flex(rn, a-center);
-    gap: 8px;
+    min-width: 0;
     color: var(--light-text-backgroung-primary);
     font-variant-numeric: tabular-nums;
     @extend %text-s-medium;
 
     strong {
-      min-width: 24px;
-      height: 24px;
-      padding: 0 7px;
-      border-radius: 999px;
-      background: var(--primary-25);
-      color: var(--light-text-backgroung-primary);
       font-variant-numeric: tabular-nums;
-      @include flex(center);
-      @extend %p12-medium;
     }
   }
 
   &__selection-actions {
-    @include flex(rn, stretch);
-    gap: 8px;
-    min-width: 0;
-
-    .mail-page__move-select {
-      flex: 1;
-      min-width: 0;
-      max-width: none;
-      min-height: 44px;
-    }
-
-    @media (max-width: $screen-mobile-s) {
-      flex-direction: column;
-    }
+    flex-shrink: 0;
+    @include flex(rn, a-center);
+    gap: 4px;
   }
 
-  &__selection-delete {
-    flex-shrink: 0;
-    min-height: 44px;
-    padding: 10px 12px;
-    border: none;
+  &__selection-action {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid transparent;
     border-radius: 8px;
     background: transparent;
-    color: var(--danger-delete);
+    color: var(--light-text-backgroung-primary-50);
     cursor: pointer;
-    white-space: nowrap;
-    @extend %p12-medium;
+    @include flex(center);
+
+    svg {
+      width: 20px;
+      height: 20px;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
 
     &:hover {
-      background: var(--danger-delete-25);
+      border-color: var(--light-text-backgroung-primary-10);
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
     }
 
     &:focus-visible {
@@ -2476,7 +2583,26 @@ watch(
     }
 
     &:active {
-      background: var(--danger-delete-50);
+      background: var(--light-text-backgroung-primary-10);
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
+
+    &_danger {
+      color: var(--danger-delete);
+
+      &:hover {
+        border-color: transparent;
+        background: var(--danger-delete-25);
+        color: var(--danger-delete);
+      }
+
+      &:active {
+        background: var(--danger-delete-50);
+      }
     }
   }
 
@@ -2738,17 +2864,11 @@ watch(
     @include flex(rn, a-center);
     flex-wrap: wrap;
     gap: 8px;
-    padding: 12px 24px 20px;
-    border-top: 1px solid var(--light-text-backgroung-primary-10);
+    padding: 0 0 4px;
 
     .mail-page__compose-btn,
     .mail-page__icon-btn {
       min-height: 44px;
-    }
-
-    @media (max-width: $screen-tablet) {
-      padding-left: 16px;
-      padding-right: 16px;
     }
   }
 
@@ -2803,13 +2923,7 @@ watch(
   &__reply {
     @include flex(cn);
     gap: 8px;
-    padding: 12px 24px 20px;
-    border-top: 1px solid var(--light-text-backgroung-primary-10);
-
-    @media (max-width: $screen-tablet) {
-      padding-left: 16px;
-      padding-right: 16px;
-    }
+    padding: 0 0 4px;
   }
 
   &__reply-actions {
@@ -3024,12 +3138,40 @@ watch(
   &__text {
     margin: 0;
     color: var(--light-text-backgroung-primary-50);
+    overflow-wrap: anywhere;
     @extend %text-s-regular;
+  }
+
+  &__field {
+    min-width: 0;
+    @include flex(cn);
+    gap: 6px;
+  }
+
+  &__label {
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+
+  &__emphasis {
+    color: var(--light-text-backgroung-primary);
   }
 
   &__actions {
     @include flex(rn, j-end);
     gap: 12px;
+    flex-wrap: wrap;
+
+    @media (max-width: $screen-mobile-l) {
+      align-items: stretch;
+      flex-direction: column-reverse;
+
+      button {
+        width: 100%;
+        min-height: 44px;
+        justify-content: center;
+      }
+    }
   }
 
   &__progress {
