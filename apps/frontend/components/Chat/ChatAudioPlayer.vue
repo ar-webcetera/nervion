@@ -10,6 +10,9 @@ const audioRef = ref<HTMLAudioElement | null>(null);
 const isPlaying = ref(false);
 const currentTime = ref(0);
 const loadedDuration = ref(totalDuration.value);
+const playbackRates = [1, 1.5, 2] as const;
+type PlaybackRate = (typeof playbackRates)[number];
+const playbackRate = ref<PlaybackRate>(1);
 
 const config = useRuntimeConfig();
 const transcriptionText = ref<string | null>(null);
@@ -38,6 +41,15 @@ const progress = computed(() => {
 });
 
 const hasError = ref(false);
+
+const playbackRateLabel = computed(() => `${playbackRate.value}×`);
+const nextPlaybackRate = computed<PlaybackRate>(() => {
+  const currentIndex = playbackRates.indexOf(playbackRate.value);
+  return playbackRates[(currentIndex + 1) % playbackRates.length] ?? 1;
+});
+const playbackRateAriaLabel = computed(
+  () => `Скорость воспроизведения ${playbackRateLabel.value}. Следующая ${nextPlaybackRate.value}×`,
+);
 
 const resetPlaybackState = () => {
   isPlaying.value = false;
@@ -78,14 +90,26 @@ const togglePlay = () => {
   }
 };
 
+const cyclePlaybackRate = () => {
+  const nextRate = nextPlaybackRate.value;
+  playbackRate.value = nextRate;
+
+  const audio = audioRef.value;
+  if (!audio) return;
+  audio.defaultPlaybackRate = nextRate;
+  audio.playbackRate = nextRate;
+};
+
 const onTimeUpdate = () => {
   if (audioRef.value) currentTime.value = audioRef.value.currentTime;
 };
 
 const onLoadedMetadata = () => {
-  if (audioRef.value && isFinite(audioRef.value.duration)) {
-    loadedDuration.value = audioRef.value.duration;
-  }
+  const audio = audioRef.value;
+  if (!audio) return;
+  audio.defaultPlaybackRate = playbackRate.value;
+  audio.playbackRate = playbackRate.value;
+  if (isFinite(audio.duration)) loadedDuration.value = audio.duration;
 };
 
 const onEnded = () => {
@@ -165,7 +189,12 @@ onBeforeUnmount(() => {
       @error="hasError = true"
     />
     <div class="audio-message__row">
-      <button class="audio-message__play" @click="togglePlay">
+      <button
+        type="button"
+        class="audio-message__play"
+        :aria-label="isPlaying ? 'Поставить на паузу' : 'Воспроизвести аудиосообщение'"
+        @click="togglePlay"
+      >
         <svg v-if="!isPlaying" viewBox="0 0 20 20" fill="currentColor">
           <path d="M6.5 5.5l9 4.5-9 4.5V5.5z" />
         </svg>
@@ -183,9 +212,20 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <button
+        type="button"
+        class="audio-message__speed"
+        :aria-label="playbackRateAriaLabel"
+        :title="playbackRateAriaLabel"
+        @click="cyclePlaybackRate"
+      >
+        {{ playbackRateLabel }}
+      </button>
+      <button
         v-if="!transcriptionText && !isTranscribing"
+        type="button"
         class="audio-message__transcribe-btn"
         :class="{ 'audio-message__transcribe-btn_error': transcriptionError }"
+        :aria-label="transcriptionError ? 'Повторить расшифровку' : 'Расшифровать аудиосообщение'"
         :title="transcriptionError ? 'Ошибка. Повторить?' : 'Расшифровать'"
         @click="requestTranscription"
       >
@@ -196,7 +236,9 @@ onBeforeUnmount(() => {
       <span v-if="isTranscribing" class="audio-message__spinner" title="Распознаю..." />
       <button
         v-if="transcriptionText"
+        type="button"
         class="audio-message__toggle-btn"
+        :aria-label="isTranscriptionExpanded ? 'Свернуть расшифровку' : 'Развернуть расшифровку'"
         :title="isTranscriptionExpanded ? 'Свернуть' : 'Развернуть'"
         @click="toggleTranscription"
       >
@@ -251,6 +293,11 @@ onBeforeUnmount(() => {
       background-color: var(--primary-50);
     }
 
+    &:focus-visible {
+      outline: 2px solid var(--light-text-backgroung-primary);
+      outline-offset: 2px;
+    }
+
     svg {
       width: 20px;
       height: 20px;
@@ -288,6 +335,45 @@ onBeforeUnmount(() => {
     line-height: 1;
   }
 
+  &__speed {
+    position: relative;
+    width: 44px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background-color: var(--light-text-backgroung-primary-5);
+    color: var(--light-text-backgroung-primary);
+    @extend %p12-medium;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+
+    &::before {
+      content: '';
+      position: absolute;
+      inset: -9px 0;
+    }
+
+    &:hover {
+      color: var(--primary);
+      background-color: var(--light-text-backgroung-primary-10);
+    }
+
+    &:active {
+      color: var(--light-text-backgroung-primary);
+      background-color: var(--primary-50);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+  }
+
   &__transcribe-btn,
   &__toggle-btn {
     width: 26px;
@@ -315,6 +401,11 @@ onBeforeUnmount(() => {
     &:hover {
       color: var(--primary);
       background-color: var(--light-text-backgroung-primary-10);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
     }
   }
 
