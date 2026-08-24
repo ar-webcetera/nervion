@@ -11,8 +11,6 @@ import IconClose from '~/components/Icons/IconClose.vue';
 import { TYPE_SORT_LABELS, TypeSort } from '~/constants/sort.constants';
 import { MAX_TASK_NAME_LENGTH } from '~/constants/task.constants';
 import IconPen from './Icons/IconPen.vue';
-import IconTrash from './Icons/IconTrash.vue';
-import IconCopy from './Icons/IconCopy.vue';
 import IconSortAsc from './Icons/IconSortAsc.vue';
 import IconSortDesc from './Icons/IconSortDesc.vue';
 import { hasTiptapContent } from '~/utils/tiptap/content';
@@ -25,6 +23,7 @@ import { ru } from 'date-fns/locale';
 import { getErrorMessage } from '~/utils/error';
 import { TaskBillingType } from '@tracker/contracts';
 import { ROLES } from '~/types/user';
+import { Copy, Trash2 } from '@lucide/vue';
 
 const RECURRENCE_DAY_OPTIONS = [
   { label: 'Пн', value: 1 },
@@ -348,17 +347,25 @@ const submitComment = async () => {
             @reset-timelog="(id) => resetTimelog(id, taskModals.closeFixTimelogModal)"
           />
           <div class="task-sidebar__title-actions">
-            <span
+            <button
               class="task-sidebar__duplicate-button"
-              :class="{ 'task-sidebar__action_disabled': taskModals.isDuplicating.value }"
+              type="button"
+              :disabled="taskModals.isDuplicating.value"
+              aria-label="Дублировать задачу"
               title="Дублировать задачу"
               @click="taskModals.openDuplicateTaskModal"
             >
-              <IconCopy /><span class="task-sidebar__action-label">Дублировать</span>
-            </span>
-            <span class="task-sidebar__delete-button" title="Удалить задачу" @click="taskModals.openDeleteTaskModal">
-              <IconTrash /><span class="task-sidebar__action-label">Удалить задачу</span>
-            </span>
+              <Copy :size="20" :stroke-width="2" aria-hidden="true" />
+            </button>
+            <button
+              class="task-sidebar__delete-button"
+              type="button"
+              aria-label="Удалить задачу"
+              title="Удалить задачу"
+              @click="taskModals.openDeleteTaskModal"
+            >
+              <Trash2 :size="20" :stroke-width="2" aria-hidden="true" />
+            </button>
             <span class="task-sidebar__close-button" @click="$emit('close')"><IconClose /></span>
           </div>
         </div>
@@ -1682,40 +1689,48 @@ input {
 
     .task-sidebar__duplicate-button,
     .task-sidebar__delete-button {
-      cursor: pointer;
-      @include flex(rn, a-center);
-      gap: 6px;
-      @extend %text-s-regular;
-      white-space: nowrap;
-      padding: 5px 10px;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: 1px solid transparent;
       border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+      @include flex(center);
       transition:
-        color 0.2s ease,
-        background 0.2s ease;
+        color 0.16s ease,
+        border-color 0.16s ease,
+        background-color 0.16s ease;
 
       svg {
-        width: 16px;
-        height: 16px;
-        flex-shrink: 0;
+        display: block;
+        width: 20px;
+        height: 20px;
+        flex: 0 0 20px;
       }
 
-      @media (max-width: $screen-mobile-l) {
-        padding: 6px;
+      &:focus-visible {
+        outline: 2px solid var(--primary-50);
+        outline-offset: 2px;
       }
-    }
 
-    .task-sidebar__action-label {
-      @media (max-width: $screen-mobile-l) {
-        display: none;
+      &:disabled {
+        cursor: default;
+        opacity: 0.5;
       }
     }
 
     .task-sidebar__duplicate-button {
       color: var(--light-text-backgroung-primary-50);
 
-      &:hover {
+      &:hover:not(:disabled) {
         color: var(--white-100);
+        border-color: var(--light-text-backgroung-primary-10);
         background: var(--light-text-backgroung-primary-5);
+      }
+
+      &:active:not(:disabled) {
+        background: var(--light-text-backgroung-primary-10);
       }
     }
 
@@ -1723,14 +1738,12 @@ input {
       color: var(--danger-delete);
 
       &:hover {
-        background: var(--danger-delete-10);
+        background: var(--danger-delete-25);
       }
-    }
 
-    .task-sidebar__action_disabled {
-      opacity: 0.6;
-      pointer-events: none;
-      cursor: default;
+      &:active {
+        background: var(--danger-delete-50);
+      }
     }
   }
 
