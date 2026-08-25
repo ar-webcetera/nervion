@@ -408,15 +408,16 @@ export class TasksService {
     const KANBAN_PAGE = 50;
 
     const columnDefs = [
-      { id: 1, title: 'Открыто', status: TASK_STATUSES.open },
-      { id: 2, title: 'К выполнению', status: TASK_STATUSES.to_do },
-      { id: 3, title: 'Выполняется', status: TASK_STATUSES.in_progress },
-      { id: 4, title: 'На ревью', status: TASK_STATUSES.in_review },
-      { id: 5, title: 'На тестировании', status: TASK_STATUSES.testing },
-      { id: 6, title: 'Готово к релизу', status: TASK_STATUSES.ready_for_release },
-      { id: 9, title: 'Проверка на проде', status: TASK_STATUSES.prod_check },
-      { id: 7, title: 'Контроль', status: TASK_STATUSES.control },
-      { id: 8, title: 'Закрыто', status: TASK_STATUSES.closed },
+      { id: 1, title: 'Архив', status: TASK_STATUSES.archive },
+      { id: 2, title: 'Открыто', status: TASK_STATUSES.open },
+      { id: 3, title: 'К выполнению', status: TASK_STATUSES.to_do },
+      { id: 4, title: 'Выполняется', status: TASK_STATUSES.in_progress },
+      { id: 5, title: 'На ревью', status: TASK_STATUSES.in_review },
+      { id: 6, title: 'На тестировании', status: TASK_STATUSES.testing },
+      { id: 7, title: 'Готово к релизу', status: TASK_STATUSES.ready_for_release },
+      { id: 8, title: 'Проверка на проде', status: TASK_STATUSES.prod_check },
+      { id: 9, title: 'Контроль', status: TASK_STATUSES.control },
+      { id: 10, title: 'Закрыто', status: TASK_STATUSES.closed },
     ];
 
     const columns = await Promise.all(
@@ -1336,6 +1337,7 @@ export class TasksService {
 
   private getStatusLabel(status: TASK_STATUSES): string {
     const labels = {
+      [TASK_STATUSES.archive]: 'В архиве',
       [TASK_STATUSES.open]: 'Открыта',
       [TASK_STATUSES.to_do]: 'К выполнению',
       [TASK_STATUSES.in_progress]: 'В работе',

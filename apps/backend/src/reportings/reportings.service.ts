@@ -36,6 +36,7 @@ export interface TimelogRow {
 }
 
 const TASK_STATUS_LABELS: Record<TASK_STATUSES, string> = {
+  [TASK_STATUSES.archive]: 'Архив',
   [TASK_STATUSES.open]: 'Открыто',
   [TASK_STATUSES.to_do]: 'К выполнению',
   [TASK_STATUSES.in_progress]: 'Выполняется',
@@ -216,7 +217,9 @@ export class ReportingsService {
         .createQueryBuilder('task')
         .leftJoinAndSelect('task.project', 'project')
         .where('task.billing_type = :type', { type: TaskBillingType.FIXED })
-        .andWhere('task.status != :closed', { closed: TASK_STATUSES.closed })
+        .andWhere('task.status NOT IN (:...inactiveStatuses)', {
+          inactiveStatuses: [TASK_STATUSES.archive, TASK_STATUSES.closed],
+        })
         .getMany(),
       this.monthlyTargetRepository.findOneBy({ year: now.getFullYear(), month: now.getMonth() + 1 }),
     ]);

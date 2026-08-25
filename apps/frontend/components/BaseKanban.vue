@@ -585,6 +585,10 @@ const dragend = () => {
       background: var(--light-text-backgroung-primary);
     }
 
+    &_archive {
+      background: var(--light-text-backgroung-primary-50);
+    }
+
     &_to_do {
       background: var(--status-blue);
     }
