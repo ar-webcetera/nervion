@@ -67,9 +67,7 @@ const replyText = ref('');
 const replyTo = ref('');
 const replyCc = ref('');
 const sendingReply = ref(false);
-const replyInput = ref<HTMLTextAreaElement | null>(null);
 const replyOpen = ref(false);
-const replyAttachInput = ref<HTMLInputElement | null>(null);
 const uploadingReplyAttach = ref(false);
 let replyAttachmentSession = 0;
 
@@ -93,8 +91,9 @@ const openReply = async (includeAllRecipients = false) => {
   replyCc.value = recipients.cc.join(', ');
   replyOpen.value = true;
   await nextTick();
-  replyInput.value?.focus();
-  replyInput.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const input = document.querySelector<HTMLTextAreaElement>('[data-reply-input]');
+  input?.focus();
+  input?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 };
 
 const cancelReply = () => {
@@ -252,10 +251,7 @@ const composeForm = reactive({
 const forwardedHtml = ref<string | null>(null);
 const forwardedHeader = ref<{ from: string; subject: string } | null>(null);
 const sendingCompose = ref(false);
-const attachInput = ref<HTMLInputElement | null>(null);
 const uploadingAttach = ref(false);
-
-const triggerAttach = () => attachInput.value?.click();
 
 const onFilesPicked = async (event: Event) => {
   const input = event.target as HTMLInputElement;
@@ -284,8 +280,6 @@ const formatAttachSize = (size: number) => {
   if (size < 1048576) return `${(size / 1024).toFixed(1)} КБ`;
   return `${(size / 1048576).toFixed(1)} МБ`;
 };
-
-const triggerReplyAttach = () => replyAttachInput.value?.click();
 
 const onReplyFilesPicked = async (event: Event) => {
   const input = event.target as HTMLInputElement;
@@ -1643,10 +1637,22 @@ watch(
           </div>
 
           <div class="mail-composer__actions">
-            <input ref="attachInput" type="file" multiple hidden @change="onFilesPicked" />
-            <button class="mail-page__icon-btn" :disabled="uploadingAttach" @click="triggerAttach">
+            <input
+              id="compose-attachment-input"
+              class="mail-page__file-input"
+              type="file"
+              multiple
+              :disabled="uploadingAttach"
+              @change="onFilesPicked"
+            />
+            <label
+              for="compose-attachment-input"
+              class="mail-page__icon-btn mail-page__file-label"
+              :class="{ 'mail-page__file-label_disabled': uploadingAttach }"
+              :aria-disabled="uploadingAttach"
+            >
               {{ uploadingAttach ? 'Загрузка…' : 'Прикрепить файл' }}
-            </button>
+            </label>
             <button class="mail-page__icon-btn" :disabled="savingDraft" @click="saveDraftAction">
               {{ savingDraft ? 'Сохранение…' : 'Сохранить черновик' }}
             </button>
@@ -1794,8 +1800,8 @@ watch(
                   </label>
                 </div>
                 <textarea
-                  ref="replyInput"
                   v-model="replyText"
+                  data-reply-input
                   class="mail-page__reply-input"
                   placeholder="Напишите ответ"
                   rows="4"
@@ -1835,18 +1841,25 @@ watch(
                   </div>
                 </div>
                 <div class="mail-page__reply-actions">
-                  <input ref="replyAttachInput" type="file" multiple hidden @change="onReplyFilesPicked" />
-                  <button
-                    type="button"
-                    class="mail-page__icon-btn mail-page__reply-attach-btn"
+                  <input
+                    id="reply-attachment-input"
+                    class="mail-page__file-input"
+                    type="file"
+                    multiple
                     :disabled="uploadingReplyAttach || sendingReply"
-                    @click="triggerReplyAttach"
+                    @change="onReplyFilesPicked"
+                  />
+                  <label
+                    for="reply-attachment-input"
+                    class="mail-page__icon-btn mail-page__file-label mail-page__reply-attach-btn"
+                    :class="{ 'mail-page__file-label_disabled': uploadingReplyAttach || sendingReply }"
+                    :aria-disabled="uploadingReplyAttach || sendingReply"
                   >
                     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                       <path d="m8.5 12.5 5.8-5.8a3.1 3.1 0 0 1 4.4 4.4l-7.5 7.5a5 5 0 0 1-7.1-7.1l7.2-7.2" />
                     </svg>
                     {{ uploadingReplyAttach ? 'Загрузка…' : 'Прикрепить файл' }}
-                  </button>
+                  </label>
                   <div class="mail-page__reply-actions-main">
                     <button class="mail-page__icon-btn" :disabled="uploadingReplyAttach || sendingReply" @click="cancelReply">
                       Отмена
@@ -1878,7 +1891,9 @@ watch(
           {{ moveThreadIds.length > 1 ? 'Переместить выбранные письма' : 'Переместить переписку' }}
         </h2>
         <p class="mail-confirm__text">
-          {{ moveThreadIds.length > 1 ? `Выберите новую папку. Выбрано цепочек: ${moveThreadIds.length}.` : 'Выберите новую папку.' }}
+          {{
+            moveThreadIds.length > 1 ? `Выберите новую папку. Выбрано цепочек: ${moveThreadIds.length}.` : 'Выберите новую папку.'
+          }}
         </p>
         <label class="mail-confirm__field">
           <span class="mail-confirm__label">Папка</span>
@@ -2295,6 +2310,29 @@ watch(
       @media (max-width: $screen-tablet) {
         display: none;
       }
+    }
+  }
+
+  &__file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  &__file-label {
+    display: inline-flex;
+    align-items: center;
+
+    &_disabled {
+      opacity: 0.5;
+      cursor: default;
+      pointer-events: none;
     }
   }
 
