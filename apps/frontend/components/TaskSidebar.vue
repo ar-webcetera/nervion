@@ -53,6 +53,7 @@ const {
   duplicateTask,
   updateTaskStatus,
   updateTaskType,
+  updateTaskProject,
   updateTaskResponsible,
   updateTaskDescription,
   openEditDescription,
@@ -62,6 +63,8 @@ const {
   confirmEdit,
   closeEditPageName,
   usersOptions,
+  projectOptions,
+  projectUpdatePending,
   isEditableDescription,
   isGeneratingDescription,
   descriptionKey,
@@ -481,7 +484,13 @@ const submitComment = async () => {
           <div class="task-sidebar__field task-sidebar__field_task-type">
             <div class="task-sidebar__label">Проект</div>
             <div v-if="taskStore.currentTask" class="task-sidebar__value">
-              {{ taskStore.currentTask.project?.name }}
+              <BaseDropdown
+                v-model="taskStore.currentTask.project_id"
+                :options="projectOptions"
+                placeholder="Не указан"
+                :disabled="projectUpdatePending"
+                @update:model-value="updateTaskProject($event)"
+              />
             </div>
             <div v-else class="task-sidebar__value">Не указан</div>
           </div>

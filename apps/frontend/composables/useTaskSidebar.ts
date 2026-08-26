@@ -14,6 +14,7 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
   const aiStore = useAiStore();
   const filesStore = useFilesStore();
   const userStore = useUserStore();
+  const projectStore = useProjectStore();
   const { $toast } = useNuxtApp();
   const router = useRouter();
 
@@ -27,6 +28,7 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
   const isGeneratingDescription = ref(false);
   const descriptionKey = ref(0);
   const responsibleId = ref<number | null>(null);
+  const projectUpdatePending = ref(false);
 
   const prefix = computed(() => `tracker-tasks/${taskId.value}/`);
 
@@ -53,6 +55,13 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
     return [];
   });
 
+  const projectOptions = computed<SelectOption[]>(() =>
+    projectStore.projects.map((project) => ({
+      label: project.name,
+      value: project.id,
+    })),
+  );
+
   const fetchTask = async () => {
     try {
       if (!taskId.value) return;
@@ -66,7 +75,7 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
 
   const fetchData = async () => {
     try {
-      await filesStore.fetchFiles(prefix.value);
+      await Promise.all([filesStore.fetchFiles(prefix.value), projectStore.fetchProjects()]);
     } catch (e) {
       console.error(e);
     } finally {
@@ -134,6 +143,33 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
       updateTaskInCollections(taskId.value, { taskType });
     } catch (e) {
       $toast.error(getErrorMessage(e));
+    }
+  };
+
+  const updateTaskProject = async (value: string | number | (string | number)[] | null) => {
+    if (!taskId.value || projectUpdatePending.value) return;
+
+    const project_id = Number(value);
+    const project = projectStore.projects.find((item) => item.id === project_id);
+    if (!Number.isInteger(project_id) || !project) {
+      await fetchTask();
+      $toast.error('Не удалось выбрать проект');
+      return;
+    }
+
+    projectUpdatePending.value = true;
+    try {
+      await taskStore.updateTask(taskId.value, { project_id });
+      if (taskStore.currentTask?.id === taskId.value) {
+        taskStore.currentTask.project_id = project_id;
+        taskStore.currentTask.project = project;
+      }
+      updateTaskInCollections(taskId.value, { project_id, project });
+    } catch (e) {
+      await fetchTask();
+      $toast.error(getErrorMessage(e));
+    } finally {
+      projectUpdatePending.value = false;
     }
   };
 
@@ -257,6 +293,7 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
         if (updates.story_points !== undefined) card.story_points = updates.story_points;
         if (updates.planned_date !== undefined) card.planned_date = updates.planned_date as string | null;
         if (updates.taskType !== undefined) card.taskType = updates.taskType;
+        if (updates.project !== undefined) card.projectName = updates.project?.name;
         if (updates.description !== undefined) {
           card.description = extractPlainText(updates.description as TiptapDoc, 80);
         }
@@ -320,10 +357,7 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
     if (!taskStore.currentTask) return;
     isGeneratingDescription.value = true;
     try {
-      const parsedTask = await aiStore.parseTextToTask(
-        JSON.stringify(taskStore.currentTask.description),
-        instruction,
-      );
+      const parsedTask = await aiStore.parseTextToTask(JSON.stringify(taskStore.currentTask.description), instruction);
       taskStore.currentTask.description = parsedTask.description;
       editableDescription.value = parsedTask.description;
       descriptionKey.value++;
@@ -348,6 +382,8 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
     responsibleId,
     prefix,
     usersOptions,
+    projectOptions,
+    projectUpdatePending,
     fetchTask,
     fetchData,
     openEditPageName,
@@ -355,6 +391,7 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
     closeEditPageName,
     updateTaskStatus,
     updateTaskType,
+    updateTaskProject,
     updateTaskResponsible,
     updateTaskDescription,
     openEditDescription,
