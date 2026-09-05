@@ -51,6 +51,13 @@ export class TasksController {
   private readonly logger = new Logger(TasksController.name);
   constructor(private readonly tasksService: TasksService) {}
 
+  @Get(':taskId/activity')
+  @ApiOperation({ summary: 'История действий по доступной пользователю задаче' })
+  @UseGuards(AuthGuard, RolesGuard)
+  getActivity(@Param('taskId', ParseIntPipe) taskId: number, @Req() req: RequestWithCookies) {
+    return this.tasksService.getTaskActivity(taskId, req.user);
+  }
+
   @Get('weekly')
   @ApiOperation({ summary: 'Получение задач по неделям' })
   @ApiResponse({ status: 200, description: 'Задачи недели успешно получены' })

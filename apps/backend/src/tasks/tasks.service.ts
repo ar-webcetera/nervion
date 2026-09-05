@@ -542,6 +542,11 @@ export class TasksService {
     return { ...task, is_completed_today };
   }
 
+  async getTaskActivity(taskId: number, currentUser: AuthenticatedUser) {
+    await this.findTaskById(taskId, currentUser);
+    return this.auditLogsService.findTaskActivity(taskId, currentUser.role === ROLES.admin);
+  }
+
   async createTask(createTaskDto: CreateTaskDto, currentUser?: AuthenticatedUser) {
     this.assertBillingFieldsAccess(createTaskDto, currentUser);
     let project: Projects | null = null;
@@ -607,7 +612,7 @@ export class TasksService {
       relations: ['project', 'responsible'],
     });
 
-    void this.auditLogsService.record({
+    await this.auditLogsService.record({
       actionType: AuditActionType.TASK_CREATED,
       entityType: AuditEntityType.TASK,
       entityId: createdTask.id,
@@ -700,7 +705,7 @@ export class TasksService {
       relations: ['project', 'responsible'],
     });
 
-    void this.auditLogsService.record({
+    await this.auditLogsService.record({
       actionType: AuditActionType.TASK_CREATED,
       entityType: AuditEntityType.TASK,
       entityId: createdTask.id,
@@ -860,7 +865,7 @@ export class TasksService {
       const changedFields = this.getChangedTaskAuditFields(beforePayload, afterPayload);
       const taskLabel = afterPayload.title ?? beforePayload.title ?? `#${taskId}`;
 
-      void this.auditLogsService.record({
+      await this.auditLogsService.record({
         actionType,
         entityType: AuditEntityType.TASK,
         entityId: taskId,
@@ -892,7 +897,7 @@ export class TasksService {
       }
 
       await this.tasksRepository.delete(task_id);
-      void this.auditLogsService.record({
+      await this.auditLogsService.record({
         actionType: AuditActionType.TASK_DELETED,
         entityType: AuditEntityType.TASK,
         entityId: task_id,
@@ -1313,7 +1318,7 @@ export class TasksService {
       completed_at: date,
     });
     const savedCompletion = await this.completionRepository.save(completion);
-    void this.auditLogsService.record({
+    await this.auditLogsService.record({
       actionType: AuditActionType.TASK_COMPLETED,
       entityType: AuditEntityType.TASK,
       entityId: taskId,
@@ -1337,7 +1342,7 @@ export class TasksService {
     }
 
     await this.completionRepository.delete({ task_id: taskId, completed_at: date });
-    void this.auditLogsService.record({
+    await this.auditLogsService.record({
       actionType: AuditActionType.TASK_UNCOMPLETED,
       entityType: AuditEntityType.TASK,
       entityId: taskId,

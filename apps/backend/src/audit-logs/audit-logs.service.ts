@@ -1,3 +1,6 @@
+import type { TaskActivityItem, TaskActivityChange, JsonValue } from '@tracker/contracts';
+import { Users } from '../users/entities/users.entity';
+import { Projects } from '../projects/entities/project.entity';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
@@ -9,7 +12,7 @@ import {
   AuditSourceType,
   type JsonObject,
 } from '@tracker/contracts';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import { AuditContextService } from './audit-context.service';
 import { GetAuditLogsDto } from './dto/get-audit-logs.dto';
 import { AuditLog } from './entities/audit-log.entity';
@@ -89,6 +92,82 @@ export class AuditLogsService {
     } catch (error) {
       this.logger.error(`Не удалось сохранить audit log: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  async findTaskActivity(taskId: number, includeBilling: boolean): Promise<TaskActivityItem[]> {
+    const rows = await this.auditLogRepository.find({
+      where: { task_id: taskId, entity_type: AuditEntityType.TASK },
+      order: { created_at: 'ASC', id: 'ASC' },
+    });
+    const userIds = new Set<number>();
+    const projectIds = new Set<number>();
+    for (const row of rows) {
+      for (const payload of [row.before_payload, row.after_payload]) {
+        if (typeof payload?.responsible_id === 'number') userIds.add(payload.responsible_id);
+        if (typeof payload?.project_id === 'number') projectIds.add(payload.project_id);
+      }
+    }
+    const [users, projects] = await Promise.all([
+      userIds.size
+        ? this.auditLogRepository.manager.find(Users, {
+            where: { id: In([...userIds]) },
+            select: ['id', 'first_name', 'last_name'],
+          })
+        : Promise.resolve<Users[]>([]),
+      projectIds.size
+        ? this.auditLogRepository.manager.find(Projects, {
+            where: { id: In([...projectIds]) },
+            select: ['id', 'name'],
+          })
+        : Promise.resolve<Projects[]>([]),
+    ]);
+    const names = new Map<number, string>(
+      users.map((user): [number, string] => [user.id, `${user.last_name} ${user.first_name}`.trim()]),
+    );
+    const projectNames = new Map<number, string>(projects.map((project): [number, string] => [project.id, project.name]));
+    const fields: Record<string, string> = {
+      title: 'Название',
+      description: 'Описание',
+      status: 'Статус',
+      responsible_id: 'Ответственный',
+      project_id: 'Проект',
+      taskType: 'Тип задачи',
+      planned_date: 'Дедлайн',
+      story_points: 'Story Points',
+      recurrence_days: 'Дни повторения',
+      recurrence_since: 'Начало повторения',
+      closed_date: 'Дата закрытия',
+      ...(includeBilling ? { billing_type: 'Формат оплаты', fixed_price: 'Стоимость' } : {}),
+    };
+    const formatValue = (field: string, value: JsonValue | undefined): string | null => {
+      if (value == null) return null;
+      if (field === 'responsible_id' && typeof value === 'number') return names.get(value) ?? `Сотрудник #${value}`;
+      if (field === 'project_id' && typeof value === 'number') return projectNames.get(value) ?? `Проект #${value}`;
+      return typeof value === 'string' ? value : JSON.stringify(value);
+    };
+    return rows.map((row) => {
+      const changes: TaskActivityChange[] = [];
+      if (row.before_payload && row.after_payload) {
+        for (const [field, label] of Object.entries(fields)) {
+          const before = row.before_payload[field] ?? null;
+          const after = row.after_payload[field] ?? null;
+          if (JSON.stringify(before) === JSON.stringify(after)) continue;
+          changes.push({
+            field,
+            label,
+            before: field === 'description' ? null : formatValue(field, before),
+            after: field === 'description' ? null : formatValue(field, after),
+          });
+        }
+      }
+      return {
+        id: row.id,
+        action_type: row.action_type,
+        actor_name: row.actor_name || 'Система',
+        created_at: row.created_at.toISOString(),
+        changes,
+      };
+    });
   }
 
   async findAll(dto: GetAuditLogsDto): Promise<AuditLogsResponse> {

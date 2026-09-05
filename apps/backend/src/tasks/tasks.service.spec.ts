@@ -99,6 +99,7 @@ describe('TasksService', () => {
   };
   const mockAuditLogsService = {
     record: jest.fn(),
+    findTaskActivity: jest.fn().mockResolvedValue([]),
   };
   const mockNotificationsService = {
     createWithEmail: jest.fn<Promise<Notifications>, [CreateNotificationDto, string]>().mockResolvedValue({} as Notifications),
@@ -106,6 +107,22 @@ describe('TasksService', () => {
   const mockConfigService = {
     get: jest.fn<string | undefined, [string]>().mockReturnValue('webcetera.test'),
   };
+
+  it('does not read activity when task access is denied', async () => {
+    const denied = new Error('Forbidden');
+    jest.spyOn(service, 'findTaskById').mockRejectedValueOnce(denied);
+    await expect(service.getTaskActivity(12, createAuthenticatedUser(2))).rejects.toThrow('Forbidden');
+    expect(mockAuditLogsService.findTaskActivity).not.toHaveBeenCalled();
+  });
+
+  it('limits billing history to administrators', async () => {
+    jest.spyOn(service, 'findTaskById').mockResolvedValue({ ...({ id: 12 } as Tasks), is_completed_today: false });
+    const user = createAuthenticatedUser(2);
+    await service.getTaskActivity(12, user);
+    expect(mockAuditLogsService.findTaskActivity).toHaveBeenLastCalledWith(12, false);
+    await service.getTaskActivity(12, { ...user, role: ROLES.admin });
+    expect(mockAuditLogsService.findTaskActivity).toHaveBeenLastCalledWith(12, true);
+  });
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({

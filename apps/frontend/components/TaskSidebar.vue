@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import TaskCode from '~/components/TaskCode.vue';
+import TaskActivityRow from '~/components/TaskActivityRow.vue';
 import { ref, watch, computed } from 'vue';
 import { useTaskStore } from '~/stores/taskStore';
 import IconPlus from '~/components/Icons/IconPlus.vue';
@@ -45,6 +46,27 @@ const { $toast } = useNuxtApp();
 
 const props = defineProps<{ currentTaskId: number | null }>();
 const currentTaskIdRef = computed(() => props.currentTaskId);
+const { data: taskActivity, error: activityError, refresh: refreshActivity } = await useTaskActivity(currentTaskIdRef);
+const activityTimeline = computed(() => {
+  const entries = [
+    ...commentStore.comments.map((comment) => ({
+      key: `comment-${comment.id}`,
+      date: new Date(comment.created_at).getTime(),
+      comment,
+      activity: null,
+    })),
+    ...taskActivity.value.map((activity) => ({
+      key: `activity-${activity.id}`,
+      date: new Date(activity.created_at).getTime(),
+      comment: null,
+      activity,
+    })),
+  ];
+  return entries.sort((a, b) => {
+    const comparison = a.date - b.date || a.key.localeCompare(b.key, 'en', { numeric: true });
+    return commentStore.sortType === TypeSort.DESC ? -comparison : comparison;
+  });
+});
 
 const { fetchComments, createComment, deleteComment, deleteComments, commentsPending, newComments, saveComment } =
   useTaskComments(currentTaskIdRef as Ref<number | null>);
@@ -468,7 +490,13 @@ const submitComment = async () => {
               </div>
             </div>
             <details v-if="taskStore.currentTask?.related_tasks.length" class="related-tasks__task-list">
-              <summary><span>Связанные задачи</span><IconArrowDown /></summary>
+              <summary>
+                <span>Связанные задачи</span>
+                <span class="related-tasks__count" :aria-label="`Количество связанных задач: ${taskStore.currentTask.related_tasks.length}`">
+                  {{ taskStore.currentTask.related_tasks.length }}
+                </span>
+                <IconArrowDown />
+              </summary>
               <div class="related-tasks__task-list-items">
                 <TaskComponent
                   v-for="task of taskStore.currentTask?.related_tasks"
@@ -670,19 +698,30 @@ const submitComment = async () => {
           <div class="loader"></div>
         </div>
         <template v-if="!commentsPending">
-          <div v-if="commentStore.comments.length" class="comments__body">
-            <BaseComment
-              v-for="comment of commentStore.comments"
-              :key="comment.id"
-              :comment="comment"
-              :user-id="userStore.user!.id"
-              :current-task-id="currentTaskId"
-              @save-comment="saveComment"
-              @delete-comment="taskModals.openDeleteCommentModal"
-              @create-comment="(_taskId, message, commentId) => createComment(message, commentId)"
-            />
+          <div v-if="activityError" role="alert" class="comments__body">
+            Не удалось загрузить историю действий.
+            <button type="button" @click="refreshActivity()">Повторить</button>
           </div>
-          <div v-else class="comments__body">Комментариев пока нет</div>
+          <div v-if="activityTimeline.length" class="comments__body comments__body_timeline">
+            <div
+              v-for="entry in activityTimeline"
+              :key="entry.key"
+              class="comments__event"
+              :class="{ comments__event_comment: entry.comment }"
+            >
+              <BaseComment
+                v-if="entry.comment"
+                :comment="entry.comment"
+                :user-id="userStore.user!.id"
+                :current-task-id="currentTaskId"
+                @save-comment="saveComment"
+                @delete-comment="taskModals.openDeleteCommentModal"
+                @create-comment="(_taskId, message, commentId) => createComment(message, commentId)"
+              />
+              <TaskActivityRow v-else-if="entry.activity" :activity="entry.activity" />
+            </div>
+          </div>
+          <div v-else-if="!activityError" class="comments__body">Комментариев и действий пока нет</div>
         </template>
         <div v-if="currentSortType === TypeSort.ASC" class="comments__form">
           <div class="comments__input">
@@ -886,6 +925,18 @@ input {
     svg {
       stroke: var(--light-text-backgroung-primary-50);
     }
+  }
+
+  &__count {
+    @include flex(rn, a-center, j-center);
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 6px;
+    background: var(--light-text-backgroung-primary-10);
+    color: var(--light-text-backgroung-primary);
+    @extend %text-xs-medium;
+    font-variant-numeric: tabular-nums;
   }
 
   &__task-list {
@@ -1224,11 +1275,47 @@ input {
     border-top: 1px solid var(--light-text-backgroung-primary-10);
   }
 
+  &__event {
+    position: relative;
+    min-width: 0;
+
+    &:not(:last-child)::before {
+      content: '';
+      position: absolute;
+      left: 7px;
+      top: 14px;
+      bottom: -22px;
+      width: 1px;
+      background: var(--light-text-backgroung-primary-10);
+      pointer-events: none;
+    }
+
+    &_comment {
+      padding-left: 28px;
+
+      &::after {
+        content: '';
+        position: absolute;
+        left: 4px;
+        top: 10px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--light-text-backgroung-primary-50);
+        box-shadow: 0 0 0 4px var(--dark-text-background-primary);
+      }
+    }
+  }
+
   &__body {
     display: flex;
     flex-direction: column;
     gap: 12px;
     @extend %p14-medium;
+
+    &_timeline {
+      gap: 8px;
+    }
   }
 }
 
