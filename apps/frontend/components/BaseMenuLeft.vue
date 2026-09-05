@@ -21,7 +21,10 @@ const chatStore = useChatStore();
 const reportStore = useReportStore();
 
 const chatId = computed(() => route.query?.chatId);
-const mailDetailOpen = computed(() => route.name === 'mail' && Boolean(route.query?.thread || route.query?.compose));
+const mailDetailState = useState<boolean | null>('mail-detail-open', () => null);
+const mailDetailOpen = computed(
+  () => route.name === 'mail' && (mailDetailState.value ?? Boolean(route.query?.thread || route.query?.compose)),
+);
 const hideChrome = computed(() => Boolean(chatId.value) || mailDetailOpen.value || rootStore.isDetailFullscreen);
 
 const isMenuVisible = (key: string) => !(userStore.user?.hidden_menu_items ?? []).includes(key);

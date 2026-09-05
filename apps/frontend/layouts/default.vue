@@ -22,8 +22,9 @@ const isHidden = computed(() => {
 });
 
 const chatId = computed(() => route.query?.chatId);
+const mailDetailState = useState<boolean | null>('mail-detail-open', () => null);
 const mailDetailOpen = computed(
-  () => route.name === 'mail' && Boolean(route.query?.thread || route.query?.compose),
+  () => route.name === 'mail' && (mailDetailState.value ?? Boolean(route.query?.thread || route.query?.compose)),
 );
 </script>
 

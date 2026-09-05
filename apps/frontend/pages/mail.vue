@@ -197,9 +197,9 @@ const openProblemThread = async (threadId: number) => {
 const composeParam = String(route.query.compose ?? '');
 const composeMode = ref(composeParam !== '');
 const isDetailOpen = computed(() => composeMode.value || selectedThreadId.value !== null);
-const rootStore = useRootStore();
-watch(isDetailOpen, (open) => (rootStore.isDetailFullscreen = open), { immediate: true });
-onBeforeUnmount(() => (rootStore.isDetailFullscreen = false));
+const mailDetailState = useState<boolean | null>('mail-detail-open', () => null);
+watch(isDetailOpen, (open) => (mailDetailState.value = open), { immediate: true, flush: 'sync' });
+onBeforeUnmount(() => (mailDetailState.value = null));
 
 const backToList = () => {
   if (composeMode.value) closeComposer();
