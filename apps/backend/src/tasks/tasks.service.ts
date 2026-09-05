@@ -26,6 +26,7 @@ import { CreateAndLinkDto } from './dto/create-and-link.dto';
 import { Filter, TaskViewType, UserTaskFilter } from './entities/user-task-filter.entity';
 import { UpdateFilterStateDto } from './dto/update-filter-state.dto';
 import * as XLSX from 'xlsx';
+import { extractTextFromDoc } from '../common/utils/extractTextFromDoc';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -517,6 +518,9 @@ export class TasksService {
         HttpStatus.NOT_FOUND,
       );
     }
+    if (task.project?.status === PROJECT_STATUSES.ON_HOLD) {
+      throw new HttpException({ message: ['Проект задачи находится в архиве'] }, HttpStatus.NOT_FOUND);
+    }
     const isAdmin = currentUser.role === ROLES.admin;
     if (!isAdmin && task.project) {
       const hasAccess = await this.projectsMembersRepository.exist({
@@ -562,6 +566,10 @@ export class TasksService {
           HttpStatus.NOT_FOUND,
         );
       }
+    }
+
+    if (project?.status === PROJECT_STATUSES.ON_HOLD) {
+      throw new HttpException({ message: ['Нельзя создать задачу в архивном проекте'] }, HttpStatus.BAD_REQUEST);
     }
 
     let responsible: Users | null = null;
@@ -777,6 +785,9 @@ export class TasksService {
             },
             HttpStatus.NOT_FOUND,
           );
+        }
+        if (project.status === PROJECT_STATUSES.ON_HOLD) {
+          throw new HttpException({ message: ['Нельзя перенести задачу в архивный проект'] }, HttpStatus.BAD_REQUEST);
         }
         data.project_id = project.id;
       }
@@ -1116,7 +1127,7 @@ export class TasksService {
     const tasks = await qb.getMany();
 
     const data = tasks.map((task) => {
-      const description = task.description ? extractPlainText(task.description as TiptapDoc) : '';
+      const description = task.description ? extractTextFromDoc(task.description).slice(0, 32_000) : '';
 
       return {
         ID: task.id,

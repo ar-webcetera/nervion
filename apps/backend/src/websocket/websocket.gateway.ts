@@ -1,3 +1,4 @@
+import { ProjectRealtimeEvent } from '@tracker/contracts';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 
 import { Server, Socket } from 'socket.io';
@@ -15,6 +16,10 @@ export class WebsocketGateway {
   private clients = new Map<string, string>();
 
   constructor() {}
+
+  sendProjectsChanged() {
+    this.server.emit(ProjectRealtimeEvent.CHANGED);
+  }
 
   sendTaskAdded(task: Tasks) {
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.task_added, data: task });

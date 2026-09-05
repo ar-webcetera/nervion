@@ -70,7 +70,11 @@ const fileIcons: { [key: string]: { icon: Component; color: string } } = {
 };
 
 const fileInput = ref<HTMLInputElement | null>(null);
-const selectedFile = ref<string>('');
+const selectedFiles = ref<string[]>([]);
+const isUploading = ref(false);
+const uploadProgress = ref('');
+const uploadErrors = ref<string[]>([]);
+watch(mode, () => { selectedFiles.value = []; uploadErrors.value = []; });
 const imageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
 const videoTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/avi', 'video/mov'];
 const maxSize = 1024 * 1024 * 1024;
@@ -161,7 +165,10 @@ const openFileDialog = () => {
 };
 
 const selectFile = (file: string) => {
-  selectedFile.value = file;
+  if (isUploading.value) return;
+  selectedFiles.value = selectedFiles.value.includes(file)
+    ? selectedFiles.value.filter((key) => key !== file)
+    : [...selectedFiles.value, file];
 };
 
 const checkFileIntegrity = (file: File): Promise<boolean> => {
@@ -183,67 +190,61 @@ const checkFileIntegrity = (file: File): Promise<boolean> => {
   });
 };
 
+const uploadOneFile = async (file: File) => {
+  if (mode.value !== fileMode.file && !allowedTypes.value.includes(file.type)) {
+    throw new Error(mode.value === fileMode.video ? 'Неподдерживаемый видеоформат' : 'Неподдерживаемый формат изображения');
+  }
+  if (mode.value === fileMode.file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
+    throw new Error('Используйте вкладку изображений или видео');
+  }
+  if (file.size > maxSize) throw new Error('Максимальный размер — 1 ГБ');
+  if (file.size === 0) throw new Error('Файл пуст');
+  if (mode.value === fileMode.image && !(await checkFileIntegrity(file))) throw new Error('Изображение повреждено');
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('prefix', prefix.value);
+  return filesStore.addFile(formData);
+};
+
 const handleFileChange = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const files = Array.from(target.files ?? []);
+  if (!files.length || isUploading.value) return;
+  isUploading.value = true;
+  uploadErrors.value = [];
+  let uploaded = 0;
   try {
-    const target = event.target as HTMLInputElement;
-    const file = target.files?.[0];
-    if (!file) return;
-
-    if (mode.value !== fileMode.file && !allowedTypes.value.includes(file.type)) {
-      $toast.error(mode.value === fileMode.video ? 'Неподдерживаемый видео-формат' : 'Неподдерживаемый формат изображения');
-      return;
-    }
-
-    if (mode.value === fileMode.file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
-      $toast.error('Этот раздел для файлов другого расширения. Используйте вкладку изображений или видео.');
-      return;
-    }
-
-    if (file.size > maxSize) {
-      $toast.error(`Максимальный размер: ${maxSize / 1024 / 1024 / 1024} ГБ`);
-      return;
-    }
-
-    if (file?.size === 0) {
-      $toast.error('Файл пуст. Выберите другой файл');
-      return;
-    }
-
-    if (mode.value === fileMode.image) {
-      const isValid = await checkFileIntegrity(file);
-      if (!isValid) {
-        $toast.error('Изображение некорректно. Выберите другой файл');
-        return;
+    for (const [index, file] of files.entries()) {
+      uploadProgress.value = `Загрузка ${index + 1} из ${files.length}`;
+      try {
+        const result = await uploadOneFile(file);
+        if (!selectedFiles.value.includes(result.Key)) selectedFiles.value.push(result.Key);
+        uploaded++;
+      } catch (error) {
+        uploadErrors.value.push(`${file.name}: ${getErrorMessage(error)}`);
       }
     }
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('prefix', prefix.value);
-
-    const result = await filesStore.addFile(formData);
-    selectedFile.value = result.Key;
-
-    if (mode.value === fileMode.image) $toast('Изображение успешно загружено');
-    else if (mode.value === fileMode.video || mode.value === fileMode.embed) $toast('Видео успешно загружено');
-    else $toast('Файл успешно загружён');
-  } catch (e) {
-    $toast.error(getErrorMessage(e));
+    if (uploaded) $toast(`Загружено: ${uploaded} из ${files.length}`);
+  } finally {
+    isUploading.value = false;
+    uploadProgress.value = '';
+    target.value = '';
   }
 };
 
 const setFile = () => {
-  if (!selectedFile.value && mode.value !== fileMode.embed) return;
+  if (isUploading.value) return;
   if (mode.value === fileMode.embed) {
     emit('insert-code', videoCode.value);
-  } else if (mode.value === fileMode.video) {
-    emit('insert-video', selectedFile.value);
-  } else if (mode.value === fileMode.image) {
-    emit('insert-img', selectedFile.value);
-  } else {
-    emit('insert-file', selectedFile.value);
+    return;
+  }
+  for (const key of selectedFiles.value) {
+    if (mode.value === fileMode.video) emit('insert-video', key);
+    else if (mode.value === fileMode.image) emit('insert-img', key);
+    else emit('insert-file', key);
   }
 };
+
 </script>
 
 <template>
@@ -266,7 +267,7 @@ const setFile = () => {
           :key="key"
           class="file-manager__header-selector"
           :class="{ 'file-manager__header-selector_active': mode === key }"
-          @click="mode = key"
+          @click="!isUploading && (mode = key)"
         >
           <component :is="modeIcons[key]" />
           <span>{{ value }}</span>
@@ -286,16 +287,21 @@ const setFile = () => {
           >
             <component :is="modeIcons[mode]" />
             <span>Загрузить {{ modeNames[mode].toLowerCase() }}</span>
-            <input ref="fileInput" type="file" :accept="acceptAttr" hidden @change="handleFileChange" />
+            <input ref="fileInput" type="file" :accept="acceptAttr" multiple :disabled="isUploading" hidden @change="handleFileChange" />
           </div>
           <div
             v-for="file of filteredFiles"
             :key="file.Key"
             :class="[
               'file-manager__item',
-              { 'file-manager__item_small': mode === fileMode.file, 'file-manager__item_active': file.Key === selectedFile },
+              { 'file-manager__item_small': mode === fileMode.file, 'file-manager__item_active': selectedFiles.includes(file.Key) },
             ]"
+            role="checkbox"
+            tabindex="0"
+            :aria-checked="selectedFiles.includes(file.Key)"
             @click="selectFile(file.Key)"
+            @keydown.enter.prevent="selectFile(file.Key)"
+            @keydown.space.prevent="selectFile(file.Key)"
           >
             <img v-if="mode === fileMode.image" :src="buildAwsObjectUrl(file.Key, AWS_ENDPOINT)" alt="Изображение" />
             <video v-if="mode === fileMode.video" :src="buildAwsObjectUrl(file.Key, AWS_ENDPOINT)"></video>
@@ -334,20 +340,39 @@ const setFile = () => {
         </div>
       </div>
     </template>
-    <button class="file-manager__button" @click="setFile">Вставить</button>
+    <div v-if="isUploading" role="status" class="file-manager__upload-status">{{ uploadProgress }}</div>
+    <ul v-if="uploadErrors.length" role="alert" class="file-manager__upload-errors">
+      <li v-for="error in uploadErrors" :key="error">{{ error }}</li>
+    </ul>
+    <button class="file-manager__button" :disabled="isUploading || (mode !== fileMode.embed && !selectedFiles.length)" @click="setFile">
+      {{ mode === fileMode.embed ? 'Вставить' : `Вставить${selectedFiles.length ? ` (${selectedFiles.length})` : ''}` }}
+    </button>
   </div>
 </template>
 
 <style scoped lang="scss">
 .file-manager {
   width: 586px;
-  height: 436px;
+  min-height: 436px;
+  max-height: 85vh;
+  overflow-y: auto;
   @include flex(cn);
 
   @media (max-width: $screen-mobile-l) {
     width: 100%;
     height: 524px;
   }
+
+  &__upload-status,
+  &__upload-errors {
+    @extend %text-s-regular;
+    padding: 8px 24px;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  &__upload-errors { color: var(--light-text-backgroung-primary); }
+  &__button:disabled { opacity: 0.5; cursor: not-allowed; }
+  &__item:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 
   &__header {
     padding: 0 24px 24px;

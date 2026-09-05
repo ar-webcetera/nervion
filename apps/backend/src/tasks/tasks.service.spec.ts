@@ -1,3 +1,4 @@
+import * as XLSX from 'xlsx';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TasksService } from './tasks.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -201,6 +202,14 @@ describe('TasksService', () => {
 
   it('должен быть определен', () => {
     expect(service).toBeDefined();
+  });
+
+  it('rejects creation in an archived project before saving a task', async () => {
+    mockProjectsRepository.findOne.mockResolvedValueOnce(
+      Object.assign(new Projects(), { id: 10, status: PROJECT_STATUSES.ON_HOLD }),
+    );
+    await expect(service.createTask(Object.assign(new CreateTaskDto(), { title: 'Задача', project_id: 10 }))).rejects.toThrow();
+    expect(mockTasksRepository.save).not.toHaveBeenCalled();
   });
 
   describe('createTask', () => {
@@ -591,6 +600,42 @@ describe('TasksService', () => {
         }),
       );
     });
+  });
+
+  it('exports all description blocks to the XLSX cell', async () => {
+    const qb = createQueryBuilderMock();
+    mockTasksRepository.createQueryBuilder.mockReturnValue(qb);
+    qb.getMany.mockResolvedValue([
+      Object.assign(new Tasks(), {
+        id: 12,
+        title: 'Выгрузка',
+        status: TASK_STATUSES.open,
+        created_at: new Date(),
+        updated_at: new Date(),
+        description: {
+          type: 'doc',
+          content: [
+            { type: 'paragraph', content: [{ type: 'text', text: 'Первый абзац' }] },
+            { type: 'paragraph', content: [{ type: 'text', text: 'Последний абзац' }] },
+            {
+              type: 'bulletList',
+              content: [
+                { type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Пункт списка' }] }] },
+              ],
+            },
+          ],
+        },
+      }),
+    ]);
+    const buffer = await service.exportTasksToExcel(new FindTasksByFilterDto(), {
+      id: 1,
+      role: ROLES.admin,
+    } as AuthenticatedUser);
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const rows = XLSX.utils.sheet_to_json<{ Описание: string }>(workbook.Sheets['Задачи']);
+    expect(rows[0].Описание).toContain('Первый абзац');
+    expect(rows[0].Описание).toContain('Последний абзац');
+    expect(rows[0].Описание).toContain('* Пункт списка');
   });
 
   describe('findTasksByFilter', () => {

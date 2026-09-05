@@ -5,3 +5,5 @@ export * from "./timelogs";
 export * from "./notifications";
 export * from "./mailbox";
 export * from "./billing";
+
+export * from './project-realtime-event.enum';

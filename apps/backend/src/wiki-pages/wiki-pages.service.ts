@@ -1,7 +1,8 @@
+import { PROJECT_STATUSES } from '../common/enums/project-status.enum';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { CreateWikiPageDto } from './dto/create-wiki-page.dto';
 import { UpdateWikiPageDto } from './dto/update-wiki-page.dto';
-import { DeepPartial, FindOptionsWhere, Repository } from 'typeorm';
+import { DeepPartial, FindOptionsWhere, Repository, Not } from 'typeorm';
 import { Projects } from '../projects/entities/project.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { WikiPages } from './entities/wiki-page.entity';
@@ -83,9 +84,9 @@ export class WikiPagesService {
   }
 
   async findByFilter(findWikiPagesByFilterDto: FindWikiPagesByFilterDto) {
-    const where: FindOptionsWhere<WikiPages> = {};
+    const where: FindOptionsWhere<WikiPages> = { project: { status: Not(PROJECT_STATUSES.ON_HOLD) } };
     if (findWikiPagesByFilterDto.project_id) {
-      where.project = { id: findWikiPagesByFilterDto.project_id };
+      where.project = { id: findWikiPagesByFilterDto.project_id, status: Not(PROJECT_STATUSES.ON_HOLD) };
     }
     const pages = await this.wikiPagesRepository.find({
       where,
@@ -95,7 +96,7 @@ export class WikiPagesService {
   }
 
   findOne(id: number) {
-    return this.wikiPagesRepository.findOneBy({ id });
+    return this.wikiPagesRepository.findOne({ where: { id, project: { status: Not(PROJECT_STATUSES.ON_HOLD) } } });
   }
 
   async update(id: number, updateWikiPageDto: UpdateWikiPageDto) {

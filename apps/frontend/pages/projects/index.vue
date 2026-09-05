@@ -15,6 +15,7 @@ const config = useRuntimeConfig();
 
 const { $toast } = useNuxtApp();
 const projectStore = useProjectStore();
+watch(() => projectStore.revision, () => { void projectStore.fetchProjectsWithArchived(); });
 const userStore = useUserStore();
 const isOpenTaskCreateModal = ref(false);
 

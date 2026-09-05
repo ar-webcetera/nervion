@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import BaseModal from '~/components/BaseModal.vue';
 import TaskCode from '~/components/TaskCode.vue';
 import IconDrag from '~/components/Icons/IconDrag.vue';
 import { TaskType, type Task, type Timelog } from '~/types/task';
@@ -11,6 +12,10 @@ import { useProjectStore } from '~/stores/projectStore';
 import IconUnlink from './Icons/IconUnlink.vue';
 
 const updateStatusPending = ref(false);
+const isUnlinkConfirmOpen = ref(false);
+const confirmUnlink = async () => {
+  if (await unlinkTask(props.task.id)) isUnlinkConfirmOpen.value = false;
+};
 const taskStore = useTaskStore();
 const userStore = useUserStore();
 const router = useRouter();
@@ -135,10 +140,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <div :class="['task', task.status]">
+  <div :class="['task', task.status, { task_related: relatedTaskId }]">
     <div class="task__drag task__drag-handle"><IconDrag /></div>
     <div class="task__info">
-      <TaskCode :id="task.id" />
       <div class="task__name-wrapper">
         <div class="task__name" @click="openTaskSidebar(task.id)">
           <span v-if="task.taskType === TaskType.TASK" class="task__type-status task__type-status_task">
@@ -148,6 +152,21 @@ onMounted(() => {
             <IconsIconTypeUserStory />
           </span>
           <span>{{ task.title }}</span>
+        </div>
+        <div class="task__header-actions">
+          <TaskCode :id="task.id" />
+          <button
+            v-if="relatedTaskId"
+            class="task__unlink-button"
+            type="button"
+            title="Отвязать задачу"
+            aria-label="Отвязать задачу"
+            :disabled="deleteLinkLoader[task.id]"
+            @click.stop="isUnlinkConfirmOpen = true"
+          >
+            <span v-if="deleteLinkLoader[task.id]" class="loader loader_small"></span>
+            <IconUnlink v-else />
+          </button>
         </div>
         <div class="task__track">
           <BaseTimetrack
@@ -190,21 +209,39 @@ onMounted(() => {
       </div>
     </div>
 
-    <div v-if="relatedTaskId" :disabled="deleteLinkLoader[task.id]" @click.stop="unlinkTask(task.id)">
-      <div v-if="deleteLinkLoader[task.id]" class="loader-small"></div>
-      <IconUnlink v-else />
-    </div>
-
     <BaseTimetrack
       v-if="showTimetracking"
       :timelog="currentTimelog"
       :bindable="bindableTimelog"
       @bind-task="emit('bind-task', $event)"
     />
+    <Teleport to="body">
+      <BaseModal v-model="isUnlinkConfirmOpen" :dismissible="!deleteLinkLoader[task.id]">
+        <div class="task-unlink-confirm" role="dialog" aria-modal="true" :aria-labelledby="`unlink-title-${task.id}`" @keydown.esc="!deleteLinkLoader[task.id] && (isUnlinkConfirmOpen = false)">
+          <h2 :id="`unlink-title-${task.id}`">Отвязать задачу?</h2>
+          <p>Убрать связь с «{{ task.title }}» (NRV-{{ task.id }})? Сама задача останется.</p>
+          <div class="task-unlink-confirm__actions">
+            <button class="button_secondary" :disabled="deleteLinkLoader[task.id]" @click="isUnlinkConfirmOpen = false">Отмена</button>
+            <button class="button_primary" :disabled="deleteLinkLoader[task.id]" @click="confirmUnlink">{{ deleteLinkLoader[task.id] ? 'Отвязываем…' : 'Отвязать' }}</button>
+          </div>
+        </div>
+      </BaseModal>
+    </Teleport>
   </div>
 </template>
 
 <style scoped lang="scss">
+.task-unlink-confirm {
+  @include flex(cn);
+  gap: 16px;
+  width: min(400px, calc(100vw - 64px));
+  padding: 0 24px 24px;
+  color: var(--light-text-backgroung-primary);
+  h2 { @extend %text-xl-medium; margin: 0; }
+  p { @extend %text-s-regular; margin: 0; overflow-wrap: anywhere; }
+  &__actions { @include flex(rn, j-end); gap: 8px; }
+}
+
 .restart-timer-modal {
   padding: 24px;
   @include flex(cn);
@@ -236,7 +273,8 @@ onMounted(() => {
 
 .task {
   @include flex(rn, a-center);
-  height: 56px;
+  min-height: 56px;
+  height: auto;
   border-radius: 8px;
   background: var(--light-text-backgroung-primary-5);
 
@@ -250,6 +288,20 @@ onMounted(() => {
 
     .task__name {
       text-decoration: line-through;
+    }
+  }
+
+  &_related {
+    align-items: flex-start;
+
+    .task__tags {
+      flex-wrap: wrap;
+      gap: 4px 12px;
+    }
+
+    .task__name span:last-child {
+      -webkit-line-clamp: 2;
+      overflow-wrap: anywhere;
     }
   }
 
@@ -270,6 +322,7 @@ onMounted(() => {
   }
 
   &__info {
+    min-width: 0;
     @include flex(cn);
     gap: 4px;
     padding: 8px;
@@ -317,11 +370,58 @@ onMounted(() => {
     }
   }
 
+  &__header-actions {
+    @include flex(rn, a-center);
+    flex-shrink: 0;
+    gap: 4px;
+  }
+
+  &__unlink-button {
+    @include flex(center);
+    width: 28px;
+    height: 28px;
+    padding: 6px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    &:hover:not(:disabled) {
+      background: var(--light-text-backgroung-primary-10);
+      color: var(--light-text-backgroung-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    &:disabled {
+      cursor: wait;
+      opacity: 0.5;
+    }
+
+    @media (pointer: coarse) {
+      width: 44px;
+      height: 44px;
+    }
+  }
+
   &__name-wrapper {
+    min-width: 0;
+    gap: 8px;
     @include flex(rn, a-center, between);
   }
 
   &__name {
+    min-width: 0;
+    flex: 1;
     cursor: pointer;
     @include flex(rn, a-center);
     gap: 4px;

@@ -1,3 +1,5 @@
+import { WebsocketGateway } from '../websocket/websocket.gateway';
+import { QuickLink } from '../quick-links/entities/quick-link.entity';
 import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AuditActionType, AuditEntityType } from '@tracker/contracts';
@@ -20,6 +22,7 @@ export class ProjectsService {
     @InjectRepository(Timelogs)
     private readonly timelogRepository: Repository<Timelogs>,
     private readonly auditLogsService: AuditLogsService,
+    private readonly websocketGateway: WebsocketGateway,
   ) {}
 
   private applyActiveProjectScope(qb: SelectQueryBuilder<Projects>, includeArchived: boolean): SelectQueryBuilder<Projects> {
@@ -118,6 +121,7 @@ export class ProjectsService {
         summary: `Создан проект "${createdProject.name}"`,
         afterPayload: this.serializeProjectForAudit(createdProject),
       });
+      this.websocketGateway.sendProjectsChanged();
       return createdProject;
     } catch (error) {
       if (error instanceof QueryFailedError && (error as QueryFailedError & { code?: string }).code === '23505') {
@@ -152,6 +156,7 @@ export class ProjectsService {
       beforePayload,
       afterPayload: this.serializeProjectForAudit(updatedProject),
     });
+    this.websocketGateway.sendProjectsChanged();
     return updatedProject;
   }
 
@@ -186,7 +191,11 @@ export class ProjectsService {
       throw new NotFoundException(`Проект с ID ${id} не найден`);
     }
 
-    await this.projectRepository.remove(project);
+    await this.projectRepository.manager.transaction(async (manager) => {
+      await manager.delete(QuickLink, { project_id: id });
+      await manager.remove(project);
+    });
+    this.websocketGateway.sendProjectsChanged();
     void this.auditLogsService.record({
       actionType: AuditActionType.PROJECT_DELETED,
       entityType: AuditEntityType.PROJECT,

@@ -75,16 +75,18 @@ export const useTaskLinks = (taskId: Ref<number | null>) => {
 
   const unlinkTask = async (linkedTaskId: number) => {
     try {
-      if (!taskId.value) return;
+      if (!taskId.value) return false;
       deleteLinkLoader.value[linkedTaskId] = true;
       await taskStore.unlinkTask(linkedTaskId, taskId.value);
 
       if (taskStore.currentTask) {
         taskStore.currentTask.related_tasks = taskStore.currentTask.related_tasks.filter((t) => t.id !== linkedTaskId);
       }
+      return true;
     } catch (e) {
       console.error(e);
       $toast.error(getErrorMessage(e));
+      return false;
     } finally {
       deleteLinkLoader.value[linkedTaskId] = false;
     }

@@ -45,6 +45,7 @@ const notificationStore = useNotificationStore();
 const { $toast } = useNuxtApp();
 
 const props = defineProps<{ currentTaskId: number | null }>();
+provide('taskMentionProjectId', computed(() => taskStore.currentTask?.project_id ?? null));
 const currentTaskIdRef = computed(() => props.currentTaskId);
 const { data: taskActivity, error: activityError, refresh: refreshActivity } = await useTaskActivity(currentTaskIdRef);
 const activityTimeline = computed(() => {

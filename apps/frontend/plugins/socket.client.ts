@@ -1,3 +1,4 @@
+import { ProjectRealtimeEvent } from '@tracker/contracts';
 import { io, type Socket } from 'socket.io-client';
 import { defineNuxtPlugin, useState } from '#app';
 
@@ -16,6 +17,23 @@ export default defineNuxtPlugin(() => {
     auth: {
       user_id: userStore.user?.id,
     },
+  });
+
+  const projectStore = useProjectStore();
+  const taskStore = useTaskStore();
+  let projectRefreshPending = false;
+  webSocket.on(ProjectRealtimeEvent.CHANGED, async () => {
+    if (!userStore.user || projectRefreshPending) return;
+    projectRefreshPending = true;
+    try {
+      await projectStore.fetchProjects();
+      taskStore.tasksPageHydrated = false;
+      projectStore.revision++;
+    } catch (error) {
+      console.error('Не удалось обновить проекты', error);
+    } finally {
+      projectRefreshPending = false;
+    }
   });
 
   const useWebSocket = useState<Socket>('webSocket', () => webSocket);

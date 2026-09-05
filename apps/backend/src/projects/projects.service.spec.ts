@@ -1,3 +1,4 @@
+import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { Repository } from 'typeorm';
 import { PROJECT_STATUSES } from '../common/enums/project-status.enum';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -46,6 +47,7 @@ describe('ProjectsService', () => {
       {} as unknown as Repository<ProjectMembers>,
       {} as unknown as Repository<Timelogs>,
       { record: jest.fn() } as unknown as AuditLogsService,
+      Object.assign(new WebsocketGateway(), { sendProjectsChanged: jest.fn() }),
     );
   });
 

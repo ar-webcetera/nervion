@@ -266,6 +266,12 @@ const onDragEnd = async () => {
   draggedIndex.value = targetIndex.value = null;
 };
 
+watch(() => projectStore.revision, () => {
+  if (viewType.value === ViewType.LIST) void fetchTasks();
+  if (viewType.value === ViewType.KANBAN) void fetchKanban();
+  if (viewType.value === ViewType.WEEKLY) void fetchWeekly();
+});
+
 const setViewType = (type: ViewType) => {
   taskStore.saveViewType(type);
   if (type === ViewType.KANBAN) {
@@ -351,16 +357,14 @@ const filterChips = computed((): FilterChip[] => {
   if (Array.isArray(taskStore.filter.projects)) {
     taskStore.filter.projects.forEach((projectId) => {
       const project = projectStore.projects.find((p) => p.id === projectId);
-      if (project) {
-        const chipId = `project-${projectId}`;
-        chips.push({
-          id: chipId,
-          type: FilterType.PROJECT,
-          label: project.name,
-          value: projectId,
-          isNegative: taskStore.filter.negativeFilters?.[chipId] || false,
-        });
-      }
+      const chipId = `project-${projectId}`;
+      chips.push({
+        id: chipId,
+        type: FilterType.PROJECT,
+        label: project?.name ?? `Недоступный проект #${projectId}`,
+        value: projectId,
+        isNegative: taskStore.filter.negativeFilters?.[chipId] || false,
+      });
     });
   }
 

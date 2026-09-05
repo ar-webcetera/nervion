@@ -1,3 +1,4 @@
+import { WebsocketModule } from '../websocket/websocket.module';
 import { Module } from '@nestjs/common';
 import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
@@ -9,7 +10,7 @@ import { Timelogs } from '../timelogs/entities/timelog.entity';
 import { Tasks } from '../tasks/entities/task.entity';
 
 @Module({
-  imports: [HttpModule, TypeOrmModule.forFeature([Projects, Users, ProjectMembers, Timelogs, Tasks])],
+  imports: [WebsocketModule, HttpModule, TypeOrmModule.forFeature([Projects, Users, ProjectMembers, Timelogs, Tasks])],
   controllers: [ProjectsController],
   providers: [ProjectsService],
 })

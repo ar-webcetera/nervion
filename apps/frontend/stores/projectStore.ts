@@ -6,7 +6,9 @@ import { PROJECT_STATUSES } from '~/constants/project.constants';
 
 export const useProjectStore = defineStore('project', () => {
   const config = useRuntimeConfig();
+  const requestHeaders = useRequestHeaders(['cookie']);
   const projects = ref<Project[]>([]);
+  const revision = ref(0);
   const projectsWithArchived = ref<Project[]>([]);
 
   interface CreateProjectPayload {
@@ -46,7 +48,7 @@ export const useProjectStore = defineStore('project', () => {
   };
 
   const fetchProjectList = async (endpoint: string): Promise<Project[]> => {
-    const cookies = useRequestHeaders(['cookie']);
+    const cookies = requestHeaders;
     const response = await $fetch<Project[]>(endpoint, {
       baseURL: config.public.API_URL,
       credentials: 'include',
@@ -71,6 +73,7 @@ export const useProjectStore = defineStore('project', () => {
 
   const fetchProjectsWithArchived = async () => {
     projectsWithArchived.value = await fetchProjectList('/api/projects/with-archived');
+    projects.value = projectsWithArchived.value.filter((project) => project.status !== PROJECT_STATUSES.on_hold);
   };
 
   const createProject = async (projectData: CreateProjectPayload) => {
@@ -100,7 +103,8 @@ export const useProjectStore = defineStore('project', () => {
     });
 
     if (updatedProject) {
-      syncActiveProject(updatedProject);
+      useTaskStore().tasksPageHydrated = false;
+      syncActiveProject({ ...projectsWithArchived.value.find((project) => project.id === projectId), ...updatedProject });
       upsertProject(projectsWithArchived, updatedProject);
     }
     return updatedProject;
@@ -115,11 +119,13 @@ export const useProjectStore = defineStore('project', () => {
       headers,
     });
 
+    useTaskStore().tasksPageHydrated = false;
     removeProjectFromList(projects, projectId);
     removeProjectFromList(projectsWithArchived, projectId);
   };
 
   return {
+    revision,
     projects,
     projectsWithArchived,
     fetchProjects,

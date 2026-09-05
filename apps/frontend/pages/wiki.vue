@@ -46,9 +46,9 @@ const projectId = computed(() => {
   const pId = route.query?.project_id;
   if (pId && !Array.isArray(pId)) {
     const num = Number(pId);
-    if (!Number.isNaN(num)) return num;
+    return !Number.isNaN(num) && projectStore.projects.some((project) => project.id === num) ? num : null;
   }
-  return wikiStore.selectedProjectId || null;
+  return projectStore.projects.some((project) => project.id === wikiStore.selectedProjectId) ? wikiStore.selectedProjectId : null;
 });
 
 const pageId = computed(() => {

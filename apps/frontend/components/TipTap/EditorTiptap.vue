@@ -52,6 +52,8 @@ import {
 } from '~/utils/tiptap/markdown';
 
 const config = useRuntimeConfig();
+const mentionProjectId = inject<ComputedRef<number | null> | null>('taskMentionProjectId', null);
+const mentionProjectStore = useProjectStore();
 
 const lowlight = createLowlight(common);
 lowlight.register({ javascript, typescript });
@@ -336,7 +338,16 @@ const tiptapExtensions = [
     HTMLAttributes: {
       class: 'mention',
     },
-    suggestion,
+    suggestion: {
+      ...suggestion,
+      items: ({ query }: { query: string }) => {
+        const candidates = suggestion.items({ query });
+        if (!mentionProjectId) return candidates;
+        const members = mentionProjectStore.projects.find((project) => project.id === mentionProjectId.value)?.members ?? [];
+        const memberIds = new Set(members.map((member) => member.id));
+        return candidates.filter((user) => memberIds.has(user.id));
+      },
+    },
   }),
   Emoji.configure({
     emojis: gitHubEmojis,
