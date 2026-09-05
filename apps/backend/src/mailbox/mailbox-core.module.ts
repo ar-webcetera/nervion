@@ -9,6 +9,7 @@ import { MailFolders } from './entities/mail-folder.entity';
 import { MailSpamRules } from './entities/mail-spam-rule.entity';
 import { MailMessages } from './entities/mail-message.entity';
 import { MailThreads } from './entities/mail-thread.entity';
+import { MailDeliveryMonitorService } from './mail-delivery-monitor.service';
 import { MailDeliveryService } from './mail-delivery.service';
 import { MailboxService } from './mailbox.service';
 import { MailSpamService } from './mail-spam.service';
@@ -33,7 +34,14 @@ import { Users } from '../users/entities/users.entity';
       Users,
     ]),
   ],
-  providers: [MailboxService, MailDeliveryService, MailSpamService, PostboxService, SmtpServerService],
+  providers: [
+    MailDeliveryMonitorService,
+    MailboxService,
+    MailDeliveryService,
+    MailSpamService,
+    PostboxService,
+    SmtpServerService,
+  ],
   exports: [MailboxService, MailDeliveryService, PostboxService, SmtpServerService],
 })
 export class MailboxCoreModule {}
