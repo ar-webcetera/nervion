@@ -514,6 +514,12 @@ const dragend = () => {
     color: var(--light-text-backgroung-primary-50);
 
     @extend %text-xs-regular;
+
+    @media (max-width: $screen-tablet) and (pointer: coarse) {
+      :deep(.task-code) {
+        min-height: 32px;
+      }
+    }
   }
 
   &__column {
@@ -807,6 +813,10 @@ const dragend = () => {
     &:hover {
       background: var(--light-text-backgroung-primary-10);
       backdrop-filter: blur(12px);
+    }
+
+    @media (max-width: $screen-tablet) {
+      padding-top: 4px;
     }
 
     &_closed {

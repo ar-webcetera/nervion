@@ -45,7 +45,10 @@ const notificationStore = useNotificationStore();
 const { $toast } = useNuxtApp();
 
 const props = defineProps<{ currentTaskId: number | null }>();
-provide('taskMentionProjectId', computed(() => taskStore.currentTask?.project_id ?? null));
+provide(
+  'taskMentionProjectId',
+  computed(() => taskStore.currentTask?.project_id ?? null),
+);
 const currentTaskIdRef = computed(() => props.currentTaskId);
 const { data: taskActivity, error: activityError, refresh: refreshActivity } = await useTaskActivity(currentTaskIdRef);
 const activityTimeline = computed(() => {
@@ -493,7 +496,10 @@ const submitComment = async () => {
             <details v-if="taskStore.currentTask?.related_tasks.length" class="related-tasks__task-list">
               <summary>
                 <span>Связанные задачи</span>
-                <span class="related-tasks__count" :aria-label="`Количество связанных задач: ${taskStore.currentTask.related_tasks.length}`">
+                <span
+                  class="related-tasks__count"
+                  :aria-label="`Количество связанных задач: ${taskStore.currentTask.related_tasks.length}`"
+                >
                   {{ taskStore.currentTask.related_tasks.length }}
                 </span>
                 <IconArrowDown />
@@ -992,7 +998,9 @@ input {
 .fix-timelog-modal {
   @include flex(cn, center);
   gap: 24px;
-  width: 440px;
+  width: min(440px, calc(100vw - 34px));
+  max-width: 100%;
+  min-width: 0;
 
   &__header {
     @include flex(rn, a-start);
@@ -1033,6 +1041,8 @@ input {
   }
 
   &__right {
+    min-width: 0;
+    overflow-wrap: anywhere;
     @include flex(cn, j-center);
     gap: 4px;
 
@@ -1058,6 +1068,8 @@ input {
 
   textarea {
     height: 192px;
+    max-width: 100%;
+    resize: vertical;
     width: 100%;
     padding: 16px;
     border-radius: 8px;
@@ -1081,6 +1093,26 @@ input {
   &_pending {
     & > div {
       filter: blur(2px);
+    }
+  }
+  @media (max-width: $screen-mobile-l) {
+    gap: 16px;
+
+    &__header,
+    &__textarea,
+    &__time {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+
+    &__icon {
+      display: none;
+    }
+
+    button {
+      margin-left: 16px;
+      margin-right: 16px;
+      min-height: 44px;
     }
   }
 }

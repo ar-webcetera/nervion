@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { format } from 'date-fns';
+import { X } from '@lucide/vue';
 import { ru } from 'date-fns/locale';
 import { ref, watch } from 'vue';
 import BaseModal from '~/components/BaseModal.vue';
@@ -110,7 +111,12 @@ onUnmounted(() => {
   <teleport to="#teleports">
     <div v-show="isOpenReportTimeTrack" class="task-time-track-dropdown__wrapper">
       <div v-click-outside="closeTaskTimeTrack" class="task-time-track-dropdown">
-        <div class="task-time-track-dropdown__header">Отчет по затраченному времени</div>
+        <div class="task-time-track-dropdown__header">
+          <h2>Отчёт по затраченному времени</h2>
+          <button type="button" class="task-time-track-dropdown__close" aria-label="Закрыть отчёт" @click="closeTaskTimeTrack">
+            <X :size="20" aria-hidden="true" />
+          </button>
+        </div>
         <div class="task-time-track-dropdown__table-wrapper">
           <div class="task-time-track-dropdown__table">
             <div class="task-time-track-dropdown__table-header">
@@ -192,7 +198,8 @@ onUnmounted(() => {
   padding: 0 24px;
   @include flex(cn);
   gap: 48px;
-  width: 380px;
+  width: min(380px, calc(100vw - 34px));
+  max-width: 100%;
 
   &__header {
     @include flex(cn);
@@ -239,6 +246,8 @@ onUnmounted(() => {
   height: auto;
   width: 100%;
   max-width: 1248px;
+  min-width: 0;
+  max-height: calc(100dvh - 48px);
 
   @media (max-width: $screen-mobile-l) {
     border-radius: 0;
@@ -264,10 +273,36 @@ onUnmounted(() => {
   }
 
   &__header {
+    @include flex(rn, a-center, between);
+    gap: 12px;
+    flex-shrink: 0;
+    h2 {
+      margin: 0;
+      @extend %text-l-medium;
+    }
     padding: 16px 24px;
     @extend %text-l-medium;
     color: var(--light-text-backgroung-primary);
     border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+  }
+
+  &__close {
+    @include flex(center);
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    color: var(--light-text-backgroung-primary);
+    background: transparent;
+    cursor: pointer;
+    &:hover {
+      background: var(--light-text-backgroung-primary-10);
+    }
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+    }
   }
 
   &__table {
@@ -276,14 +311,14 @@ onUnmounted(() => {
     @include flex(cn);
 
     @media (max-width: $screen-mobile-l) {
-      width: max-content;
-      height: max-content;
+      width: 100%;
       border-radius: 0;
     }
   }
 
   &__table-wrapper {
-    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
     padding: 16px 0;
 
     @media (max-width: $screen-mobile-l) {
@@ -329,6 +364,14 @@ onUnmounted(() => {
     width: 24px;
     margin-left: 16px;
   }
+  @media (max-width: $screen-tablet) {
+    &__header {
+      padding: 12px 16px;
+    }
+    &__table-header {
+      display: none;
+    }
+  }
 }
 
 .task-time-track-dropdown-item {
@@ -369,6 +412,42 @@ onUnmounted(() => {
     svg {
       width: 24px;
       height: 24px;
+    }
+  }
+  @media (max-width: $screen-tablet) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 8px 12px;
+    padding: 16px;
+
+    &__date,
+    &__time,
+    &__user,
+    &__comment {
+      width: auto;
+      min-width: 0;
+      margin: 0;
+      grid-column: 1;
+      overflow-wrap: anywhere;
+    }
+    &__date {
+      grid-row: 1;
+      color: var(--light-text-backgroung-primary-50);
+    }
+    &__time::before {
+      content: 'Время: ';
+      color: var(--light-text-backgroung-primary-50);
+    }
+    &__comment {
+      white-space: pre-wrap;
+    }
+    &__delete {
+      grid-column: 2;
+      grid-row: 1 / 3;
+      width: 44px;
+      height: 44px;
+      align-items: center;
+      justify-content: center;
     }
   }
 }

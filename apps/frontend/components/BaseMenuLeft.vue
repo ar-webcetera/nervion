@@ -394,28 +394,29 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
       <NuxtLink
         :to="{ name: PAGE_NAMES.home }"
         class="base-menu-left__item base-menu-left__item_mob"
-        active-class="base-menu-left__item_active base-menu-left__item_mob-active"
-        :data-tooltip="'Задачи'"
+        active-class="base-menu-left__item_active"
+        aria-label="Задачи"
+        title="Задачи"
       >
         <IconsIconAllTasks />
-        <span>Задачи</span>
       </NuxtLink>
       <NuxtLink
-        :data-tooltip="'Чаты'"
+        aria-label="Чаты"
+        title="Чаты"
         :to="{ name: PAGE_NAMES.CHAT }"
         class="base-menu-left__item base-menu-left__item_mob chat-icon-wrapper"
-        active-class="base-menu-left__item_active base-menu-left__item_mob-active"
+        active-class="base-menu-left__item_active"
       >
         <div v-if="totalUnreadCount > 0" class="chat-unread-badge">{{ totalUnreadCount }}</div>
         <IconsIconChat />
-        <span>Чаты</span>
       </NuxtLink>
       <NuxtLink
         v-if="(userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee) && isMenuVisible('mail')"
-        :data-tooltip="'Почта'"
+        aria-label="Почта"
+        title="Почта"
         :to="{ name: PAGE_NAMES.MAIL }"
         class="base-menu-left__item base-menu-left__item_mob chat-icon-wrapper"
-        active-class="base-menu-left__item_active base-menu-left__item_mob-active"
+        active-class="base-menu-left__item_active"
       >
         <div v-if="mailInboxUnreadCount > 0" class="chat-unread-badge">{{ mailInboxUnreadCount }}</div>
         <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -431,7 +432,6 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
           />
           <path d="M1.5 4L8.5 9L15.5 4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
-        <span>Почта</span>
       </NuxtLink>
     </div>
   </div>
@@ -725,25 +725,18 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
     }
 
     &_mob {
-      width: fit-content;
-      height: auto;
-      padding: 12px 24px;
-      gap: 4px;
-      transition: all 0.2s ease;
+      width: 48px;
+      height: 48px;
+      flex: 0 0 48px;
+      padding: 12px;
+
+      &:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+      }
 
       svg {
         stroke-opacity: 1;
-      }
-
-      span {
-        @include text-s-regular;
-        display: none;
-      }
-    }
-
-    &_mob-active {
-      span {
-        display: block;
       }
     }
   }

@@ -362,7 +362,9 @@ onBeforeUnmount(() => {
 .end-modal {
   @include flex(cn, center);
   gap: 24px;
-  width: 440px;
+  width: min(440px, calc(100vw - 34px));
+  max-width: 100%;
+  min-width: 0;
 
   &__header {
     @include flex(rn, a-center);
@@ -384,6 +386,8 @@ onBeforeUnmount(() => {
   }
 
   &__right {
+    min-width: 0;
+    overflow-wrap: anywhere;
     @include flex(cn, j-center);
     gap: 4px;
 
@@ -409,6 +413,8 @@ onBeforeUnmount(() => {
 
   textarea {
     height: 192px;
+    max-width: 100%;
+    resize: vertical;
     width: 100%;
     padding: 16px;
     border-radius: 8px;
@@ -432,6 +438,26 @@ onBeforeUnmount(() => {
   &_pending {
     & > div {
       filter: blur(2px);
+    }
+  }
+  @media (max-width: $screen-mobile-l) {
+    gap: 16px;
+
+    &__header,
+    &__textarea,
+    &__time {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+
+    &__icon {
+      display: none;
+    }
+
+    button {
+      margin-left: 16px;
+      margin-right: 16px;
+      min-height: 44px;
     }
   }
 }

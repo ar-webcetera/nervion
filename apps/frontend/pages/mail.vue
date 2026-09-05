@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
+import { ArrowLeft } from '@lucide/vue';
 import { MailSpamRuleScope, MailSystemFolder, type MailFolder, type MailStatsResponse } from '@tracker/contracts';
 import BaseModal from '~/components/BaseModal.vue';
 import MailActionIcon from '~/components/Mail/MailActionIcon.vue';
@@ -1554,12 +1555,18 @@ watch(
       </template>
       <template v-else-if="composeMode">
         <div class="mail-page__detail-header">
-          <button class="mail-page__back-mobile" title="Назад" @click="closeComposer">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-          <h2 class="mail-page__detail-subject">Новое письмо</h2>
+          <div class="mail-page__detail-heading">
+            <button
+              class="mail-page__back-mobile"
+              type="button"
+              title="К списку писем"
+              aria-label="К списку писем"
+              @click="closeComposer"
+            >
+              <ArrowLeft :size="20" aria-hidden="true" />
+            </button>
+            <h2 class="mail-page__detail-subject">Новое письмо</h2>
+          </div>
           <button class="mail-page__icon-btn mail-page__icon-btn_desktop" @click="closeComposer">Закрыть</button>
         </div>
         <div class="mail-page__compose">
@@ -1672,14 +1679,20 @@ watch(
 
       <template v-else>
         <div class="mail-page__detail-header">
-          <button class="mail-page__back-mobile" title="Назад" @click="backToList">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-          <div class="mail-page__detail-meta">
-            <h2 class="mail-page__detail-subject">{{ currentThread?.subject }}</h2>
-            <span class="mail-page__detail-account">{{ accountLabel(currentThread?.account_id ?? 0) }}</span>
+          <div class="mail-page__detail-heading">
+            <button
+              class="mail-page__back-mobile"
+              type="button"
+              title="К списку писем"
+              aria-label="К списку писем"
+              @click="backToList"
+            >
+              <ArrowLeft :size="20" aria-hidden="true" />
+            </button>
+            <div class="mail-page__detail-meta">
+              <h2 class="mail-page__detail-subject">{{ currentThread?.subject }}</h2>
+              <span class="mail-page__detail-account">{{ accountLabel(currentThread?.account_id ?? 0) }}</span>
+            </div>
           </div>
           <div class="mail-page__detail-actions">
             <button
@@ -2038,13 +2051,23 @@ watch(
   &__back-mobile {
     display: none;
     flex-shrink: 0;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     border-radius: 8px;
     background: transparent;
     color: var(--light-text-backgroung-primary);
-    font-size: 26px;
-    line-height: 1;
+    padding: 0;
+    border: 0;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--light-text-backgroung-primary-10);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
 
     @media (max-width: $screen-tablet) {
       @include flex(center);
@@ -2798,15 +2821,17 @@ watch(
     }
   }
 
+  &__detail-heading {
+    @include flex(rn, a-start);
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+  }
+
   &__detail-meta {
     @include flex(cn);
     gap: 4px;
     min-width: 0;
-
-    @media (max-width: $screen-tablet) {
-      order: 3;
-      flex-basis: 100%;
-    }
   }
 
   &__detail-actions {
@@ -2815,7 +2840,6 @@ watch(
     flex-shrink: 0;
 
     @media (max-width: $screen-tablet) {
-      order: 4;
       flex-basis: 100%;
       flex-wrap: wrap;
       margin-left: 0;
@@ -2824,6 +2848,7 @@ watch(
 
   &__detail-subject {
     margin: 0;
+    overflow-wrap: anywhere;
     @extend %h1;
 
     @media (max-width: $screen-tablet) {

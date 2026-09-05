@@ -72,13 +72,7 @@ defineExpose({
     <div v-if="isOpen" class="base-modal__overlay" @click.self="requestClose">
       <div class="base-modal">
         <div class="base-modal__header">
-          <button
-            v-if="dismissible"
-            class="base-modal__header-close"
-            type="button"
-            aria-label="Закрыть"
-            @click="requestClose"
-          >
+          <button v-if="dismissible" class="base-modal__header-close" type="button" aria-label="Закрыть" @click="requestClose">
             <IconClose />
           </button>
         </div>
@@ -96,6 +90,8 @@ defineExpose({
   gap: 16px;
   position: relative;
   height: fit-content;
+  max-height: calc(100dvh - 32px);
+  max-width: calc(100vw - 32px);
   width: fit-content;
   top: 0;
   left: 50%;
@@ -118,6 +114,7 @@ defineExpose({
   }
 
   &__header {
+    flex-shrink: 0;
     @include flex(rn, center);
   }
 
@@ -132,6 +129,9 @@ defineExpose({
 
   &__content {
     width: 460px;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     max-width: 100%;
     padding: 24px 0;
     border-radius: 8px;
@@ -151,10 +151,14 @@ defineExpose({
   opacity: 0;
 }
 .modal-enter-active .base-modal {
-  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s ease;
+  transition:
+    transform 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.24s ease;
 }
 .modal-leave-active .base-modal {
-  transition: transform 0.16s ease, opacity 0.16s ease;
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease;
 }
 .modal-enter-from .base-modal,
 .modal-leave-to .base-modal {
