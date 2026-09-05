@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ChartNoAxesCombined, ClipboardCheck, FileSpreadsheet, Download, Save } from '@lucide/vue';
+import { ReportSection } from '~/enums/report.enums';
 import { format, isBefore } from 'date-fns';
 import type { Project } from '~/types/project';
 import type { SelectOption } from '~/types/select';
@@ -13,8 +15,9 @@ const reportStore = useReportStore();
 const userStore = useUserStore();
 const projectStore = useProjectStore();
 
-const startDate = ref(null);
-const endDate = ref(null);
+const activeSection = ref(ReportSection.OVERVIEW);
+const startDate = ref<Date | null>(null);
+const endDate = ref<Date | null>(null);
 const pending = ref(false);
 const employees = ref<Employee[]>([]);
 const selectedProject = ref<number | null>(null);
@@ -43,6 +46,7 @@ const getPayload = () => ({
 });
 
 const loadReport = async () => {
+  if (isDisabled.value) return;
   try {
     pending.value = true;
     reportRows.value = await reportStore.fetchPreview(getPayload());
@@ -55,6 +59,7 @@ const loadReport = async () => {
 };
 
 const unloadReport = async () => {
+  if (isDisabled.value) return;
   try {
     pending.value = true;
     await reportStore.unloadReport(getPayload());
@@ -65,6 +70,11 @@ const unloadReport = async () => {
     pending.value = false;
   }
 };
+
+await useAsyncData('report-options', async () => {
+  await Promise.all([userStore.fetchUsers(), projectStore.fetchProjects()]);
+  return true;
+});
 
 if (userStore.user?.role === ROLES.admin) {
   employees.value.push({
@@ -84,6 +94,8 @@ userStore.users.map((user) => {
     patronymic: user.patronymic || '',
   });
 });
+
+employees.value = Array.from(new Map(employees.value.map((employee) => [employee.user_id, employee])).values());
 
 const projectOptions = computed(() => {
   if (projectStore.projects.length) {
@@ -110,7 +122,13 @@ const hasPriceEmployee = computed(() => {
   return employees.value.some((employee) => employee.cost! > 0);
 });
 
-const isDisabled = computed(() => hasEmptyDates.value || !hasPriceEmployee.value);
+const isDisabled = computed(
+  () =>
+    hasEmptyDates.value ||
+    !hasPriceEmployee.value ||
+    pending.value ||
+    Boolean(startDate.value && endDate.value && endDate.value < startDate.value),
+);
 
 const executorOptions = computed<SelectOption[]>(() =>
   employees.value.map((e) => ({
@@ -150,21 +168,42 @@ await useAsyncData('report-financial-data', async () => {
 });
 targetInput.value = reportStore.dashboard?.target ?? 0;
 
+const targetPending = ref(false);
 const saveTarget = async () => {
+  if (targetPending.value || !Number.isFinite(targetInput.value) || targetInput.value < 0) return;
+  targetPending.value = true;
   try {
     const now = new Date();
     await reportStore.saveTarget(now.getFullYear(), now.getMonth() + 1, Number(targetInput.value));
     $toast.success('План месяца сохранён');
   } catch (e) {
     $toast.error(getErrorMessage(e));
+  } finally {
+    targetPending.value = false;
   }
 };
 
+const setBillingDate = (item: BillingQueueItem, value: Date | string | number | Date[] | null) => {
+  if (value === null || Array.isArray(value)) return;
+  item.recognizedAt =
+    typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : format(new Date(value), 'yyyy-MM-dd');
+};
+
+const billingSavePending = ref(false);
 const reviewBillingItem = async (item: BillingQueueItem, status: BillingReviewStatus) => {
+  if (billingSavePending.value) return;
+  if (!item.recognizedAt) {
+    $toast.error('Укажите дату учёта');
+    return;
+  }
+  billingSavePending.value = true;
   try {
     await reportStore.reviewItem(item, status);
+    $toast.success('Начисление сохранено');
   } catch (e) {
     $toast.error(getErrorMessage(e));
+  } finally {
+    billingSavePending.value = false;
   }
 };
 
@@ -201,15 +240,26 @@ definePageMeta({
 
 <template>
   <div class="report__content">
-    <div class="report__header">
-      <div class="report__title">Отчеты</div>
-    </div>
-    <hr />
-    <div v-if="pending" class="loader__container">
-      <div class="loader"></div>
-    </div>
-    <template v-else>
-      <section v-if="reportStore.dashboard" class="finance">
+    <header class="report__header">
+      <div>
+        <h1 class="report__title">Отчёты</h1>
+        <p class="report__subtitle">Доход, начисления и отчёты по работе команды</p>
+      </div>
+    </header>
+    <nav class="report__navigation" aria-label="Разделы отчётов">
+      <button :aria-pressed="activeSection === ReportSection.OVERVIEW" @click="activeSection = ReportSection.OVERVIEW">
+        <ChartNoAxesCombined :size="18" />Обзор
+      </button>
+      <button :aria-pressed="activeSection === ReportSection.BILLING" @click="activeSection = ReportSection.BILLING">
+        <ClipboardCheck :size="18" />Начисления
+        <span v-if="reportStore.pendingTotal" class="report__badge">{{ reportStore.pendingTotal }}</span>
+      </button>
+      <button :aria-pressed="activeSection === ReportSection.EXPORT" @click="activeSection = ReportSection.EXPORT">
+        <FileSpreadsheet :size="18" />Выгрузка
+      </button>
+    </nav>
+    <section v-if="reportStore.dashboard" v-show="activeSection !== ReportSection.EXPORT" class="finance">
+      <div v-show="activeSection === ReportSection.OVERVIEW" class="finance__overview">
         <div class="finance__summary">
           <article v-for="item in reportStore.dashboard.summary" :key="item.key" class="finance__metric">
             <span>{{ item.label }}</span>
@@ -221,8 +271,8 @@ definePageMeta({
           <div class="finance__forecast-main">
             <div class="finance__section-head">
               <div>
-                <h2>Потенциал на {{ currentMonthLabel }}</h2>
-                <p>Подтверждённый доход, записи на проверке и открытые фиксированные задачи</p>
+                <h2>Прогноз на {{ currentMonthLabel }}</h2>
+                <p>Подтверждённые начисления и ожидаемый доход за месяц</p>
               </div>
               <strong>{{ money(reportStore.dashboard.potential) }}</strong>
             </div>
@@ -255,7 +305,12 @@ definePageMeta({
             </div>
             <div class="finance__target-input">
               <input v-model.number="targetInput" type="number" min="0" step="1000" aria-label="План дохода на месяц" />
-              <button @click="saveTarget">Сохранить</button>
+              <button
+                :disabled="targetPending || targetInput < 0 || targetInput === reportStore.dashboard.target"
+                @click="saveTarget"
+              >
+                {{ targetPending ? 'Сохраняем…' : 'Сохранить' }}
+              </button>
             </div>
             <div class="finance__target-scale">
               <span class="finance__target-fact" :style="{ width: `${progress}%` }"></span>
@@ -288,82 +343,139 @@ definePageMeta({
             <p v-else class="finance__empty">Данных по проектам пока нет</p>
           </div>
         </div>
-
-        <div class="finance__billing">
-          <div class="finance__section-head">
-            <div>
-              <h2>Начисления</h2>
-              <p>Проверьте ставку, сумму и дату учёта</p>
-            </div>
-            <div class="finance__tabs">
-              <button :class="{ finance__tab_active: activeBillingTab === 'pending' }" @click="activeBillingTab = 'pending'">
-                Требуют проверки <span>{{ reportStore.pendingTotal }}</span>
-              </button>
-              <button :class="{ finance__tab_active: activeBillingTab === 'reviewed' }" @click="activeBillingTab = 'reviewed'">
-                Проверенные
-              </button>
-            </div>
+      </div>
+      <div v-show="activeSection === ReportSection.BILLING" class="finance__billing">
+        <div class="finance__section-head">
+          <div>
+            <h2>Начисления</h2>
+            <p>Сохраните правки отдельно или подтвердите запись, чтобы включить её в доход</p>
           </div>
-          <div v-if="billingItems.length" class="finance__billing-list">
-            <article v-for="item in billingItems" :key="`${item.sourceType}-${item.id}`" class="finance__billing-row">
-              <div class="finance__billing-source">
-                <span>{{ item.sourceType === RevenueSourceType.TIMELOG ? 'Таймтрек' : 'Фиксированная задача' }}</span>
-                <strong>{{ item.task }}</strong>
-                <small
-                  >{{ item.project }}<template v-if="item.executor"> · {{ item.executor }}</template></small
-                >
-                <button
-                  v-if="hasBillingSummary(item)"
-                  type="button"
-                  class="finance__billing-summary-btn"
-                  @click="openBillingSummary(item)"
-                >
-                  Описание
-                </button>
-              </div>
-              <div v-if="item.sourceType === RevenueSourceType.TIMELOG" class="finance__billing-field">
-                <label>Время</label><span>{{ formatHours(item.seconds) }}</span>
-              </div>
-              <div class="finance__billing-field">
-                <label>{{ item.sourceType === RevenueSourceType.TIMELOG ? 'Ставка, ₽/ч' : 'Сумма, ₽' }}</label>
-                <input v-if="item.sourceType === RevenueSourceType.TIMELOG" v-model.number="item.rate" type="number" min="0" />
-                <input v-else v-model.number="item.amount" type="number" min="0" />
-              </div>
-              <div class="finance__billing-field"><label>Дата учёта</label><input v-model="item.recognizedAt" type="date" /></div>
-              <strong class="finance__billing-amount">{{
-                money(
-                  item.sourceType === RevenueSourceType.TIMELOG ? ((item.seconds ?? 0) / 3600) * (item.rate ?? 0) : item.amount,
-                )
-              }}</strong>
-              <div v-if="activeBillingTab === 'pending'" class="finance__billing-actions">
-                <button class="finance__reject" @click="reviewBillingItem(item, BillingReviewStatus.REJECTED)">
-                  Не учитывать
-                </button>
-                <button @click="reviewBillingItem(item, BillingReviewStatus.APPROVED)">Подтвердить</button>
-              </div>
-              <span
+          <div class="finance__tabs">
+            <button :class="{ finance__tab_active: activeBillingTab === 'pending' }" @click="activeBillingTab = 'pending'">
+              Требуют проверки <span>{{ reportStore.pendingTotal }}</span>
+            </button>
+            <button :class="{ finance__tab_active: activeBillingTab === 'reviewed' }" @click="activeBillingTab = 'reviewed'">
+              Проверенные
+            </button>
+          </div>
+        </div>
+        <div v-if="billingItems.length" class="finance__billing-list">
+          <article v-for="item in billingItems" :key="`${item.sourceType}-${item.id}`" class="finance__billing-row">
+            <div class="finance__billing-source">
+              <span>{{ item.sourceType === RevenueSourceType.TIMELOG ? 'Таймтрек' : 'Фиксированная задача' }}</span>
+              <strong>{{ item.task }}</strong>
+              <small
+                >{{ item.project }}<template v-if="item.executor"> · {{ item.executor }}</template></small
+              >
+              <button
+                v-if="hasBillingSummary(item)"
+                type="button"
+                class="finance__billing-summary-btn"
+                @click="openBillingSummary(item)"
+              >
+                Описание
+              </button>
+            </div>
+            <div class="finance__billing-field">
+              <label>Время</label
+              ><span>{{ item.sourceType === RevenueSourceType.TIMELOG ? formatHours(item.seconds) : '—' }}</span>
+            </div>
+            <div class="finance__billing-field">
+              <label>{{ item.sourceType === RevenueSourceType.TIMELOG ? 'Ставка, ₽/ч' : 'Сумма, ₽' }}</label>
+              <input
+                v-if="item.sourceType === RevenueSourceType.TIMELOG"
+                v-model.number="item.rate"
+                :aria-label="`Ставка: ${item.task}`"
+                type="number"
+                min="0"
+                :disabled="billingSavePending"
+              />
+              <input
                 v-else
+                v-model.number="item.amount"
+                :aria-label="`Сумма: ${item.task}`"
+                type="number"
+                min="0"
+                :disabled="billingSavePending"
+              />
+            </div>
+            <div class="finance__billing-field">
+              <label>Дата учёта</label
+              ><BaseDatePicker
+                :model-value="item.recognizedAt"
+                :type="DatePickerType.filter"
+                format-date="dd.MM.yyyy"
+                placeholder="Выберите дату"
+                :disabled="billingSavePending"
+                @update:model-value="setBillingDate(item, $event)"
+              />
+            </div>
+            <strong class="finance__billing-amount">{{
+              money(item.sourceType === RevenueSourceType.TIMELOG ? ((item.seconds ?? 0) / 3600) * (item.rate ?? 0) : item.amount)
+            }}</strong>
+            <div class="finance__billing-actions">
+              <button
+                class="report__button-secondary"
+                :disabled="billingSavePending"
+                @click="reviewBillingItem(item, item.status)"
+              >
+                <Save :size="14" />Сохранить
+              </button>
+              <button
+                v-if="activeBillingTab === 'pending'"
+                class="finance__reject"
+                :disabled="billingSavePending"
+                @click="reviewBillingItem(item, BillingReviewStatus.REJECTED)"
+              >
+                Не учитывать
+              </button>
+              <button
+                v-if="activeBillingTab === 'pending'"
+                :disabled="billingSavePending"
+                @click="reviewBillingItem(item, BillingReviewStatus.APPROVED)"
+              >
+                Подтвердить
+              </button>
+              <span
+                v-if="activeBillingTab !== 'pending'"
                 class="finance__status"
                 :class="{ finance__status_rejected: item.status === BillingReviewStatus.REJECTED }"
               >
                 {{ item.status === BillingReviewStatus.APPROVED ? 'Подтверждено' : 'Не учитывается' }}
               </span>
-            </article>
-            <button v-if="billingHasMore" class="finance__billing-more" :disabled="billingMorePending" @click="loadMoreBillingItems">
-              {{ billingMorePending ? 'Загружаем...' : 'Показать ещё' }}
-            </button>
-          </div>
-          <p v-else class="finance__empty">Здесь пока нет записей</p>
+            </div>
+          </article>
+          <button
+            v-if="billingHasMore"
+            class="finance__billing-more"
+            :disabled="billingMorePending"
+            @click="loadMoreBillingItems"
+          >
+            {{ billingMorePending ? 'Загружаем...' : 'Показать ещё' }}
+          </button>
         </div>
-      </section>
+        <div v-else class="finance__empty-state">
+          <ClipboardCheck :size="28" />
+          <h3>{{ activeBillingTab === 'pending' ? 'Всё проверено' : 'Пока нет проверенных начислений' }}</h3>
+          <p>
+            {{
+              activeBillingTab === 'pending'
+                ? 'Новые записи появятся после завершения работы по задачам.'
+                : 'Подтвердите запись во вкладке «Требуют проверки».'
+            }}
+          </p>
+        </div>
+      </div>
+    </section>
+    <section v-show="activeSection === ReportSection.EXPORT" class="report__export">
       <div class="report__detail-title">
-        <h2>Детальный отчёт и выгрузка</h2>
-        <p>Существующий отчёт по сотрудникам и таймлогам</p>
+        <h2>Отчёт по выполненной работе</h2>
+        <p>Выберите период и ставки для расчёта. Результат можно скачать в Excel.</p>
       </div>
       <div class="report__form-container">
         <div class="report__form">
           <div class="report__input">
-            <div class="report__input-header">Начало</div>
+            <div class="report__input-header">С даты</div>
             <BaseDatePicker
               v-model="startDate"
               :type="DatePickerType.filter"
@@ -372,7 +484,7 @@ definePageMeta({
             />
           </div>
           <div class="report__input">
-            <div class="report__input-header">Конец</div>
+            <div class="report__input-header">По дату</div>
             <BaseDatePicker
               v-model="endDate"
               :format-date="'dd.MM.yyyy'"
@@ -406,36 +518,50 @@ definePageMeta({
               @reset="selectedExecutor = null"
             />
           </div>
-          <div class="report__input">
-            <div class="report__input-header">&nbsp;</div>
-            <button :class="[{ btn_disabled: isDisabled }]" @click="loadReport">Сформировать отчет</button>
-          </div>
         </div>
         <hr class="report__sep" />
-        <div class="report__rates-header">
-          <span class="report__rates-label">Ставки сотрудников</span>
-          <span v-if="!hasPriceEmployee" class="report__hint">Укажите ставку хотя бы одному сотруднику</span>
-        </div>
-        <div class="report__rates-grid">
-          <div v-for="employee of employees" :key="employee.user_id" class="report__rate-row">
-            <span class="report__rate-name">{{ employee.last_name }} {{ employee.first_name }}</span>
-            <input
-              class="report__rate-input"
-              type="number"
-              min="0"
-              :value="employee.cost"
-              @input="setCost(Number(($event.target as HTMLInputElement).value), employee.user_id)"
-            />
-            <span class="report__rate-unit">р/час</span>
+        <details class="report__rates" open>
+          <summary class="report__rates-header">
+            <span class="report__rates-label">Ставки сотрудников</span>
+            <span v-if="!hasPriceEmployee" class="report__hint">Укажите ставку хотя бы одному сотруднику</span>
+          </summary>
+          <div class="report__rates-grid">
+            <div v-for="employee of employees" :key="employee.user_id" class="report__rate-row">
+              <span class="report__rate-name">{{ employee.last_name }} {{ employee.first_name }}</span>
+              <input
+                class="report__rate-input"
+                :aria-label="`Ставка в рублях за час: ${employee.last_name} ${employee.first_name}`"
+                type="number"
+                min="0"
+                :value="employee.cost"
+                @input="setCost(Number(($event.target as HTMLInputElement).value), employee.user_id)"
+              />
+              <span class="report__rate-unit">₽/ч</span>
+            </div>
           </div>
+        </details>
+        <div class="report__form-actions">
+          <span class="report__hint">{{
+            hasEmptyDates
+              ? 'Выберите начало и конец периода'
+              : !hasPriceEmployee
+                ? 'Укажите ставку хотя бы одному сотруднику'
+                : 'Ставки применяются только к этой выгрузке'
+          }}</span
+          ><button :disabled="isDisabled" @click="loadReport">{{ pending ? 'Формируем…' : 'Сформировать отчёт' }}</button>
         </div>
       </div>
       <div v-if="tableVisible" class="report__data">
         <div class="report__data-toolbar">
           <span class="report__data-count">{{ reportRows.length }} записей</span>
-          <button @click="unloadReport">Выгрузить в Excel</button>
+          <button :disabled="isDisabled" @click="unloadReport">
+            <Download :size="16" />{{ pending ? 'Подготовка…' : 'Скачать Excel' }}
+          </button>
         </div>
-        <div class="report__table-wrap">
+        <p v-if="!reportRows.length" class="finance__empty">
+          За выбранный период записей не найдено. Попробуйте изменить фильтры.
+        </p>
+        <div v-else class="report__table-wrap">
           <table class="report__table">
             <thead>
               <tr>
@@ -471,7 +597,7 @@ definePageMeta({
           </table>
         </div>
       </div>
-    </template>
+    </section>
     <teleport to="#teleports">
       <BaseModal ref="billingSummaryModal" @close="billingSummaryItem = null">
         <div v-if="billingSummaryItem" class="finance-summary-modal">
@@ -501,7 +627,8 @@ definePageMeta({
 .report {
   &__content {
     width: 100%;
-    height: 100dvh;
+    height: 100%;
+    box-sizing: border-box;
     padding: 16px;
     min-width: 0;
     flex: 1;
@@ -512,17 +639,17 @@ definePageMeta({
 
   &__header {
     @include flex(rn, a-center);
-    height: 32px;
+    min-height: 48px;
     gap: 12px;
-    margin-bottom: 16px;
+    flex-shrink: 0;
   }
 
   &__title {
+    margin: 0;
     @extend %display-xs-medium;
   }
 
   &__form-container {
-    margin-top: 16px;
     padding: 16px;
     @extend %ds-card;
     @include flex(cn);
@@ -531,9 +658,9 @@ definePageMeta({
   }
 
   &__form {
-    @include flex(rn, a-end);
-    gap: 24px;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 16px;
   }
 
   &__sep {
@@ -549,7 +676,7 @@ definePageMeta({
   }
 
   &__rates-label {
-    @extend %p14-bold;
+    @extend %text-s-medium;
   }
 
   &__hint {
@@ -567,14 +694,14 @@ definePageMeta({
   }
 
   &__input-header {
-    @extend %p14-bold;
+    @extend %text-s-medium;
     height: 20px;
   }
 
   &__rates-grid {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 4px;
   }
 
@@ -593,7 +720,7 @@ definePageMeta({
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    @extend %p14-bold;
+    @extend %text-s-medium;
   }
 
   &__rate-input {
@@ -603,8 +730,8 @@ definePageMeta({
     border-radius: 6px;
     border: 1px solid var(--light-text-backgroung-primary-10);
     background: transparent;
-    text-align: center;
-    @extend %p14-bold;
+    text-align: left;
+    @extend %text-s-medium;
     -moz-appearance: textfield;
 
     &::-webkit-inner-spin-button,
@@ -615,7 +742,7 @@ definePageMeta({
   }
 
   &__rate-unit {
-    @extend %p14-bold;
+    @extend %text-s-medium;
     flex-shrink: 0;
   }
 
@@ -638,8 +765,9 @@ definePageMeta({
 
   &__table-wrap {
     width: 100%;
-    overflow-x: auto;
-    border-radius: 12px;
+    overflow: auto;
+    max-height: 60vh;
+    border-radius: 8px;
     border: 1px solid var(--light-text-backgroung-primary-10);
   }
 
@@ -657,7 +785,7 @@ definePageMeta({
     }
 
     th {
-      @extend %p14-bold;
+      @extend %text-s-medium;
       background: var(--light-text-backgroung-primary-5);
       position: sticky;
       top: 0;
@@ -677,7 +805,7 @@ definePageMeta({
     }
 
     tfoot td {
-      @extend %p14-bold;
+      @extend %text-s-medium;
       border-top: 2px solid var(--light-text-backgroung-primary-5);
       border-bottom: none;
     }
@@ -718,7 +846,7 @@ definePageMeta({
   &__metric {
     min-width: 0;
     padding: 16px;
-    border-radius: 12px;
+    border-radius: 8px;
     background: var(--light-text-backgroung-primary-5);
 
     span {
@@ -738,8 +866,8 @@ definePageMeta({
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
     gap: 16px;
-    padding: 24px;
-    border-radius: 16px;
+    padding: 20px;
+    border-radius: 8px;
     background: var(--light-text-backgroung-primary-5);
   }
 
@@ -748,7 +876,7 @@ definePageMeta({
   }
 
   &__section-head {
-    @include flex(rn between a-start);
+    @include flex(rn, between, a-start);
     gap: 16px;
 
     h2 {
@@ -798,7 +926,7 @@ definePageMeta({
     @extend %p12-regular;
 
     span {
-      @include flex(rn a-center);
+      @include flex(rn, a-center);
       gap: 6px;
       line-height: 1.25;
     }
@@ -833,7 +961,7 @@ definePageMeta({
   }
 
   &__target-head {
-    @include flex(rn between a-center);
+    @include flex(rn, between, a-center);
     @extend %text-s-medium;
   }
   &__target-input {
@@ -888,7 +1016,7 @@ definePageMeta({
   &__billing {
     min-width: 0;
     padding: 20px;
-    border-radius: 12px;
+    border-radius: 8px;
     background: var(--light-text-backgroung-primary-5);
   }
   &__bars,
@@ -926,7 +1054,7 @@ definePageMeta({
   }
 
   &__projects div {
-    @include flex(rn between a-center);
+    @include flex(rn, between, a-center);
     gap: 16px;
     padding-bottom: 10px;
     border-bottom: 1px solid var(--light-text-backgroung-primary-5);
@@ -969,13 +1097,13 @@ definePageMeta({
     color: var(--light-text-backgroung-primary) !important;
   }
   &__billing-list {
-    max-height: 480px;
+    max-height: none;
     margin-top: 16px;
     overflow: auto;
   }
   &__billing-row {
     display: grid;
-    grid-template-columns: minmax(180px, 2fr) 72px 120px 142px 112px auto;
+    grid-template-columns: minmax(200px, 2fr) 64px 120px 148px 112px;
     gap: 12px;
     align-items: center;
     padding: 12px 0;
@@ -1055,13 +1183,17 @@ definePageMeta({
     @extend %text-s-medium;
   }
   &__billing-actions {
-    @include flex(rn);
+    @include flex(rw, a-center);
     gap: 6px;
   }
   &__billing-actions button {
     min-height: 36px;
     padding: 8px 10px;
     @extend %p12-medium;
+    &:disabled {
+      opacity: 0.5;
+      cursor: wait;
+    }
   }
   &__reject {
     background: var(--light-text-backgroung-primary-10) !important;
@@ -1136,7 +1268,7 @@ definePageMeta({
     }
     &__metric {
       padding: 12px 16px;
-      @include flex(rn between a-center);
+      @include flex(rn, between, a-center);
     }
     &__metric strong {
       margin-top: 0;
@@ -1144,6 +1276,293 @@ definePageMeta({
     &__bar-row {
       grid-template-columns: 44px minmax(0, 1fr) 88px;
       gap: 8px;
+    }
+  }
+}
+
+.report {
+  &__subtitle {
+    margin: 4px 0 0;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+  &__navigation {
+    @include flex(rn, a-center);
+    gap: 4px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+    flex-shrink: 0;
+    button {
+      @include flex(rn, a-center, j-start);
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--light-text-backgroung-primary-50);
+      @extend %text-s-medium;
+      &[aria-pressed='true'] {
+        background: var(--primary-25);
+        color: var(--light-text-backgroung-primary);
+      }
+      &:hover {
+        background: var(--light-text-backgroung-primary-10);
+      }
+    }
+  }
+  &__badge {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--light-text-backgroung-primary-10);
+    @extend %text-xs-medium;
+  }
+  &__export {
+    @include flex(cn);
+    gap: 16px;
+    min-width: 0;
+  }
+  &__detail-title {
+    margin-top: 0;
+  }
+  &__input {
+    min-width: 0;
+    align-items: stretch;
+  }
+  &__input-header {
+    @extend %text-xs-medium;
+    color: var(--light-text-backgroung-primary-50);
+  }
+  &__input :deep(.calendar__wrapper) {
+    width: 100%;
+    min-width: 0;
+  }
+  &__input :deep(.calendar) {
+    width: 100%;
+    min-width: 0;
+  }
+  &__input :deep(.dp__input) {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 36px 6px 12px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+  }
+  &__input :deep(.dp__input_icon) {
+    right: 10px;
+    left: auto;
+  }
+  &__input :deep(.home-select__input) {
+    box-sizing: border-box;
+    min-height: 36px;
+  }
+  &__form-actions {
+    @include flex(rw, a-center, between);
+    gap: 12px;
+  }
+  &__rates-header {
+    cursor: pointer;
+    padding: 4px 0;
+  }
+  &__rates-grid {
+    margin-top: 12px;
+  }
+  &__rate-input {
+    width: 80px;
+    color: var(--light-text-backgroung-primary);
+    box-sizing: border-box;
+  }
+  &__button-secondary {
+    background: var(--light-text-backgroung-primary-10);
+    color: var(--light-text-backgroung-primary);
+  }
+  &__content {
+    button {
+      @include flex(rn, a-center, j-center);
+      gap: 6px;
+    }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    button:focus-visible,
+    input:focus-visible,
+    summary:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+    input {
+      box-sizing: border-box;
+      min-width: 0;
+      color-scheme: dark;
+    }
+  }
+  &__table {
+    th {
+      background: var(--dark-text-background-primary);
+    }
+    td:nth-child(4),
+    td:nth-child(6) {
+      min-width: 220px;
+      max-width: 360px;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+    td:nth-child(3),
+    td:nth-child(7),
+    td:nth-child(8) {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+  }
+}
+.finance {
+  &__overview {
+    @include flex(cn);
+    gap: 16px;
+  }
+  &__billing {
+    background: transparent;
+    padding: 0;
+  }
+  &__billing-row {
+    min-width: 0;
+  }
+  &__billing-field {
+    min-width: 0;
+    > span {
+      @include flex(rn, a-center);
+      min-height: 36px;
+      flex-shrink: 0;
+      @extend %text-s-regular;
+    }
+    :deep(.calendar__wrapper),
+    :deep(.calendar) {
+      min-width: 0;
+      width: 100%;
+    }
+    :deep(.dp__input) {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 36px;
+      padding: 8px 30px 8px 8px;
+      background: var(--dark-text-background-primary);
+      border: 1px solid var(--light-text-backgroung-primary-10);
+      border-radius: 8px;
+      @extend %p12-regular;
+    }
+    :deep(.dp__input_icon) {
+      right: 8px;
+      left: auto;
+    }
+    :deep(.calendar__wrapper > svg) {
+      display: none;
+    }
+  }
+  &__billing-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+  &__billing-actions .report__button-secondary {
+    margin-right: auto;
+  }
+  &__billing-source strong {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  &__empty-state {
+    @include flex(cn, a-start);
+    gap: 8px;
+    padding: 32px 0;
+    color: var(--light-text-backgroung-primary-50);
+    h3 {
+      margin: 0;
+      @extend %text-m-medium;
+      color: var(--light-text-backgroung-primary);
+    }
+    p {
+      margin: 0;
+      @extend %text-s-regular;
+    }
+  }
+  &__tabs button {
+    white-space: nowrap;
+  }
+  &__charts {
+    align-items: start;
+  }
+  &__bars,
+  &__projects {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  &__projects div > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  &__projects strong {
+    white-space: nowrap;
+  }
+}
+@media (max-width: $screen-desktop-l) {
+  .report__form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .report__rates-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .finance__billing-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .finance__billing-source {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: $screen-tablet) {
+  .report__content {
+    padding: 12px;
+  }
+  .report__navigation {
+    overflow-x: auto;
+    button {
+      min-height: 44px;
+      white-space: nowrap;
+    }
+  }
+  .report__rates-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .report__rates-header {
+    flex-wrap: wrap;
+  }
+  .report__form-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
+  .finance__billing-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .finance__target-input {
+    flex-wrap: wrap;
+    input {
+      min-width: 100px;
+    }
+  }
+  .finance__section-head > strong {
+    overflow-wrap: anywhere;
+    max-width: 100%;
+  }
+}
+@media (max-width: $screen-mobile-l) {
+  .report__form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .report__navigation {
+    gap: 0;
+    button {
+      padding: 8px;
+      svg {
+        display: none;
+      }
     }
   }
 }

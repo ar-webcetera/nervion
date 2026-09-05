@@ -1,3 +1,4 @@
+import { BillingReviewStatus } from '@tracker/contracts';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { TIMELOG_STATUSES } from '../common/enums/statuses.enum';
@@ -11,6 +12,8 @@ describe('ReportingsService', () => {
   let service: ReportingsService;
 
   const timelogRepository = {
+    findOne: jest.fn(),
+    update: jest.fn(),
     find: jest.fn(),
   };
   const tasksRepository = {
@@ -31,6 +34,22 @@ describe('ReportingsService', () => {
     service = module.get(ReportingsService);
     jest.clearAllMocks();
   });
+
+  it.each([BillingReviewStatus.PENDING, BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED])(
+    'сохраняет дату и ставку без изменения статуса %s',
+    async (status) => {
+      timelogRepository.findOne.mockResolvedValue({ id: 1, billing_rate: 1500, task: { project: { hourlyRate: 1000 } } });
+      await service.reviewTimelog(1, { status, recognizedAt: '2026-08-20', rate: 2000 }, 6);
+      expect(timelogRepository.update).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          billing_status: status,
+          billing_rate: 2000,
+          recognized_at: '2026-08-20',
+        }),
+      );
+    },
+  );
 
   it('включает в отчёт таймлоги по дате завершения, а не по дате старта таймера', async () => {
     timelogRepository.find.mockResolvedValue([

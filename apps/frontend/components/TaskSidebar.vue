@@ -563,8 +563,11 @@ const submitComment = async () => {
           <div v-if="isAdmin" class="task-sidebar__field task-sidebar__field_billing">
             <div class="task-sidebar__label">Формат оплаты</div>
             <div v-if="taskStore.currentTask" class="task-sidebar__value task-sidebar__billing">
-              <BaseDropdown
+              <BaseSelect
                 v-model="taskStore.currentTask.billing_type"
+                class="task-sidebar__billing-type"
+                small
+                arrow
                 :options="billingTypeOptions"
                 placeholder="Не учитывать"
                 @update:model-value="updateBilling($event)"
@@ -575,10 +578,11 @@ const submitComment = async () => {
                   type="number"
                   min="0"
                   step="0.01"
-                  aria-label="Фиксированная стоимость"
+                  placeholder="0"
+                  aria-label="Фиксированная стоимость в рублях"
                   @change="updateBilling()"
                 />
-                <span>₽</span>
+                <span aria-hidden="true">₽</span>
               </div>
             </div>
           </div>
@@ -1632,6 +1636,76 @@ input {
 
     &--highlight {
       font-weight: bold;
+    }
+  }
+
+  &__billing {
+    @include flex(cn);
+    gap: 8px;
+    min-width: 0;
+  }
+
+  &__billing-type {
+    :deep(.home-select__input) {
+      @include flex(rn, a-center, between);
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 34px;
+      padding: 6px 10px;
+      border: 1px solid var(--light-text-backgroung-primary-10);
+      border-radius: 6px;
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+
+      &:hover {
+        border-color: var(--light-text-backgroung-primary-25);
+      }
+    }
+
+    :deep(.home-select__dropdown) {
+      box-sizing: border-box;
+      min-width: 100%;
+    }
+  }
+
+  &__billing-price {
+    @include flex(rn, a-center);
+    gap: 8px;
+    min-width: 0;
+    padding: 0 10px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 6px;
+    background: var(--light-text-backgroung-primary-5);
+
+    &:focus-within {
+      border-color: var(--primary);
+    }
+
+    input {
+      flex: 1;
+      width: 0;
+      min-width: 0;
+      height: 32px;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      outline: none;
+      background: transparent;
+      @extend %text-s-regular;
+      font-variant-numeric: tabular-nums;
+      appearance: textfield;
+
+      &::-webkit-inner-spin-button,
+      &::-webkit-outer-spin-button {
+        appearance: none;
+        margin: 0;
+      }
+    }
+
+    span {
+      flex-shrink: 0;
+      color: var(--light-text-backgroung-primary-50);
+      @extend %text-s-regular;
     }
   }
 

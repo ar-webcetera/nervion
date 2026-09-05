@@ -173,10 +173,10 @@ export class ReportingsService {
   async reviewTimelog(id: number, dto: ReviewBillingDto, reviewerId: number): Promise<void> {
     const timelog = await this.timelogRepository.findOne({ where: { id }, relations: ['task', 'task.project'] });
     if (!timelog) throw new NotFoundException('Таймтрек не найден');
-    const rate = dto.rate ?? Number(timelog.task?.project?.hourlyRate ?? 0);
+    const rate = dto.rate ?? Number(timelog.billing_rate ?? timelog.task?.project?.hourlyRate ?? 0);
     await this.timelogRepository.update(id, {
       billing_status: dto.status,
-      billing_rate: dto.status === BillingReviewStatus.APPROVED ? rate : null,
+      billing_rate: rate,
       recognized_at: dto.recognizedAt,
       reviewed_by_id: reviewerId,
       reviewed_at: new Date(),
