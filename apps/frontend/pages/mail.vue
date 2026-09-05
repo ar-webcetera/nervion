@@ -1680,6 +1680,12 @@ watch(
       <template v-else>
         <div class="mail-page__detail-header">
           <div class="mail-page__detail-heading">
+            <div class="mail-page__detail-meta">
+              <h2 class="mail-page__detail-subject">{{ currentThread?.subject }}</h2>
+              <span class="mail-page__detail-account">{{ accountLabel(currentThread?.account_id ?? 0) }}</span>
+            </div>
+          </div>
+          <div class="mail-page__detail-actions">
             <button
               class="mail-page__back-mobile"
               type="button"
@@ -1689,12 +1695,6 @@ watch(
             >
               <ArrowLeft :size="20" aria-hidden="true" />
             </button>
-            <div class="mail-page__detail-meta">
-              <h2 class="mail-page__detail-subject">{{ currentThread?.subject }}</h2>
-              <span class="mail-page__detail-account">{{ accountLabel(currentThread?.account_id ?? 0) }}</span>
-            </div>
-          </div>
-          <div class="mail-page__detail-actions">
             <button
               v-if="currentFolder === 'spam'"
               class="mail-page__action-button"

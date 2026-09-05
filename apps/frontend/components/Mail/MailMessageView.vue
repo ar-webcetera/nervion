@@ -51,9 +51,7 @@ const senderLabel = computed(() => {
 const formatAddress = (item: MailMessage['to_addresses'][number]) =>
   item.name ? `${item.name} <${item.address}>` : item.address;
 
-const recipientsLabel = computed(() =>
-  props.message.to_addresses.map(formatAddress).join(', '),
-);
+const recipientsLabel = computed(() => props.message.to_addresses.map(formatAddress).join(', '));
 const ccRecipientsLabel = computed(() => (props.message.cc_addresses ?? []).map(formatAddress).join(', '));
 
 const formattedDate = computed(() =>
@@ -141,6 +139,7 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
         v-for="attachment in visibleAttachments"
         :key="attachment.id"
         class="mail-message__attachment"
+        :title="attachment.filename"
         :href="attachmentUrl(attachment.id)"
         target="_blank"
         rel="noopener"
@@ -154,6 +153,8 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
 
 <style scoped lang="scss">
 .mail-message {
+  min-width: 0;
+  max-width: 100%;
   @include flex(cn);
   gap: 8px;
   padding: 16px;
@@ -412,11 +413,15 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
   }
 
   &__attachments {
+    min-width: 0;
+    max-width: 100%;
     @include flex(rw);
     gap: 8px;
   }
 
   &__attachment {
+    min-width: 0;
+    max-width: 100%;
     @include flex(rn, a-center);
     gap: 6px;
     padding: 6px 10px;
@@ -431,7 +436,14 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
     }
   }
 
+  &__attachment-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
   &__attachment-size {
+    flex-shrink: 0;
+    white-space: nowrap;
     color: var(--light-text-backgroung-primary-50);
   }
 }
