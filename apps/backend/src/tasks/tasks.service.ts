@@ -1,3 +1,4 @@
+import { TASK_CODE_PREFIX } from '@tracker/contracts';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { AuditActionType, AuditEntityType, BillingReviewStatus, TaskBillingType, type JsonObject } from '@tracker/contracts';
 import { FindTasksByFilterDto } from './dto/find-tasks-by-filter.dto';
@@ -368,9 +369,25 @@ export class TasksService {
   }
 
   private applyTitleFilter(qb: SelectQueryBuilder<Tasks>, title?: string) {
-    if (title) {
-      qb.andWhere('task.title ILIKE :title', { title: `%${title}%` });
+    const query = title?.trim();
+    if (!query) return;
+
+    const codeMatch = query.match(new RegExp(`^${TASK_CODE_PREFIX}-(\\d+)$`, 'i'));
+    const numericId = codeMatch?.[1] ?? (/^\d+$/.test(query) ? query : null);
+    if (numericId !== null) {
+      // Compare as text to safely handle arbitrarily long pasted numbers.
+      const taskCodeId = numericId.replace(/^0+(?=\d)/, '');
+      if (codeMatch) {
+        qb.andWhere('CAST(task.id AS text) = :taskCodeId', { taskCodeId });
+      } else {
+        qb.andWhere('(CAST(task.id AS text) = :taskCodeId OR task.title ILIKE :title)', {
+          taskCodeId,
+          title: `%${query}%`,
+        });
+      }
+      return;
     }
+    qb.andWhere('task.title ILIKE :title', { title: `%${query}%` });
   }
 
   private applyYearFilter(qb: SelectQueryBuilder<Tasks>, year?: string) {

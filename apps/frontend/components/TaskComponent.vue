@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TaskCode from '~/components/TaskCode.vue';
 import IconDrag from '~/components/Icons/IconDrag.vue';
 import { TaskType, type Task, type Timelog } from '~/types/task';
 import { useUserStore } from '~/stores/userStore';
@@ -137,6 +138,7 @@ onMounted(() => {
   <div :class="['task', task.status]">
     <div class="task__drag task__drag-handle"><IconDrag /></div>
     <div class="task__info">
+      <TaskCode :id="task.id" />
       <div class="task__name-wrapper">
         <div class="task__name" @click="openTaskSidebar(task.id)">
           <span v-if="task.taskType === TaskType.TASK" class="task__type-status task__type-status_task">

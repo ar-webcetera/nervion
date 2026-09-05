@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TaskCode from '~/components/TaskCode.vue';
 import type { PropType } from 'vue';
 import { TASK_STATUSES } from '~/constants/task.constants';
 import { TaskType } from '~/enums/task.enums';
@@ -66,7 +67,24 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['click-to-card', 'swap-priority-task', 'update-task', 'toggle-collapse', 'load-more']);
+const emit = defineEmits(['click-to-card', 'swap-priority-task', 'update-task', 'toggle-collapse', 'load-more', 'task-created']);
+
+const quickCreatePending = ref(false);
+const quickCreateStatus = ref<string | null>(null);
+const createTrigger = ref<HTMLButtonElement | null>(null);
+const openQuickCreate = (status: string, event: MouseEvent) => {
+  createTrigger.value = event.currentTarget as HTMLButtonElement;
+  quickCreateStatus.value = status;
+};
+const closeQuickCreate = async () => {
+  quickCreateStatus.value = null;
+  await nextTick();
+  createTrigger.value?.focus();
+};
+const onTaskCreated = () => {
+  closeQuickCreate();
+  emit('task-created');
+};
 
 const columns = computed<KanbanColumn[]>(() => props.columns);
 
@@ -355,13 +373,26 @@ const dragend = () => {
 
       <div v-if="!column.collapsed" class="kanban__column-header">
         <span class="kanban__column-header_dot" :class="'kanban__column-header_' + column.status"></span>
-        <span>{{ column.title }}</span>
+        <span class="kanban__column-header_title">{{ column.title }}</span>
         <span>{{ column.total ?? column.cards.length }}</span>
         <span v-if="column.cards.some((c) => c.story_points != null)" class="kanban__column-header_sp">
           {{ column.cards.reduce((sum, c) => sum + (Number(c.story_points) || 0), 0) }} SP
         </span>
         <button
+          class="kanban__create-btn"
+          :class="{ 'kanban__create-btn_active': quickCreateStatus === column.status }"
+          :disabled="quickCreatePending"
+          type="button"
+          :title="`Создать задачу в колонке «${column.title}»`"
+          :aria-label="`Создать задачу в колонке «${column.title}»`"
+          :aria-expanded="quickCreateStatus === column.status"
+          @click="openQuickCreate(column.status, $event)"
+        >
+          <IconsIconPlus />
+        </button>
+        <button
           class="kanban__collapse-btn"
+          :disabled="quickCreatePending"
           type="button"
           title="Свернуть колонку"
           @click="$emit('toggle-collapse', { status: column.status, collapsed: true })"
@@ -371,6 +402,14 @@ const dragend = () => {
           </svg>
         </button>
       </div>
+
+      <KanbanQuickCreate
+        v-if="!column.collapsed && quickCreateStatus === column.status"
+        :status="column.status"
+        @close="closeQuickCreate"
+        @created="onTaskCreated"
+        @pending="quickCreatePending = $event"
+      />
 
       <div v-if="!column.collapsed && hoveredColumn === colIndex" class="kanban__column-placeholder">
         <div class="kanban__column-placeholder-text">
@@ -402,10 +441,9 @@ const dragend = () => {
             </div>
 
             <div class="kanban__card-header">
-              <div class="kanban__project-name">{{ card.projectName }}</div>
-              <div v-if="card.users?.length" class="kanban__card_users">
-                <img v-for="(user, idx) in card.users" :key="idx" :src="user" class="kanban__card_user" @error="onImgError" />
-              </div>
+              <div class="kanban__project-name" :title="card.projectName">{{ card.projectName }}</div>
+              <TaskCode :id="card.id" />
+
               <svg v-if="false" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path
                   d="M12.5 15.8333C12.5 13.9924 10.2614 12.5 7.5 12.5C4.73858 12.5 2.5 13.9924 2.5 15.8333M15.8333 13.3333V10.8333M15.8333 10.8333V8.33334M15.8333 10.8333H13.3333M15.8333 10.8333H18.3333M7.5 10C5.65905 10 4.16667 8.50763 4.16667 6.66668C4.16667 4.82573 5.65905 3.33334 7.5 3.33334C9.34095 3.33334 10.8333 4.82573 10.8333 6.66668C10.8333 8.50763 9.34095 10 7.5 10Z"
@@ -429,7 +467,7 @@ const dragend = () => {
             <div v-if="card.description" class="kanban__card_desc">
               {{ card.description }}
             </div>
-            <div v-if="card.planned_date || card.story_points != null" class="kanban__card_footer">
+            <div v-if="card.planned_date || card.story_points != null || card.users?.length" class="kanban__card_footer">
               <span
                 v-if="card.planned_date"
                 class="kanban__card_deadline"
@@ -438,6 +476,9 @@ const dragend = () => {
                 {{ getDeadline(card)?.text }}
               </span>
               <div v-if="card.story_points != null" class="kanban__card_sp">{{ card.story_points }} SP</div>
+              <div v-if="card.users?.length" class="kanban__card_users">
+                <img v-for="(user, idx) in card.users" :key="idx" :src="user" class="kanban__card_user" @error="onImgError" />
+              </div>
             </div>
           </div>
         </template>
@@ -453,7 +494,7 @@ const dragend = () => {
   </div>
 </template>
 
-<style lang="scss">
+<style scoped lang="scss">
 .kanban {
   @include flex(rn, stretch);
   width: 100%;
@@ -463,8 +504,10 @@ const dragend = () => {
   height: 100%;
 
   &__card-header {
-    @include flex(rn, between);
+    @include flex(rn, between, a-center);
     width: 100%;
+    gap: 16px;
+    min-width: 0;
     color: var(--light-text-backgroung-primary-50);
 
     @extend %text-xs-regular;
@@ -545,28 +588,64 @@ const dragend = () => {
     }
   }
 
+  &__create-btn,
   &__collapse-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: auto;
-    padding: 2px;
+    @include flex(center);
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    padding: 4px;
     border: none;
+    border-radius: 8px;
     background: transparent;
-    border-radius: 6px;
     color: var(--light-text-backgroung-primary-50);
     cursor: pointer;
-    transition:
-      color 0.15s,
-      background 0.15s;
 
-    &:hover {
+    &:hover:not(:disabled) {
+      color: var(--light-text-backgroung-primary);
+      background: var(--light-text-backgroung-primary-10);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+
+    @media (pointer: coarse) {
+      width: 44px;
+      height: 44px;
+    }
+  }
+
+  &__create-btn {
+    margin-left: auto;
+
+    :deep(svg) {
+      width: 16px;
+      height: 16px;
+      stroke: currentColor;
+    }
+
+    &_active {
       color: var(--light-text-backgroung-primary);
       background: var(--light-text-backgroung-primary-10);
     }
   }
 
   &__column-header {
+    width: 100%;
+    min-width: 0;
+    flex-shrink: 0;
+
+    &_title {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
     @include flex(a-center);
     gap: 8px;
     border-radius: 12px;
@@ -575,6 +654,7 @@ const dragend = () => {
     color: var(--light-text-backgroung-primary);
 
     &_dot {
+      flex-shrink: 0;
       width: 8px;
       height: 8px;
       border-radius: 50%;
@@ -737,6 +817,7 @@ const dragend = () => {
     }
 
     &_users {
+      margin-left: auto;
       display: flex;
       align-items: center;
       gap: 4px;
@@ -773,7 +854,7 @@ const dragend = () => {
       word-break: break-word;
       width: 100%;
       @extend %text-xs-regular;
-      color: var(--light-text-backgroung-primary-50);
+      color: color-mix(in srgb, var(--light-text-backgroung-primary) 70%, transparent);
       overflow: hidden;
       display: -webkit-box;
       -webkit-box-orient: vertical;
@@ -794,6 +875,7 @@ const dragend = () => {
     }
 
     &_footer {
+      margin-top: 4px;
       display: flex;
       align-items: center;
       flex-wrap: wrap;
@@ -834,6 +916,11 @@ const dragend = () => {
   }
 
   &__project-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     @extend %text-xs-regular;
     color: var(--light-text-backgroung-primary-50);
   }

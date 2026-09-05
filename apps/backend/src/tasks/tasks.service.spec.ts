@@ -577,6 +577,43 @@ describe('TasksService', () => {
   });
 
   describe('findTasksByFilter', () => {
+    it.each(['NRV-142', ' nrv-00142 ', 'NrV-142'])('finds an exact task code: %s', async (title) => {
+      const qb = createQueryBuilderMock();
+      mockTasksRepository.createQueryBuilder.mockReturnValue(qb);
+      await service.findTasksByFilter(Object.assign(new FindTasksByFilterDto(), { title }), {
+        id: 7,
+        role: ROLES.employee,
+      } as Users);
+      expect(qb.andWhere).toHaveBeenCalledWith('CAST(task.id AS text) = :taskCodeId', { taskCodeId: '142' });
+      expect(qb.andWhere).toHaveBeenCalledWith('(task.project_id IS NULL OR project_access.id IS NOT NULL)');
+    });
+
+    it.each(['142', '999999999999999999999999999999'])(
+      'searches numeric input safely and preserves title matches: %s',
+      async (title) => {
+        const qb = createQueryBuilderMock();
+        mockTasksRepository.createQueryBuilder.mockReturnValue(qb);
+        await service.findTasksByFilter(Object.assign(new FindTasksByFilterDto(), { title }), {
+          id: 1,
+          role: ROLES.admin,
+        } as Users);
+        expect(qb.andWhere).toHaveBeenCalledWith('(CAST(task.id AS text) = :taskCodeId OR task.title ILIKE :title)', {
+          taskCodeId: title,
+          title: `%${title}%`,
+        });
+      },
+    );
+
+    it('preserves ordinary title search', async () => {
+      const qb = createQueryBuilderMock();
+      mockTasksRepository.createQueryBuilder.mockReturnValue(qb);
+      await service.findTasksByFilter(Object.assign(new FindTasksByFilterDto(), { title: ' Исправить форму ' }), {
+        id: 1,
+        role: ROLES.admin,
+      } as Users);
+      expect(qb.andWhere).toHaveBeenCalledWith('task.title ILIKE :title', { title: '%Исправить форму%' });
+    });
+
     it('должен скрывать повторяющиеся задачи в обычном списке', async () => {
       const filters = new FindTasksByFilterDto();
       const user = { id: 1, role: ROLES.admin } as Users;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TaskCode from '~/components/TaskCode.vue';
 import { ref, watch, computed } from 'vue';
 import { useTaskStore } from '~/stores/taskStore';
 import IconPlus from '~/components/Icons/IconPlus.vue';
@@ -350,6 +351,7 @@ const submitComment = async () => {
             @reset-timelog="(id) => resetTimelog(id, taskModals.closeFixTimelogModal)"
           />
           <div class="task-sidebar__title-actions">
+            <TaskCode v-if="currentTaskId" :id="currentTaskId" />
             <button
               class="task-sidebar__duplicate-button"
               type="button"

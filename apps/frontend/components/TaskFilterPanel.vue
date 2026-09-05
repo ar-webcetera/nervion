@@ -71,7 +71,7 @@ defineExpose({ clearSearch });
       <input
         v-model="searchInput"
         type="text"
-        placeholder="Поиск по тексту или добавление фильтра"
+        placeholder="Поиск по названию, коду или номеру задачи"
         @input="$emit('search', $event)"
       />
       <button class="task-filter-panel__search-button">

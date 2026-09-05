@@ -820,6 +820,7 @@ useHead({
           @update-task="updateTask"
           @toggle-collapse="onToggleCollapse"
           @load-more="onKanbanLoadMore"
+          @task-created="fetchKanban"
         />
       </template>
       <template v-if="viewType === ViewType.WEEKLY">
