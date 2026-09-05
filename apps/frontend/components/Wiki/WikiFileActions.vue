@@ -116,7 +116,7 @@ watch(isOpen, async (open, _, onCleanup) => {
     background: var(--dark-text-background-primary);
     box-shadow: 0 8px 24px var(--black-50);
     button, a {
-      @include flex(rn, a-center);
+      @include flex(rn, a-center, j-start);
       @extend %text-s-regular;
       box-sizing: border-box;
       width: 100%;
@@ -127,6 +127,7 @@ watch(isOpen, async (open, _, onCleanup) => {
       color: var(--light-text-backgroung-primary);
       background: transparent;
       text-decoration: none;
+      text-align: left;
       cursor: pointer;
       &:hover, &:focus-visible { background: var(--light-text-backgroung-primary-10); outline: none; }
     }
