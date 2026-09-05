@@ -315,7 +315,7 @@ onUnmounted(() => {
 .base-comment {
   @include flex(rn);
   gap: 8px;
-  padding: 16px;
+  padding: 10px 12px;
   border-radius: 8px;
   background-color: var(--light-text-backgroung-primary-5);
   transition: background-color 0.8s ease;
