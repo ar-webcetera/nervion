@@ -361,7 +361,7 @@ const confirmDelete = async () => {
         </button>
       </div>
 
-      <div v-if="!isFilesReady || filesStore.isLoading" class="wiki-explorer__loading">
+      <div v-if="!isFilesReady || filesStore.isLoading" class="wiki-explorer__loading" role="status" aria-label="Загрузка файлов и папок">
         <svg class="wiki-explorer__spinner" width="28" height="28" viewBox="0 0 28 28" fill="none">
           <circle
             cx="14"
@@ -388,116 +388,118 @@ const confirmDelete = async () => {
         <span class="wiki-explorer__empty-hint">Перетащите файлы сюда или нажмите «Загрузить»</span>
       </div>
 
-      <div
-        v-for="node in currentNodes"
-        :key="node.type === 'file' ? node.key : node.name"
-        :data-key="node.type === 'file' ? node.key : undefined"
-        :class="[
-          'wiki-explorer__item',
-          { 'wiki-explorer__item_just-uploaded': node.type === 'file' && justUploadedKeys.has(node.key) },
-        ]"
-        :title="node.name"
-        @click="node.type === 'folder' ? openFolder(node.name) : openFile(node)"
-      >
+      <template v-else>
         <div
-          class="wiki-explorer__item-icon"
+          v-for="node in currentNodes"
+          :key="node.type === 'file' ? node.key : node.name"
+          :data-key="node.type === 'file' ? node.key : undefined"
           :class="[
-            `wiki-explorer__item-icon_${nodeIcon(node)}`,
-            { 'wiki-explorer__item-icon_thumb': node.type === 'file' && (getExtensionType(node.extension) === 'image' || getExtensionType(node.extension) === 'video') },
+            'wiki-explorer__item',
+            { 'wiki-explorer__item_just-uploaded': node.type === 'file' && justUploadedKeys.has(node.key) },
           ]"
+          :title="node.name"
+          @click="node.type === 'folder' ? openFolder(node.name) : openFile(node)"
         >
-          <svg v-if="node.type === 'folder'" width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path
-              d="M1.5 5.25A1.5 1.5 0 0 1 3 3.75h2.629a1.5 1.5 0 0 1 1.06.44L7.5 5.25h7.5A1.5 1.5 0 0 1 16.5 6.75v7.5A1.5 1.5 0 0 1 15 15.75H3A1.5 1.5 0 0 1 1.5 14.25V5.25z"
-              stroke="currentColor"
-              stroke-width="1.3"
-              fill="none"
-            />
-          </svg>
-          <template v-else-if="getExtensionType(node.extension) === 'image'">
-            <img
-              :src="fileUrl(node.key)"
-              :alt="node.name"
-              class="wiki-explorer__thumb"
-              loading="lazy"
-              decoding="async"
-            />
-          </template>
-          <template v-else-if="getExtensionType(node.extension) === 'video'">
-            <video
-              :src="fileUrl(node.key)"
-              class="wiki-explorer__thumb"
-              preload="metadata"
-              muted
-              playsinline
-            />
-            <div class="wiki-explorer__thumb-play">
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                <path d="M2 1.5l7 3.5-7 3.5V1.5z" fill="currentColor" />
-              </svg>
-            </div>
-          </template>
-          <svg v-else-if="getExtensionType(node.extension) === 'markdown'" width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <rect x="1.5" y="2.5" width="15" height="13" rx="2" stroke="currentColor" stroke-width="1.3" />
-            <path
-              d="M4.5 12V6l2.5 2.5L9.5 6v6M12.5 12l-1.5-3"
-              stroke="currentColor"
-              stroke-width="1.1"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-          <svg v-else width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path
-              d="M10 1.5H4.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V6l-5.5-4.5z"
-              stroke="currentColor"
-              stroke-width="1.3"
-            />
-            <path d="M10 1.5V6H14.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-          </svg>
-        </div>
-        <div class="wiki-explorer__item-info">
-          <span class="wiki-explorer__item-name">{{ node.name }}</span>
-          <span v-if="node.type === 'file' && node.size != null" class="wiki-explorer__item-size">
-            {{ formatFileSize(node.size) }}
-          </span>
-        </div>
-        <div class="wiki-explorer__item-tail">
-          <a
-            v-if="node.type !== 'folder'"
-            :href="fileUrl(node.key)"
-            target="_blank"
-            rel="noopener noreferrer"
-            :download="node.name"
-            class="wiki-explorer__item-download"
-            @click.stop
+          <div
+            class="wiki-explorer__item-icon"
+            :class="[
+              `wiki-explorer__item-icon_${nodeIcon(node)}`,
+              { 'wiki-explorer__item-icon_thumb': node.type === 'file' && (getExtensionType(node.extension) === 'image' || getExtensionType(node.extension) === 'video') },
+            ]"
           >
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <svg v-if="node.type === 'folder'" width="18" height="18" viewBox="0 0 18 18" fill="none">
               <path
-                d="M6.5 1v8M3 10l3.5 2.5L10 10M1 12.5h11"
+                d="M1.5 5.25A1.5 1.5 0 0 1 3 3.75h2.629a1.5 1.5 0 0 1 1.06.44L7.5 5.25h7.5A1.5 1.5 0 0 1 16.5 6.75v7.5A1.5 1.5 0 0 1 15 15.75H3A1.5 1.5 0 0 1 1.5 14.25V5.25z"
                 stroke="currentColor"
                 stroke-width="1.3"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+                fill="none"
               />
             </svg>
-          </a>
-          <svg v-else width="12" height="12" viewBox="0 0 12 12" fill="none" class="wiki-explorer__item-chevron">
-            <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-          <button class="wiki-explorer__item-delete" title="Удалить" @click="requestDelete($event, node)">
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <template v-else-if="getExtensionType(node.extension) === 'image'">
+              <img
+                :src="fileUrl(node.key)"
+                :alt="node.name"
+                class="wiki-explorer__thumb"
+                loading="lazy"
+                decoding="async"
+              />
+            </template>
+            <template v-else-if="getExtensionType(node.extension) === 'video'">
+              <video
+                :src="fileUrl(node.key)"
+                class="wiki-explorer__thumb"
+                preload="metadata"
+                muted
+                playsinline
+              />
+              <div class="wiki-explorer__thumb-play">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M2 1.5l7 3.5-7 3.5V1.5z" fill="currentColor" />
+                </svg>
+              </div>
+            </template>
+            <svg v-else-if="getExtensionType(node.extension) === 'markdown'" width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <rect x="1.5" y="2.5" width="15" height="13" rx="2" stroke="currentColor" stroke-width="1.3" />
               <path
-                d="M3 4.5h12M7.5 4.5V3h3v1.5M5.5 4.5v9.5a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V4.5"
+                d="M4.5 12V6l2.5 2.5L9.5 6v6M12.5 12l-1.5-3"
                 stroke="currentColor"
-                stroke-width="1.4"
+                stroke-width="1.1"
                 stroke-linecap="round"
                 stroke-linejoin="round"
               />
             </svg>
-          </button>
+            <svg v-else width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path
+                d="M10 1.5H4.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V6l-5.5-4.5z"
+                stroke="currentColor"
+                stroke-width="1.3"
+              />
+              <path d="M10 1.5V6H14.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+            </svg>
+          </div>
+          <div class="wiki-explorer__item-info">
+            <span class="wiki-explorer__item-name">{{ node.name }}</span>
+            <span v-if="node.type === 'file' && node.size != null" class="wiki-explorer__item-size">
+              {{ formatFileSize(node.size) }}
+            </span>
+          </div>
+          <div class="wiki-explorer__item-tail">
+            <a
+              v-if="node.type !== 'folder'"
+              :href="fileUrl(node.key)"
+              target="_blank"
+              rel="noopener noreferrer"
+              :download="node.name"
+              class="wiki-explorer__item-download"
+              @click.stop
+            >
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <path
+                  d="M6.5 1v8M3 10l3.5 2.5L10 10M1 12.5h11"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </a>
+            <svg v-else width="12" height="12" viewBox="0 0 12 12" fill="none" class="wiki-explorer__item-chevron">
+              <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <button class="wiki-explorer__item-delete" title="Удалить" @click="requestDelete($event, node)">
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <path
+                  d="M3 4.5h12M7.5 4.5V3h3v1.5M5.5 4.5v9.5a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V4.5"
+                  stroke="currentColor"
+                  stroke-width="1.4"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <Teleport to="body">
