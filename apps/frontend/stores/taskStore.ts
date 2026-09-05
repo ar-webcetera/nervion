@@ -323,6 +323,8 @@ export const useTaskStore = defineStore('task', () => {
   };
 
   const loadMoreColumn = async (status: string, params: Partial<KanbanParams>, offset: number, limit = 50) => {
+    const requestedColumn = kanban.value.find((c) => c.status === status);
+    if (!requestedColumn) return;
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<{ status: string; total: number; cards: KanbanCard[] }>(`/api/tasks/kanban/column`, {
       baseURL: config.public.API_URL,
@@ -339,7 +341,8 @@ export const useTaskStore = defineStore('task', () => {
     });
 
     const column = kanban.value.find((c) => c.status === status);
-    if (column && response) {
+    // A filter change or board refresh may replace the column while this request runs.
+    if (column === requestedColumn && response) {
       const seen = new Set(column.cards.map((c) => c.id));
       column.cards.push(...response.cards.filter((c) => !seen.has(c.id)));
       column.total = response.total;

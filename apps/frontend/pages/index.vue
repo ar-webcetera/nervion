@@ -29,6 +29,8 @@ const { getKanban } = taskStore;
 const onKanbanLoadMore = async ({ status, offset, done }: { status: string; offset: number; done?: () => void }) => {
   try {
     await taskStore.loadMoreColumn(status, { useSavedFilters: true }, offset);
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
   } finally {
     done?.();
   }

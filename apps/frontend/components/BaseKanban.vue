@@ -113,6 +113,9 @@ const triggerLoadMore = (colIndex: number) => {
 
 const setSentinel = (el: unknown, colIndex: number) => {
   const prev = sentinelEls.get(colIndex);
+  // Function refs run on every render, including loading-state changes.
+  // Re-observing the same node delivers another initial intersection event.
+  if (prev === el) return;
   if (prev && cardsObserver) cardsObserver.unobserve(prev);
   if (el instanceof HTMLElement) {
     el.dataset.colIndex = String(colIndex);
