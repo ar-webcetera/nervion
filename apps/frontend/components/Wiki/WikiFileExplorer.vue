@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Upload, FolderPlus, Folder, X, Check, LoaderCircle, Play, FileText, File as FileIcon } from '@lucide/vue';
 import { buildFileTree, navigateToPath, getExtensionType, formatFileSize } from '~/utils/wiki/fileTree';
 import type { FileTreeNode, FileTreeFile } from '~/utils/wiki/fileTree';
 import { buildAwsObjectUrl } from '~/utils/resolveUrl';
@@ -213,11 +214,6 @@ const nodeIcon = (node: FileTreeNode): string => {
 const confirmDeleteNode = ref<FileTreeNode | null>(null);
 const isDeleting = ref(false);
 
-const requestDelete = (event: MouseEvent, node: FileTreeNode) => {
-  event.stopPropagation();
-  confirmDeleteNode.value = node;
-};
-
 const cancelDelete = () => {
   confirmDeleteNode.value = null;
 };
@@ -254,47 +250,22 @@ const confirmDelete = async () => {
   >
     <Transition name="explorer-fade">
       <div v-if="isDragging" class="wiki-explorer__dnd-overlay">
-        <svg width="44" height="44" viewBox="0 0 44 44" fill="none">
-          <path
-            d="M22 6v26M10 18l12-12 12 12M7 38h30"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+        <Upload :size="44" />
         <span>Отпустите для загрузки</span>
       </div>
     </Transition>
 
     <div class="wiki-explorer__toolbar">
       <button class="wiki-explorer__tool-btn" :disabled="isUploading" @click="triggerUpload">
-        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-          <path
-            d="M7 1v8M3 5l4-4 4 4M2 11h10"
-            stroke="currentColor"
-            stroke-width="1.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
+        <Upload :size="16" />
         <span>{{ isUploading ? 'Загрузка...' : 'Загрузить' }}</span>
       </button>
       <button class="wiki-explorer__tool-btn wiki-explorer__tool-btn_ghost" @click="startCreateFolder">
-        <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-          <path
-            d="M1.5 3.5a1 1 0 0 1 1-1h2.086a1 1 0 0 1 .707.293L6.5 4H12a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1V3.5z"
-            stroke="currentColor"
-            stroke-width="1.2"
-          />
-          <path d="M7 6.5v3M5.5 8h3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
-        </svg>
+        <FolderPlus :size="16" />
         <span>Папка</span>
       </button>
       <button class="wiki-explorer__close-btn" title="Закрыть" @click="emit('close')">
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <path d="M11 3L3 11M3 3l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-        </svg>
+        <X :size="16" />
       </button>
     </div>
 
@@ -332,14 +303,7 @@ const confirmDelete = async () => {
     <div ref="bodyRef" class="wiki-explorer__body">
       <div v-if="isCreatingFolder" class="wiki-explorer__new-folder">
         <div class="wiki-explorer__item-icon wiki-explorer__item-icon_folder">
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-            <path
-              d="M1.5 5.25A1.5 1.5 0 0 1 3 3.75h2.629a1.5 1.5 0 0 1 1.06.44L7.5 5.25h7.5A1.5 1.5 0 0 1 16.5 6.75v7.5A1.5 1.5 0 0 1 15 15.75H3A1.5 1.5 0 0 1 1.5 14.25V5.25z"
-              stroke="currentColor"
-              stroke-width="1.3"
-              fill="none"
-            />
-          </svg>
+          <Folder :size="18" />
         </div>
         <input
           ref="newFolderInputRef"
@@ -350,40 +314,19 @@ const confirmDelete = async () => {
           @keyup.escape="cancelCreateFolder"
         />
         <button class="wiki-explorer__action-btn wiki-explorer__action-btn_confirm" title="Создать" @click="confirmCreateFolder">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M3 8l4 4 6-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+          <Check :size="16" />
         </button>
         <button class="wiki-explorer__action-btn" title="Отмена" @click="cancelCreateFolder">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-            <path d="M12 4L4 12M4 4l8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-          </svg>
+          <X :size="16" />
         </button>
       </div>
 
       <div v-if="!isFilesReady || filesStore.isLoading" class="wiki-explorer__loading" role="status" aria-label="Загрузка файлов и папок">
-        <svg class="wiki-explorer__spinner" width="28" height="28" viewBox="0 0 28 28" fill="none">
-          <circle
-            cx="14"
-            cy="14"
-            r="11"
-            stroke="currentColor"
-            stroke-width="2.5"
-            stroke-linecap="round"
-            stroke-dasharray="52 17"
-          />
-        </svg>
+        <LoaderCircle class="wiki-explorer__spinner" :size="28" />
       </div>
 
       <div v-else-if="currentNodes.length === 0 && !isCreatingFolder" class="wiki-explorer__empty">
-        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-          <path
-            d="M6 13a3 3 0 0 1 3-3h7l5 5h17a3 3 0 0 1 3 3v17a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3V13z"
-            stroke="currentColor"
-            stroke-width="1.5"
-          />
-          <path d="M24 22v8M20 26h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-        </svg>
+        <FolderPlus :size="40" />
         <span class="wiki-explorer__empty-title">Папка пуста</span>
         <span class="wiki-explorer__empty-hint">Перетащите файлы сюда или нажмите «Загрузить»</span>
       </div>
@@ -407,14 +350,7 @@ const confirmDelete = async () => {
               { 'wiki-explorer__item-icon_thumb': node.type === 'file' && (getExtensionType(node.extension) === 'image' || getExtensionType(node.extension) === 'video') },
             ]"
           >
-            <svg v-if="node.type === 'folder'" width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path
-                d="M1.5 5.25A1.5 1.5 0 0 1 3 3.75h2.629a1.5 1.5 0 0 1 1.06.44L7.5 5.25h7.5A1.5 1.5 0 0 1 16.5 6.75v7.5A1.5 1.5 0 0 1 15 15.75H3A1.5 1.5 0 0 1 1.5 14.25V5.25z"
-                stroke="currentColor"
-                stroke-width="1.3"
-                fill="none"
-              />
-            </svg>
+            <Folder v-if="node.type === 'folder'" :size="18" />
             <template v-else-if="getExtensionType(node.extension) === 'image'">
               <img
                 :src="fileUrl(node.key)"
@@ -433,29 +369,11 @@ const confirmDelete = async () => {
                 playsinline
               />
               <div class="wiki-explorer__thumb-play">
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                  <path d="M2 1.5l7 3.5-7 3.5V1.5z" fill="currentColor" />
-                </svg>
+                <Play :size="12" />
               </div>
             </template>
-            <svg v-else-if="getExtensionType(node.extension) === 'markdown'" width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <rect x="1.5" y="2.5" width="15" height="13" rx="2" stroke="currentColor" stroke-width="1.3" />
-              <path
-                d="M4.5 12V6l2.5 2.5L9.5 6v6M12.5 12l-1.5-3"
-                stroke="currentColor"
-                stroke-width="1.1"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <svg v-else width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path
-                d="M10 1.5H4.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V6l-5.5-4.5z"
-                stroke="currentColor"
-                stroke-width="1.3"
-              />
-              <path d="M10 1.5V6H14.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
-            </svg>
+            <FileText v-else-if="getExtensionType(node.extension) === 'markdown'" :size="18" />
+            <FileIcon v-else :size="18" />
           </div>
           <div class="wiki-explorer__item-info">
             <span class="wiki-explorer__item-name">{{ node.name }}</span>
@@ -463,41 +381,12 @@ const confirmDelete = async () => {
               {{ formatFileSize(node.size) }}
             </span>
           </div>
-          <div class="wiki-explorer__item-tail">
-            <a
-              v-if="node.type !== 'folder'"
-              :href="fileUrl(node.key)"
-              target="_blank"
-              rel="noopener noreferrer"
-              :download="node.name"
-              class="wiki-explorer__item-download"
-              @click.stop
-            >
-              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
-                <path
-                  d="M6.5 1v8M3 10l3.5 2.5L10 10M1 12.5h11"
-                  stroke="currentColor"
-                  stroke-width="1.3"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </a>
-            <svg v-else width="12" height="12" viewBox="0 0 12 12" fill="none" class="wiki-explorer__item-chevron">
-              <path d="M4 2l4 4-4 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-            <button class="wiki-explorer__item-delete" title="Удалить" @click="requestDelete($event, node)">
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <path
-                  d="M3 4.5h12M7.5 4.5V3h3v1.5M5.5 4.5v9.5a1 1 0 0 0 1 1h5a1 1 0 0 0 1-1V4.5"
-                  stroke="currentColor"
-                  stroke-width="1.4"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </button>
-          </div>
+          <WikiFileActions
+            :node="node"
+            :download-url="node.type === 'file' ? fileUrl(node.key) : undefined"
+            @open="node.type === 'folder' ? openFolder(node.name) : openFile(node)"
+            @delete="confirmDeleteNode = node"
+          />
         </div>
       </template>
     </div>
@@ -537,10 +426,8 @@ const confirmDelete = async () => {
         <div class="wiki-explorer__preview">
           <div class="wiki-explorer__preview-header">
             <span class="wiki-explorer__preview-name">{{ previewFile.name }}</span>
-            <button class="wiki-explorer__close-btn" @click="closePreview">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M11 3L3 11M3 3l8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
-              </svg>
+            <button class="wiki-explorer__close-btn" aria-label="Закрыть просмотр" @click="closePreview">
+              <X :size="16" />
             </button>
           </div>
           <div class="wiki-explorer__preview-body">
@@ -868,9 +755,6 @@ const confirmDelete = async () => {
     &:hover {
       background: var(--light-text-backgroung-primary-10);
 
-      .wiki-explorer__item-tail {
-        opacity: 1;
-      }
     }
 
     &_just-uploaded {
@@ -967,64 +851,6 @@ const confirmDelete = async () => {
   &__item-size {
     @extend %text-xs-regular;
     color: var(--light-text-backgroung-primary-25);
-  }
-
-  &__item-tail {
-    @include flex(rn, a-center);
-    gap: 2px;
-    flex-shrink: 0;
-    opacity: 0;
-    transition: opacity 0.12s ease;
-  }
-
-  &__item-download {
-    @include flex(center);
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
-    color: var(--light-text-backgroung-primary-50);
-    transition: all 0.12s ease;
-
-    svg {
-      stroke: currentColor;
-      width: 16px;
-      height: 16px;
-    }
-
-    &:hover {
-      background: var(--light-text-backgroung-primary-10);
-      color: var(--light-text-backgroung-primary);
-    }
-  }
-
-  &__item-chevron {
-    stroke: var(--light-text-backgroung-primary-25);
-    width: 14px;
-    height: 14px;
-  }
-
-  &__item-delete {
-    @include flex(center);
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
-    border: none;
-    background: transparent;
-    color: var(--light-text-backgroung-primary-25);
-    cursor: pointer;
-    transition: all 0.12s ease;
-    flex-shrink: 0;
-
-    svg {
-      stroke: currentColor;
-      width: 16px;
-      height: 16px;
-    }
-
-    &:hover {
-      background: var(--danger-delete-10);
-      color: var(--danger-delete);
-    }
   }
 
   &__confirm-overlay {
