@@ -40,13 +40,13 @@ const activate = (action: 'open' | 'delete') => {
 watch(isOpen, async (open, _, onCleanup) => {
   if (!open) return;
   let disposed = false;
-  let stopPositioning: (() => void) | undefined;
+  const positioning = { stop: undefined as (() => void) | undefined };
   const outside = (event: PointerEvent) => {
     if (event.target instanceof Node && !menu.value?.contains(event.target) && !trigger.value?.contains(event.target)) close();
   };
   onCleanup(() => {
     disposed = true;
-    stopPositioning?.();
+    positioning.stop?.();
     document.removeEventListener('pointerdown', outside);
   });
   await nextTick();
@@ -54,7 +54,7 @@ watch(isOpen, async (open, _, onCleanup) => {
   document.addEventListener('pointerdown', outside);
   const reference = trigger.value;
   const floating = menu.value;
-  stopPositioning = autoUpdate(reference, floating, async () => {
+  positioning.stop = autoUpdate(reference, floating, async () => {
     const { x, y } = await computePosition(reference, floating, {
       strategy: 'fixed', placement: 'bottom-end', middleware: [offset(4), flip(), shift({ padding: 8 })],
     });
@@ -66,20 +66,42 @@ watch(isOpen, async (open, _, onCleanup) => {
 
 <template>
   <button
-    ref="trigger" type="button" class="file-actions__trigger"
-    :aria-label="`Действия: ${props.node.name}`" aria-haspopup="menu"
-    :aria-expanded="isOpen" :aria-controls="isOpen ? menuId : undefined"
-    @click.stop="isOpen = !isOpen" @keydown.down.prevent.stop="isOpen = true"
+    ref="trigger"
+    type="button"
+    class="file-actions__trigger"
+    :aria-label="`Действия: ${props.node.name}`"
+    aria-haspopup="menu"
+    :aria-expanded="isOpen"
+    :aria-controls="isOpen ? menuId : undefined"
+    @click.stop="isOpen = !isOpen"
+    @keydown.down.prevent.stop="isOpen = true"
   ><Ellipsis :size="18" /></button>
   <Teleport to="body">
-    <div v-if="isOpen" :id="menuId" ref="menu" class="file-actions__menu" :style="position"
-      role="menu" :aria-label="`Действия: ${props.node.name}`" @click.stop @keydown="onKeydown">
+    <div
+      v-if="isOpen"
+      :id="menuId"
+      ref="menu"
+      class="file-actions__menu"
+      :style="position"
+      role="menu"
+      :aria-label="`Действия: ${props.node.name}`"
+      @click.stop
+      @keydown="onKeydown"
+    >
       <button type="button" role="menuitem" tabindex="-1" @click="activate('open')">
         <FolderOpen v-if="node.type === 'folder'" :size="16" /><ExternalLink v-else :size="16" />
         Открыть
       </button>
-      <a v-if="node.type === 'file'" role="menuitem" tabindex="-1" :href="downloadUrl"
-        :download="node.name" target="_blank" rel="noopener noreferrer" @click="close(true)">
+      <a
+        v-if="node.type === 'file'"
+        role="menuitem"
+        tabindex="-1"
+        :href="downloadUrl"
+        :download="node.name"
+        target="_blank"
+        rel="noopener noreferrer"
+        @click="close(true)"
+      >
         <Download :size="16" />Скачать
       </a>
       <div role="separator" class="file-actions__separator" />

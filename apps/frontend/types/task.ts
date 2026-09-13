@@ -48,6 +48,7 @@ export interface Task {
   current_timelog: Timelog | null;
   isTimerRunning?: boolean;
   planned_date: Date | null | string;
+  closed_date: Date | null | string;
   participants: User[];
   related_tasks: Task[];
   story_points: number | null;

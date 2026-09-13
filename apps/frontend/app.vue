@@ -128,34 +128,74 @@ if (userStore.user) {
 }
 
 const { $webSocket } = useNuxtApp();
-const updateTask = (updateTask: Task) => {
-  const applyUpdate = (task: Task, updateTask: Task) => {
-    task.status = updateTask.status;
-    task.title = updateTask.title;
-    task.description = updateTask.description;
-    task.priority = updateTask.priority;
-    task.responsible_id = updateTask.responsible_id;
-    task.story_points = updateTask.story_points;
+const updateTask = (updatedTask: Task) => {
+  const applyUpdate = (task: Task, update: Task) => {
+    task.status = update.status;
+    task.title = update.title;
+    task.description = update.description;
+    task.priority = update.priority;
+    task.responsible_id = update.responsible_id;
+    task.story_points = update.story_points;
   };
 
-  if (updateTask.id === taskStore.currentTask?.id) {
-    applyUpdate(taskStore.currentTask, updateTask);
+  if (updatedTask.id === taskStore.currentTask?.id) {
+    applyUpdate(taskStore.currentTask, updatedTask);
   }
   const tasks = [...taskStore.tasks, ...taskStore.tasksWithTimelogs];
   for (const task of tasks) {
-    if (task.id !== updateTask.id) continue;
-    applyUpdate(task, updateTask);
+    if (task.id !== updatedTask.id) continue;
+    applyUpdate(task, updatedTask);
   }
+
+  let sourceColumnIndex = -1;
+  let sourceCardIndex = -1;
   for (const column of taskStore.kanban) {
-    for (const card of column.cards) {
-      if (card.id !== updateTask.id) continue;
-      card.status = updateTask.status;
-      card.title = updateTask.title;
-      card.description = extractPlainText(updateTask.description as TiptapDoc, 80);
-      card.users = updateTask.responsible?.photo_url ? [updateTask.responsible.photo_url] : [];
-      card.priority = updateTask.priority;
-      card.story_points = updateTask.story_points;
-    }
+    const cardIndex = column.cards.findIndex((card) => card.id === updatedTask.id);
+    if (cardIndex === -1) continue;
+    sourceColumnIndex = taskStore.kanban.indexOf(column);
+    sourceCardIndex = cardIndex;
+    break;
+  }
+
+  if (sourceColumnIndex === -1 || sourceCardIndex === -1) return;
+
+  const sourceColumn = taskStore.kanban[sourceColumnIndex];
+  const card = sourceColumn.cards[sourceCardIndex];
+  Object.assign(card, {
+    status: updatedTask.status,
+    title: updatedTask.title,
+    description: extractPlainText(updatedTask.description as TiptapDoc, 80),
+    users: updatedTask.responsible?.photo_url ? [updatedTask.responsible.photo_url] : [],
+    priority: updatedTask.priority,
+    projectName: updatedTask.project?.name,
+    taskType: updatedTask.taskType,
+    story_points: updatedTask.story_points,
+    planned_date: updatedTask.planned_date,
+    closed_date: updatedTask.closed_date,
+  });
+
+  if (sourceColumn.status === updatedTask.status) return;
+
+  sourceColumn.cards.splice(sourceCardIndex, 1);
+  if (sourceColumn.total !== undefined) {
+    sourceColumn.total = Math.max(0, sourceColumn.total - 1);
+  }
+
+  const targetColumn = taskStore.kanban.find((column) => column.status === updatedTask.status);
+  if (!targetColumn) return;
+
+  const duplicateIndex = targetColumn.cards.findIndex((targetCard) => targetCard.id === updatedTask.id);
+  if (duplicateIndex !== -1) {
+    targetColumn.cards.splice(duplicateIndex, 1);
+  } else if (targetColumn.total !== undefined) {
+    targetColumn.total += 1;
+  }
+
+  const insertIndex = targetColumn.cards.findIndex((targetCard) => targetCard.priority < card.priority);
+  if (insertIndex === -1) {
+    targetColumn.cards.push(card);
+  } else {
+    targetColumn.cards.splice(insertIndex, 0, card);
   }
 };
 
