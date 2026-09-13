@@ -25,6 +25,17 @@ const router = useRouter();
 
 const { kanban } = storeToRefs(taskStore);
 const { getKanban } = taskStore;
+const pendingViewRequests = ref(0);
+const isTasksLoading = computed(() => pendingViewRequests.value > 0);
+
+const withTasksLoading = async (request: () => Promise<unknown>) => {
+  pendingViewRequests.value += 1;
+  try {
+    return await request();
+  } finally {
+    pendingViewRequests.value = Math.max(0, pendingViewRequests.value - 1);
+  }
+};
 
 const onKanbanLoadMore = async ({ status, offset, done }: { status: string; offset: number; done?: () => void }) => {
   try {
@@ -56,7 +67,7 @@ const onToggleCollapse = (payload: { status: TASK_STATUSES; collapsed: boolean }
 
 const fetchTasks = async () => {
   try {
-    await taskStore.fetchTasks({ useSavedFilters: true });
+    await withTasksLoading(() => taskStore.fetchTasks({ useSavedFilters: true }));
   } catch (e) {
     console.log(e);
     $toast.error(getErrorMessage(e));
@@ -65,7 +76,7 @@ const fetchTasks = async () => {
 
 const fetchKanban = async () => {
   try {
-    await getKanban({ useSavedFilters: true });
+    await withTasksLoading(() => getKanban({ useSavedFilters: true }));
   } catch (e) {
     console.log(e);
     $toast.error(getErrorMessage(e));
@@ -74,7 +85,7 @@ const fetchKanban = async () => {
 
 const fetchWeekly = async () => {
   try {
-    await taskStore.refreshWeeklyTasks();
+    await withTasksLoading(() => taskStore.refreshWeeklyTasks());
   } catch (e) {
     console.log(e);
     $toast.error(getErrorMessage(e));
@@ -92,9 +103,9 @@ const loadTasksPageData = async () => {
   await taskStore.getFilterState();
 
   const jobs: Promise<unknown>[] = [taskStore.fetchMyTodayTasksCount(userStore.user?.id)];
-  if (viewType.value === ViewType.LIST) jobs.push(taskStore.fetchTasks({ useSavedFilters: true }));
-  if (viewType.value === ViewType.KANBAN) jobs.push(getKanban({ useSavedFilters: true }));
-  if (viewType.value === ViewType.WEEKLY) jobs.push(taskStore.fetchWeeklyTasks());
+  if (viewType.value === ViewType.LIST) jobs.push(fetchTasks());
+  if (viewType.value === ViewType.KANBAN) jobs.push(fetchKanban());
+  if (viewType.value === ViewType.WEEKLY) jobs.push(fetchWeekly());
 
   await Promise.all(jobs);
   taskStore.tasksPageHydrated = true;
@@ -816,8 +827,9 @@ useHead({
     </div>
 
     <hr />
-    <div class="home__tasks-items">
-      <template v-if="viewType === ViewType.KANBAN">
+    <div class="home__tasks-items" :aria-busy="isTasksLoading">
+      <TasksViewSkeleton v-if="isTasksLoading" :view="viewType" />
+      <template v-else-if="viewType === ViewType.KANBAN">
         <BaseKanban
           :key="String(taskStore.filter)"
           :columns="kanban"
@@ -829,10 +841,10 @@ useHead({
           @task-created="fetchKanban"
         />
       </template>
-      <template v-if="viewType === ViewType.WEEKLY">
+      <template v-else-if="viewType === ViewType.WEEKLY">
         <WeeklyView />
       </template>
-      <template v-if="viewType === ViewType.LIST">
+      <template v-else>
         <div v-if="!taskStore.tasks.length && taskStore.isFilterFilled()" class="home__list-empty">
           <img src="@/assets/empty_filter.webp" alt="" />
           <h4>По вашему запросу ничего не найдено</h4>

@@ -12,6 +12,7 @@ const router = useRouter();
 const { $toast } = useNuxtApp();
 
 const currentWeekStart = ref<string>('');
+const isLoading = ref(false);
 
 const DAY_LABELS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'] as const;
 
@@ -28,6 +29,7 @@ const weekLabel = computed(() => {
 });
 
 const fetchWeek = async (weekStart?: string) => {
+  isLoading.value = true;
   try {
     await taskStore.fetchWeeklyTasks(weekStart);
     if (taskStore.weeklyTasks) {
@@ -35,6 +37,8 @@ const fetchWeek = async (weekStart?: string) => {
     }
   } catch (e) {
     $toast.error(getErrorMessage(e));
+  } finally {
+    isLoading.value = false;
   }
 };
 
@@ -86,6 +90,8 @@ onMounted(() => {
 
 <template>
   <div class="weekly-view">
+    <TasksViewSkeleton v-if="isLoading" view="weekly" />
+    <template v-else>
     <div class="weekly-view__nav">
       <button class="weekly-view__nav-btn" @click="prevWeek">
         <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -167,6 +173,7 @@ onMounted(() => {
         </div>
       </div>
     </div>
+    </template>
   </div>
 </template>
 
