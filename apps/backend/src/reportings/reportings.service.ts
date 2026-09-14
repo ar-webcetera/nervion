@@ -326,6 +326,7 @@ export class ReportingsService {
       where,
       relations: ['task', 'author', 'task.project'],
     });
+    rawTimelogs.sort((left, right) => this.resolveTimelogLoggedAt(right).getTime() - this.resolveTimelogLoggedAt(left).getTime());
 
     const timelogs: TimelogRow[] = rawTimelogs.map((timelog) => {
       const author = timelog.author;

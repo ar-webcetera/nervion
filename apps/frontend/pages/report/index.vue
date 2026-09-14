@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { ChartNoAxesCombined, ClipboardCheck, FileSpreadsheet, Download, Save } from '@lucide/vue';
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ChartNoAxesCombined,
+  ClipboardCheck,
+  FileSpreadsheet,
+  Download,
+  Save,
+} from '@lucide/vue';
 import { ReportSection } from '~/enums/report.enums';
 import { format, isBefore } from 'date-fns';
 import type { Project } from '~/types/project';
@@ -29,6 +38,67 @@ const targetInput = ref(0);
 const billingMorePending = ref(false);
 const billingSummaryModal = ref<{ open: () => void; close: () => void } | null>(null);
 const billingSummaryItem = ref<BillingQueueItem | null>(null);
+type ReportSortKey = 'project' | 'executor' | 'rate' | 'taskTitle' | 'date' | 'summary' | 'hours' | 'amount';
+type SortDirection = 'asc' | 'desc';
+
+const reportColumns: ReadonlyArray<{ key: ReportSortKey; label: string }> = [
+  { key: 'project', label: 'Проект' },
+  { key: 'executor', label: 'Исполнитель' },
+  { key: 'rate', label: 'Ставка за час (руб)' },
+  { key: 'taskTitle', label: 'Название задачи' },
+  { key: 'date', label: 'Дата фиксации' },
+  { key: 'summary', label: 'Расшифровка таймлога' },
+  { key: 'hours', label: 'Затрачено, ч' },
+  { key: 'amount', label: 'Сумма' },
+];
+const reportSortKey = ref<ReportSortKey>('date');
+const reportSortDirection = ref<SortDirection>('desc');
+const reportCollator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
+
+const getReportDateValue = (value: string) => {
+  const match = value.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$/);
+  if (!match) return 0;
+  const [, day, month, year, hours, minutes] = match;
+  return Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hours), Number(minutes));
+};
+
+const compareReportRows = (left: TimelogRow, right: TimelogRow, key: ReportSortKey) => {
+  if (key === 'date') return getReportDateValue(left.date) - getReportDateValue(right.date);
+
+  const leftValue = left[key];
+  const rightValue = right[key];
+  if (typeof leftValue === 'number' && typeof rightValue === 'number') return leftValue - rightValue;
+  return reportCollator.compare(String(leftValue ?? ''), String(rightValue ?? ''));
+};
+
+const sortedReportRows = computed(() =>
+  reportRows.value
+    .map((row, originalIndex) => ({ row, originalIndex }))
+    .sort((left, right) => {
+      const comparison = compareReportRows(left.row, right.row, reportSortKey.value);
+      if (comparison === 0) return left.originalIndex - right.originalIndex;
+      return reportSortDirection.value === 'asc' ? comparison : -comparison;
+    }),
+);
+
+const toggleReportSort = (key: ReportSortKey) => {
+  if (reportSortKey.value === key) {
+    reportSortDirection.value = reportSortDirection.value === 'asc' ? 'desc' : 'asc';
+    return;
+  }
+  reportSortKey.value = key;
+  reportSortDirection.value = 'asc';
+};
+
+const getReportAriaSort = (key: ReportSortKey): 'ascending' | 'descending' | 'none' => {
+  if (reportSortKey.value !== key) return 'none';
+  return reportSortDirection.value === 'asc' ? 'ascending' : 'descending';
+};
+
+const getReportSortLabel = (key: ReportSortKey, label: string) => {
+  const nextDirection = reportSortKey.value === key && reportSortDirection.value === 'asc' ? 'desc' : 'asc';
+  return `Сортировать столбец «${label}» по ${nextDirection === 'asc' ? 'возрастанию' : 'убыванию'}`;
+};
 
 if (userStore.user?.role !== ROLES.admin) {
   throw createError({ status: 403 });
@@ -565,18 +635,24 @@ definePageMeta({
           <table class="report__table">
             <thead>
               <tr>
-                <th>Проект</th>
-                <th>Исполнитель</th>
-                <th>Ставка за час (руб)</th>
-                <th>Название задачи</th>
-                <th>Дата фиксации</th>
-                <th>Расшифровка таймлога</th>
-                <th>Затрачено, ч</th>
-                <th>Сумма</th>
+                <th v-for="column of reportColumns" :key="column.key" :aria-sort="getReportAriaSort(column.key)">
+                  <button
+                    type="button"
+                    class="report__sort-button"
+                    :class="{ 'report__sort-button_active': reportSortKey === column.key }"
+                    :aria-label="getReportSortLabel(column.key, column.label)"
+                    @click="toggleReportSort(column.key)"
+                  >
+                    <span>{{ column.label }}</span>
+                    <ArrowUpDown v-if="reportSortKey !== column.key" :size="16" aria-hidden="true" />
+                    <ArrowUp v-else-if="reportSortDirection === 'asc'" :size="16" aria-hidden="true" />
+                    <ArrowDown v-else :size="16" aria-hidden="true" />
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(row, i) in reportRows" :key="i">
+              <tr v-for="{ row, originalIndex } of sortedReportRows" :key="originalIndex">
                 <td>{{ row.project }}</td>
                 <td>{{ row.executor }}</td>
                 <td>{{ row.rate }}</td>
@@ -786,6 +862,7 @@ definePageMeta({
 
     th {
       @extend %text-s-medium;
+      padding: 0;
       background: var(--light-text-backgroung-primary-5);
       position: sticky;
       top: 0;
@@ -813,6 +890,45 @@ definePageMeta({
 
   &__table-total-label {
     text-align: right;
+  }
+
+  &__sort-button {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 0;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+    white-space: nowrap;
+    @include flex(rn, a-center, j-start);
+    gap: 6px;
+    @extend %text-s-medium;
+
+    &:hover {
+      color: var(--light-text-backgroung-primary);
+      background: var(--light-text-backgroung-primary-5);
+    }
+
+    &:focus-visible {
+      color: var(--light-text-backgroung-primary);
+      box-shadow: inset 0 0 0 2px var(--primary);
+      outline: none;
+    }
+
+    svg {
+      flex-shrink: 0;
+      opacity: 0.55;
+    }
+
+    &_active {
+      color: var(--light-text-backgroung-primary);
+
+      svg {
+        color: var(--primary);
+        opacity: 1;
+      }
+    }
   }
 
   &__detail-title {

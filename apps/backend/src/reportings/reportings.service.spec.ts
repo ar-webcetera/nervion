@@ -87,4 +87,39 @@ describe('ReportingsService', () => {
     expect(rows[0]?.hours).toBe(1);
     expect(rows[0]?.amount).toBe(1000);
   });
+
+  it('возвращает таймлоги от новой даты фиксации к старой', async () => {
+    timelogRepository.find.mockResolvedValue([
+      {
+        id: 1,
+        author_id: 6,
+        time_spent: 3600,
+        summary: 'Старая запись',
+        tracking_date: '2026-07-01',
+        updated_at: new Date('2026-07-10T10:00:00.000Z'),
+        author: { id: 6, first_name: 'Иван', last_name: 'Иванов' },
+        task: { id: 10, title: 'Задача', project: { name: 'Проект' } },
+      },
+      {
+        id: 2,
+        author_id: 6,
+        time_spent: 1800,
+        summary: 'Новая запись',
+        tracking_date: '2026-07-03',
+        updated_at: new Date('2026-07-03T10:00:00.000Z'),
+        author: { id: 6, first_name: 'Иван', last_name: 'Иванов' },
+        task: { id: 10, title: 'Задача', project: { name: 'Проект' } },
+      },
+    ]);
+
+    const rows = await service.preview({
+      from: '2026-07-01',
+      to: '2026-07-10',
+      employees: [{ user_id: 6, cost: 1000 }],
+      project_id: null,
+      executor_id: null,
+    });
+
+    expect(rows.map((row) => row.summary)).toEqual(['Новая запись', 'Старая запись']);
+  });
 });
