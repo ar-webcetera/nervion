@@ -2,7 +2,7 @@
 import { format } from 'date-fns';
 import { X } from '@lucide/vue';
 import { ru } from 'date-fns/locale';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import BaseModal from '~/components/BaseModal.vue';
 import { useFormatTimeSpent } from '~/composables/useFormatTimeSpent';
 import type { Timelog } from '~/types/task';
@@ -35,6 +35,9 @@ const loadTimelogs = async (taskId: number) => {
 const isOpenReportTimeTrack = ref<boolean>(false);
 const deleteTrackModal = ref<InstanceType<typeof BaseModal> | null>(null);
 const selectedTimelog = ref<Timelog | null>(null);
+const sortedTimelogs = computed(() =>
+  [...timelogStore.timelogs].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()),
+);
 
 const capitalize = (value: string) => {
   if (!value) return value;
@@ -127,7 +130,7 @@ onUnmounted(() => {
               <div></div>
             </div>
             <div class="task-time-track-dropdown__table-body">
-              <div v-for="timelog of timelogStore.timelogs" :key="timelog.id" class="task-time-track-dropdown-item">
+              <div v-for="timelog of sortedTimelogs" :key="timelog.id" class="task-time-track-dropdown-item">
                 <div class="task-time-track-dropdown-item__date">
                   {{ capitalize(format(timelog.created_at, 'd MMM yyyy', { locale: ru })) }}
                 </div>
