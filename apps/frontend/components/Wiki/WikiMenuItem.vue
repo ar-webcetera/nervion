@@ -14,9 +14,16 @@ const itemRef = ref<HTMLElement | null>(null);
 
 const isOpen = ref(false);
 const hasChildren = computed(() => props.wikiTreeNode.children && props.wikiTreeNode.children.length > 0);
-const isCurrentPage = computed(
-  () => props.wikiTreeNode.id === Number(router.currentRoute.value.query.page_id),
+const currentPageId = computed(() => Number(router.currentRoute.value.query.page_id));
+const isCurrentPage = computed(() => props.wikiTreeNode.id === currentPageId.value);
+
+const containsPage = (nodes: WikiTreeNode[], pageId: number): boolean =>
+  nodes.some((node) => node.id === pageId || containsPage(node.children, pageId));
+
+const containsCurrentPage = computed(
+  () => Number.isInteger(currentPageId.value) && containsPage(props.wikiTreeNode.children, currentPageId.value),
 );
+const isCurrentBranch = computed(() => isCurrentPage.value || containsCurrentPage.value);
 
 const isDragging = computed(() => dnd.draggingId.value === props.wikiTreeNode.id);
 const isDropBefore = computed(
@@ -36,6 +43,14 @@ watch(
       isOpen.value = true;
     }
   },
+);
+
+watch(
+  isCurrentBranch,
+  (active) => {
+    if (active && hasChildren.value) isOpen.value = true;
+  },
+  { immediate: true },
 );
 
 const openPage = () => {
@@ -85,16 +100,19 @@ const onHandlePointerDown = (e: PointerEvent) => {
         </svg>
       </span>
 
-      <div
+      <button
         v-if="hasChildren"
+        type="button"
         class="wiki-menu-item__arrow"
         :class="{ 'wiki-menu-item__arrow_rotate': isOpen }"
+        :aria-label="isOpen ? `Свернуть ${wikiTreeNode.name}` : `Развернуть ${wikiTreeNode.name}`"
+        :aria-expanded="isOpen"
         @click.stop="isOpen = !isOpen"
       >
         <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
           <path d="M4 3l3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
-      </div>
+      </button>
 
       <div class="wiki-menu-item__icon">
         <svg v-if="hasChildren" width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -222,6 +240,9 @@ const onHandlePointerDown = (e: PointerEvent) => {
     color: var(--light-text-backgroung-primary-50);
     width: 16px;
     height: 16px;
+    padding: 0;
+    border: 0;
+    background: transparent;
 
     &_rotate {
       transform: rotate(90deg);
@@ -229,6 +250,11 @@ const onHandlePointerDown = (e: PointerEvent) => {
 
     svg {
       stroke: currentColor;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-50);
+      outline-offset: 2px;
     }
   }
 
@@ -259,6 +285,13 @@ const onHandlePointerDown = (e: PointerEvent) => {
     gap: 1px;
     padding-left: 6px;
     border-left: 1px solid var(--light-text-backgroung-primary-10);
+  }
+
+  @media (hover: none), (pointer: coarse) {
+    &__arrow {
+      width: 44px;
+      height: 44px;
+    }
   }
 }
 </style>

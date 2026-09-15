@@ -6,6 +6,7 @@ import BaseModal from '~/components/BaseModal.vue';
 import MailActionIcon from '~/components/Mail/MailActionIcon.vue';
 import MailDeliveryBadge from '~/components/Mail/MailDeliveryBadge.vue';
 import MailMessageView from '~/components/Mail/MailMessageView.vue';
+import MailThreadActionsMenu from '~/components/Mail/MailThreadActionsMenu.vue';
 import { ROLES } from '~/types/user';
 import { MAIL_DIRECTIONS, type MailAttachmentDescriptor, type MailMessage, type MailThread } from '~/types/mail';
 import { getErrorMessage } from '~/utils/error';
@@ -1028,6 +1029,22 @@ const askMoveCurrentThread = () => {
   openMoveDialog([currentThread.value.id]);
 };
 
+const markThreadUnread = async (thread: MailThread) => {
+  try {
+    await mailStore.markThreadUnread(thread.id);
+    $toast.success('Переписка отмечена непрочитанной');
+    return true;
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+    return false;
+  }
+};
+
+const markCurrentThreadUnread = async () => {
+  if (!currentThread.value) return;
+  if (await markThreadUnread(currentThread.value)) selectedThreadId.value = null;
+};
+
 const resetMoveDialog = () => {
   if (movingThreads.value) return;
   moveTarget.value = '';
@@ -1117,6 +1134,16 @@ const askDeleteThread = () => {
     permanent: isTrashFolder.value,
     id: currentThread.value.id,
     label: currentThread.value.subject,
+  };
+  confirmModal.value?.open();
+};
+
+const askDeleteThreadFromList = (thread: MailThread) => {
+  deleteTarget.value = {
+    kind: 'thread',
+    permanent: isTrashFolder.value,
+    id: thread.id,
+    label: thread.subject,
   };
   confirmModal.value?.open();
 };
@@ -1262,12 +1289,18 @@ const avatarUrl = (address: string | null) => {
 };
 
 const threadAvatarUrl = (thread: MailThread) => {
-  const key = normalizeAddress(thread.counterparty_address);
-  if (thread.counterparty_avatar_url && !brokenAvatars.value.has(key)) {
-    return thread.counterparty_avatar_url;
+  const address = thread.list_sender_address || thread.counterparty_address;
+  const key = normalizeAddress(address);
+  const avatar = thread.list_sender_address ? thread.list_sender_avatar_url : thread.counterparty_avatar_url;
+  if (avatar && !brokenAvatars.value.has(key)) {
+    return avatar;
   }
-  return avatarUrl(thread.counterparty_address);
+  return avatarUrl(address);
 };
+
+const threadSenderAddress = (thread: MailThread) => thread.list_sender_address || thread.counterparty_address;
+
+const threadSenderLabel = (thread: MailThread) => thread.list_sender_name?.trim() || threadSenderAddress(thread);
 
 const onAvatarError = (address: string | null) => {
   const key = normalizeAddress(address);
@@ -1278,7 +1311,7 @@ const onAvatarError = (address: string | null) => {
 watch(
   threads,
   (list) => {
-    (list || []).forEach((thread) => ensureGravatar(thread.counterparty_address));
+    (list || []).forEach((thread) => ensureGravatar(threadSenderAddress(thread)));
     const availableIds = new Set((list || []).map((thread) => thread.id));
     const availableSelection = new Set([...selectedThreadIds.value].filter((threadId) => availableIds.has(threadId)));
     if (availableSelection.size !== selectedThreadIds.value.size) selectedThreadIds.value = availableSelection;
@@ -1489,7 +1522,7 @@ watch(
             <button
               type="button"
               class="mail-page__thread-avatar"
-              :style="threadAvatarUrl(thread) ? {} : { backgroundColor: avatarColor(thread.counterparty_address) }"
+              :style="threadAvatarUrl(thread) ? {} : { backgroundColor: avatarColor(threadSenderAddress(thread)) }"
               :aria-label="selectedThreadIds.has(thread.id) ? 'Снять выбор' : 'Выбрать письмо'"
               :aria-pressed="selectedThreadIds.has(thread.id)"
               @click.stop="toggleThreadSelection(thread.id)"
@@ -1516,13 +1549,13 @@ watch(
                 class="mail-page__thread-avatar-img"
                 alt=""
                 loading="lazy"
-                @error="onAvatarError(thread.counterparty_address)"
+                @error="onAvatarError(threadSenderAddress(thread))"
               />
-              <template v-else>{{ avatarInitials(thread.counterparty_address) }}</template>
+              <template v-else>{{ avatarInitials(threadSenderAddress(thread)) }}</template>
             </button>
             <span class="mail-page__thread-body">
               <span class="mail-page__thread-top">
-                <span class="mail-page__thread-counterparty">{{ thread.counterparty_address }}</span>
+                <span class="mail-page__thread-counterparty">{{ threadSenderLabel(thread) }}</span>
                 <span class="mail-page__thread-date">{{ threadDate(thread.list_activity_at || thread.last_message_at) }}</span>
               </span>
               <span class="mail-page__thread-bottom">
@@ -1540,6 +1573,14 @@ watch(
                 <span v-if="thread.unread_count" class="mail-page__thread-badge">{{ thread.unread_count }}</span>
               </span>
             </span>
+            <MailThreadActionsMenu
+              :subject="thread.subject"
+              :can-mark-unread="Boolean(thread.last_inbound_at) && !thread.unread_count"
+              :permanent-delete="isTrashFolder"
+              @mark-unread="markThreadUnread(thread)"
+              @move="openMoveDialog([thread.id])"
+              @delete="askDeleteThreadFromList(thread)"
+            />
           </div>
           <div v-if="isLoadingMoreThreads" class="mail-page__load-more">Загружаем ещё…</div>
         </div>
@@ -1728,6 +1769,16 @@ watch(
                 <MailActionIcon name="spam-domain" />
               </button>
             </template>
+            <button
+              v-if="lastInboundMessage"
+              class="mail-page__action-button"
+              type="button"
+              aria-label="Отметить переписку непрочитанной"
+              title="Отметить непрочитанной"
+              @click="markCurrentThreadUnread"
+            >
+              <MailActionIcon name="mark-unread" />
+            </button>
             <button
               v-if="currentThread && !isTrashFolder"
               class="mail-page__action-button"
@@ -2704,6 +2755,10 @@ watch(
 
     &:hover {
       background: var(--light-text-backgroung-primary-5);
+
+      :deep(.thread-actions__trigger) {
+        opacity: 1;
+      }
     }
 
     &_active {

@@ -8,6 +8,13 @@ export interface MailUnreadCounts {
   trash: number;
 }
 
+/** Отправитель последнего входящего письма, отображаемый в списке цепочек. */
+export interface MailThreadListSender {
+  list_sender_address: string | null;
+  list_sender_name: string | null;
+  list_sender_avatar_url: string | null;
+}
+
 /** Пользовательская папка внутри конкретного почтового ящика. */
 export interface MailFolder {
   id: number;

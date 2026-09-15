@@ -1,13 +1,14 @@
 import { defineStore } from 'pinia';
 import { MailSystemFolder } from '@tracker/contracts';
 import type { MailFolder, MailSpamRuleScope, MailStatsResponse, MailUnreadCounts } from '@tracker/contracts';
-import type {
-  MailAccount,
-  MailAccountPayload,
-  MailAttachmentDescriptor,
-  MailMessage,
-  MailThread,
-  SendMailPayload,
+import {
+  MAIL_DIRECTIONS,
+  type MailAccount,
+  type MailAccountPayload,
+  type MailAttachmentDescriptor,
+  type MailMessage,
+  type MailThread,
+  type SendMailPayload,
 } from '~/types/mail';
 
 interface ThreadsResponse {
@@ -271,6 +272,23 @@ export const useMailStore = defineStore('mail', () => {
     }
   };
 
+  const markThreadUnread = async (threadId: number) => {
+    await $fetch(`/api/mailbox/threads/${threadId}/unread`, { ...requestOptions(), method: 'PATCH' });
+
+    const listThread = threads.value.find((item) => item.id === threadId);
+    const thread = listThread ?? (currentThread.value?.id === threadId ? currentThread.value : null);
+    if (listThread) listThread.unread_count = Math.max(1, listThread.unread_count ?? 0);
+    if (currentThread.value?.id === threadId) {
+      currentThread.value.unread_count = Math.max(1, currentThread.value.unread_count ?? 0);
+    }
+
+    const latestInboundMessage = [...messages.value]
+      .reverse()
+      .find((message) => message.direction === MAIL_DIRECTIONS.inbound);
+    if (currentThread.value?.id === threadId && latestInboundMessage) latestInboundMessage.is_read = false;
+    if (thread) await fetchAccountUnreadCount(thread.account_id);
+  };
+
   const sendMail = async (payload: SendMailPayload) => {
     const message = await $fetch<MailMessage>('/api/mailbox/send', {
       ...requestOptions(),
@@ -359,6 +377,7 @@ export const useMailStore = defineStore('mail', () => {
     fetchThreads,
     fetchThread,
     markThreadRead,
+    markThreadUnread,
     sendMail,
     retryMessage,
     fetchAccountUnreadCount,

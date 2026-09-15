@@ -1,4 +1,4 @@
-import type { MailDeliveryStatus, MailSystemFolder } from '@tracker/contracts';
+import type { MailDeliveryStatus, MailSystemFolder, MailThreadListSender } from '@tracker/contracts';
 
 export enum MAIL_ACCOUNT_TYPES {
   personal = 'personal',
@@ -72,7 +72,7 @@ export interface MailMessage {
   attachments?: MailAttachment[];
 }
 
-export interface MailThread {
+export interface MailThread extends Partial<MailThreadListSender> {
   id: number;
   subject: string;
   account_id: number;

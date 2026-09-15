@@ -11,7 +11,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MailDeliveryStatus, MailSpamRuleScope, MailSystemFolder, type MailUnreadCounts } from '@tracker/contracts';
+import {
+  MailDeliveryStatus,
+  MailSpamRuleScope,
+  MailSystemFolder,
+  type MailThreadListSender,
+  type MailUnreadCounts,
+} from '@tracker/contracts';
 import { Brackets, ILike, In, IsNull, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { Notifications } from '../notifications/entities/notification.entity';
@@ -777,7 +783,14 @@ export class MailboxService {
     }
 
     const [threads, total] = await query.getManyAndCount();
-    const avatarByAddress = await this.getUserAvatarMap(threads.map((thread) => thread.counterparty_address));
+    const latestInboundSenders =
+      !dto.custom_folder_id && folder === MAIL_FOLDER_FILTER.inbox
+        ? await this.getLatestInboundSenders(threads.map((thread) => thread.id))
+        : new Map<number, MailThreadListSender>();
+    const avatarByAddress = await this.getUserAvatarMap([
+      ...threads.map((thread) => thread.counterparty_address),
+      ...Array.from(latestInboundSenders.values(), (sender) => sender.list_sender_address),
+    ]);
     const deliveryByThread =
       folder === MAIL_FOLDER_FILTER.sent
         ? await this.mailDeliveryService.attachDeliverySummaries(threads.map((thread) => thread.id))
@@ -786,6 +799,8 @@ export class MailboxService {
     return {
       threads: threads.map((thread) => {
         const delivery = deliveryByThread?.get(thread.id);
+        const latestInboundSender = latestInboundSenders.get(thread.id);
+        const listSenderAddress = latestInboundSender?.list_sender_address ?? thread.counterparty_address;
         return {
           ...thread,
           list_activity_at:
@@ -793,6 +808,9 @@ export class MailboxService {
               ? (thread.last_inbound_at ?? thread.last_message_at)
               : thread.last_message_at,
           counterparty_avatar_url: avatarByAddress.get(this.normalizeEmail(thread.counterparty_address)) ?? null,
+          list_sender_address: listSenderAddress,
+          list_sender_name: latestInboundSender?.list_sender_name ?? null,
+          list_sender_avatar_url: avatarByAddress.get(this.normalizeEmail(listSenderAddress)) ?? null,
           delivery_status: delivery?.delivery_status ?? null,
           open_count: delivery?.open_count ?? 0,
           click_count: delivery?.click_count ?? 0,
@@ -802,6 +820,35 @@ export class MailboxService {
       page,
       limit,
     };
+  }
+
+  private async getLatestInboundSenders(threadIds: number[]): Promise<Map<number, MailThreadListSender>> {
+    if (threadIds.length === 0) return new Map();
+
+    const rows = await this.messagesRepository
+      .createQueryBuilder('message')
+      .distinctOn(['message.thread_id'])
+      .select('message.thread_id', 'thread_id')
+      .addSelect('message.from_address', 'from_address')
+      .addSelect('message.from_name', 'from_name')
+      .where('message.thread_id IN (:...threadIds)', { threadIds })
+      .andWhere('message.direction = :direction', { direction: MAIL_DIRECTIONS.inbound })
+      .andWhere('message.deleted_at IS NULL')
+      .orderBy('message.thread_id', 'ASC')
+      .addOrderBy('message.created_at', 'DESC')
+      .addOrderBy('message.id', 'DESC')
+      .getRawMany<{ thread_id: number | string; from_address: string; from_name: string | null }>();
+
+    return new Map(
+      rows.map((row) => [
+        Number(row.thread_id),
+        {
+          list_sender_address: row.from_address,
+          list_sender_name: row.from_name,
+          list_sender_avatar_url: null,
+        },
+      ]),
+    );
   }
 
   async getThreadWithMessages(user: AuthenticatedUser, threadId: number) {
@@ -1144,6 +1191,15 @@ export class MailboxService {
       { thread_id: thread.id, direction: MAIL_DIRECTIONS.inbound, is_read: false },
       { is_read: true },
     );
+  }
+
+  async markThreadUnread(user: AuthenticatedUser, threadId: number): Promise<void> {
+    const { messages } = await this.getThreadWithMessages(user, threadId);
+    const latestInboundMessage = [...messages].reverse().find((message) => message.direction === MAIL_DIRECTIONS.inbound);
+
+    if (!latestInboundMessage) return;
+
+    await this.messagesRepository.update({ id: latestInboundMessage.id }, { is_read: false });
   }
 
   async linkThreadToTask(user: AuthenticatedUser, threadId: number, taskId: number | null): Promise<MailThreads> {

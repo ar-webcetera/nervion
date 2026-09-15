@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { FolderInput, GlobeLock, ShieldAlert, ShieldCheck, Trash2, Undo2 } from '@lucide/vue';
+import { FolderInput, GlobeLock, Mail, ShieldAlert, ShieldCheck, Trash2, Undo2 } from '@lucide/vue';
 
 const props = defineProps<{
-  name: 'move' | 'delete' | 'spam-sender' | 'spam-domain' | 'not-spam' | 'restore';
+  name: 'move' | 'delete' | 'mark-unread' | 'spam-sender' | 'spam-domain' | 'not-spam' | 'restore';
 }>();
 
 const icons = {
   move: FolderInput,
   delete: Trash2,
+  'mark-unread': Mail,
   'spam-sender': ShieldAlert,
   'spam-domain': GlobeLock,
   'not-spam': ShieldCheck,

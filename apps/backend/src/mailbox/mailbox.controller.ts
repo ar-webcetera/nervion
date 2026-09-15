@@ -143,6 +143,18 @@ export class MailboxController {
     return { success: true };
   }
 
+  @Patch('threads/:id/unread')
+  @ApiOperation({ summary: 'Отметить цепочку писем как непрочитанную' })
+  @ApiParam({ name: 'id', description: 'ID цепочки писем', type: Number })
+  @ApiResponse({ status: 200, description: 'Цепочка отмечена непрочитанной' })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  @ApiResponse({ status: 404, description: 'Цепочка не найдена' })
+  async markUnread(@Req() req: RequestWithCookies, @Param('id', ParseIntPipe) id: number) {
+    await this.mailboxService.markThreadUnread(req.user, id);
+
+    return { success: true };
+  }
+
   @Patch('threads/:id/task')
   @ApiOperation({ summary: 'Привязать цепочку писем к задаче или отвязать' })
   @ApiParam({ name: 'id', description: 'ID цепочки писем', type: Number })

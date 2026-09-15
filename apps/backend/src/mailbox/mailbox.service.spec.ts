@@ -24,11 +24,13 @@ type MessagesQueryBuilderMock = {
   createQueryBuilder: jest.Mock;
   select: jest.Mock;
   addSelect: jest.Mock;
+  distinctOn: jest.Mock;
   innerJoin: jest.Mock;
   innerJoinAndSelect: jest.Mock;
   where: jest.Mock;
   andWhere: jest.Mock;
   orderBy: jest.Mock;
+  addOrderBy: jest.Mock;
   groupBy: jest.Mock;
   skip: jest.Mock;
   take: jest.Mock;
@@ -44,11 +46,13 @@ const createMessagesQueryBuilderMock = (): MessagesQueryBuilderMock => {
   qb.createQueryBuilder = jest.fn(() => qb);
   qb.select = jest.fn(() => qb);
   qb.addSelect = jest.fn(() => qb);
+  qb.distinctOn = jest.fn(() => qb);
   qb.innerJoin = jest.fn(() => qb);
   qb.innerJoinAndSelect = jest.fn(() => qb);
   qb.where = jest.fn(() => qb);
   qb.andWhere = jest.fn(() => qb);
   qb.orderBy = jest.fn(() => qb);
+  qb.addOrderBy = jest.fn(() => qb);
   qb.groupBy = jest.fn(() => qb);
   qb.skip = jest.fn(() => qb);
   qb.take = jest.fn(() => qb);
@@ -593,6 +597,55 @@ describe('MailboxService', () => {
       await service.findThreads({ id: 10, role: 'employee' } as never, { account_id: 1 });
 
       expect(threadsQueryBuilder.orderBy).toHaveBeenCalledWith('thread.last_inbound_at', 'DESC', 'NULLS LAST');
+    });
+
+    it('показывает в списке отправителя последнего входящего письма из цепочки', async () => {
+      threadsQueryBuilder.getManyAndCount.mockResolvedValue([
+        [
+          {
+            id: 3,
+            account_id: 1,
+            counterparty_address: 'owner@example.com',
+            last_message_at: new Date('2026-09-15T10:00:00Z'),
+            last_inbound_at: new Date('2026-09-15T10:00:00Z'),
+          },
+        ],
+        1,
+      ]);
+      messagesQueryBuilder.getRawMany.mockResolvedValue([
+        { thread_id: 3, from_address: 'copy@example.com', from_name: 'Участник из копии' },
+      ]);
+      usersQueryBuilder.getMany.mockResolvedValue([]);
+
+      const result = await service.findThreads({ id: 10, role: 'employee' } as never, { account_id: 1 });
+
+      expect(messagesQueryBuilder.distinctOn).toHaveBeenCalledWith(['message.thread_id']);
+      expect(result.threads[0]).toEqual(
+        expect.objectContaining({
+          counterparty_address: 'owner@example.com',
+          list_sender_address: 'copy@example.com',
+          list_sender_name: 'Участник из копии',
+        }),
+      );
+    });
+  });
+
+  describe('thread read status', () => {
+    it('помечает непрочитанным только последнее входящее письмо цепочки', async () => {
+      mockThreadsRepository.findOne.mockResolvedValue({
+        id: 3,
+        account: { id: 1, allowedUsers: [{ id: 10 }] },
+      });
+      mockMessagesRepository.find.mockResolvedValue([
+        { id: 7, direction: MAIL_DIRECTIONS.inbound },
+        { id: 8, direction: MAIL_DIRECTIONS.outbound },
+        { id: 9, direction: MAIL_DIRECTIONS.inbound },
+      ]);
+      usersQueryBuilder.getMany.mockResolvedValue([]);
+
+      await service.markThreadUnread({ id: 10, role: 'employee' } as never, 3);
+
+      expect(mockMessagesRepository.update).toHaveBeenCalledWith({ id: 9 }, { is_read: false });
     });
   });
 
