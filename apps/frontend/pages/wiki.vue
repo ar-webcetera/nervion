@@ -385,7 +385,7 @@ definePageMeta({
         <div v-else-if="markdownContent" class="project-wiki__page">
           <div class="project-wiki__page-top">
             <div class="project-wiki__page-title">
-              <span>{{ markdownFileName }}</span>
+              <span :title="markdownFileName">{{ markdownFileName }}</span>
             </div>
             <div class="project-wiki__header-actions" style="margin-left: auto">
               <button class="project-wiki__header-btn project-wiki__header-btn_ghost" @click.stop="closeMarkdown">
@@ -426,7 +426,9 @@ definePageMeta({
           <div class="project-wiki__page-top">
             <div class="project-wiki__page-title">
               <template v-if="!isEditablePageName">
-                <span @dblclick="openEditPageName">{{ wikiStore.currentPage.name }}</span>
+                <span :title="wikiStore.currentPage.name" @dblclick="openEditPageName">
+                  {{ wikiStore.currentPage.name }}
+                </span>
               </template>
               <template v-else>
                 <div class="project-wiki__page-name">

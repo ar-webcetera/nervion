@@ -133,7 +133,7 @@ const onHandlePointerDown = (e: PointerEvent) => {
         </svg>
       </div>
 
-      <div class="wiki-menu-item__name">
+      <div class="wiki-menu-item__name" :title="wikiTreeNode.name">
         {{ wikiTreeNode.name }}
       </div>
     </div>

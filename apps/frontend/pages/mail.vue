@@ -1678,7 +1678,7 @@ watch(
 
           <div v-if="composeForm.attachments.length" class="mail-page__attach-list">
             <div v-for="(att, index) in composeForm.attachments" :key="index" class="mail-page__attach-item">
-              <span class="mail-page__attach-name">{{ att.filename }}</span>
+              <span class="mail-page__attach-name" :title="att.filename">{{ att.filename }}</span>
               <span class="mail-page__attach-size">{{ formatAttachSize(att.size) }}</span>
               <button class="mail-page__attach-remove" title="Убрать" @click="removeAttachment(index)">×</button>
             </div>
@@ -1890,7 +1890,9 @@ watch(
                       </svg>
                     </div>
                     <div class="mail-page__reply-attachment-meta">
-                      <span class="mail-page__attach-name">{{ attachment.filename }}</span>
+                      <span class="mail-page__attach-name" :title="attachment.filename">
+                        {{ attachment.filename }}
+                      </span>
                       <span class="mail-page__attach-size">{{ formatAttachSize(attachment.size) }}</span>
                     </div>
                     <button
@@ -2743,6 +2745,7 @@ watch(
   }
 
   &__thread {
+    position: relative;
     @include flex(rn, a-center);
     gap: 12px;
     padding: 12px 16px;
@@ -2753,11 +2756,28 @@ watch(
     text-align: left;
     cursor: pointer;
 
-    &:hover {
+    :deep(.thread-actions__trigger) {
+      position: absolute;
+      z-index: 1;
+      top: 50%;
+      right: 8px;
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+
+    &:hover,
+    &:focus-within {
       background: var(--light-text-backgroung-primary-5);
 
       :deep(.thread-actions__trigger) {
         opacity: 1;
+        pointer-events: auto;
+      }
+    }
+
+    @media (hover: none), (pointer: coarse) {
+      :deep(.thread-actions__trigger) {
+        pointer-events: auto;
       }
     }
 

@@ -943,7 +943,7 @@ definePageMeta({
   }
 
   &__table-total-label {
-    text-align: right;
+    text-align: left;
   }
 
   &__sort-button {
@@ -1605,7 +1605,7 @@ definePageMeta({
     td:nth-child(3),
     td:nth-child(7),
     td:nth-child(8) {
-      text-align: right;
+      text-align: left;
       font-variant-numeric: tabular-nums;
     }
   }

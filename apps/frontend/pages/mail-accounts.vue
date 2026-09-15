@@ -26,6 +26,7 @@ const form = reactive({
   address: '',
   display_name: '' as string | null,
   allowedUserIds: [] as number[],
+  user_id: null as number | null,
   is_active: true,
 });
 
@@ -49,6 +50,27 @@ const accessNames = (account: MailAccount) => {
   return ids.map(userName).join(', ');
 };
 
+const ownerName = (account: MailAccount) => (account.user_id ? userName(account.user_id) : 'Не выбран');
+
+watch(
+  () => form.user_id,
+  (ownerId) => {
+    if (ownerId && !form.allowedUserIds.includes(ownerId)) {
+      form.allowedUserIds = [...form.allowedUserIds, ownerId];
+    }
+  },
+);
+
+watch(
+  () => form.allowedUserIds,
+  (allowedUserIds) => {
+    if (form.user_id && !allowedUserIds.includes(form.user_id)) {
+      form.user_id = null;
+    }
+  },
+  { deep: true },
+);
+
 await useAsyncData('mail-accounts-init', async () => {
   await Promise.all([mailStore.fetchManageAccounts(), userStore.fetchUsers()]);
   return true;
@@ -58,6 +80,7 @@ const resetForm = () => {
   form.address = '';
   form.display_name = '';
   form.allowedUserIds = [];
+  form.user_id = null;
   form.is_active = true;
 };
 
@@ -72,6 +95,7 @@ const openEdit = (account: MailAccount) => {
   form.address = account.address;
   form.display_name = account.display_name ?? '';
   form.allowedUserIds = (account.allowedUsers ?? []).map((user) => user.id);
+  form.user_id = account.user_id;
   form.is_active = account.is_active;
   modal.value?.open();
 };
@@ -86,6 +110,7 @@ const save = async () => {
     address: form.address.trim().toLowerCase(),
     display_name: form.display_name?.trim() || null,
     allowedUserIds: form.allowedUserIds,
+    user_id: form.user_id,
     is_active: form.is_active,
   };
 
@@ -120,7 +145,7 @@ const toggleActive = async (account: MailAccount) => {
     <header class="mail-accounts__header">
       <div>
         <h1>Почтовые ящики</h1>
-        <p class="mail-accounts__subtitle">Создавайте ящики и открывайте доступ конкретным сотрудникам.</p>
+        <p class="mail-accounts__subtitle">Настраивайте доступ к письмам и получателей уведомлений.</p>
       </div>
       <button class="mail-accounts__add" @click="openCreate">Добавить ящик</button>
     </header>
@@ -130,6 +155,7 @@ const toggleActive = async (account: MailAccount) => {
       <div class="mail-accounts__row mail-accounts__row_head">
         <span>Адрес</span>
         <span>Доступ</span>
+        <span>Владелец</span>
         <span>Статус</span>
         <span></span>
       </div>
@@ -137,9 +163,20 @@ const toggleActive = async (account: MailAccount) => {
       <div v-if="!manageAccounts.length" class="mail-accounts__empty">Ящиков пока нет</div>
 
       <div v-for="account in manageAccounts" :key="account.id" class="mail-accounts__row">
-        <span class="mail-accounts__address">{{ account.address }}</span>
-        <span class="mail-accounts__user">{{ accessNames(account) || 'Нет доступа' }}</span>
-        <span>
+        <span class="mail-accounts__address">
+          <span class="mail-accounts__mobile-label">Адрес</span>
+          {{ account.address }}
+        </span>
+        <span class="mail-accounts__user">
+          <span class="mail-accounts__mobile-label">Доступ</span>
+          {{ accessNames(account) || 'Нет доступа' }}
+        </span>
+        <span class="mail-accounts__user">
+          <span class="mail-accounts__mobile-label">Владелец</span>
+          {{ ownerName(account) }}
+        </span>
+        <span class="mail-accounts__status-cell">
+          <span class="mail-accounts__mobile-label">Статус</span>
           <button
             :class="['mail-accounts__status', account.is_active ? 'mail-accounts__status_on' : 'mail-accounts__status_off']"
             @click="toggleActive(account)"
@@ -179,6 +216,19 @@ const toggleActive = async (account: MailAccount) => {
           />
           <span class="mail-accounts__hint">Письма этого ящика увидят только выбранные сотрудники.</span>
         </div>
+
+        <label class="mail-accounts__field">
+          Владелец ящика
+          <select v-model="form.user_id">
+            <option :value="null">Не выбран</option>
+            <option v-for="option in userOptions" :key="String(option.value)" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+          <span class="mail-accounts__hint">
+            Владелец получает уведомления о новых письмах и автоматически имеет доступ к ящику.
+          </span>
+        </label>
 
         <label class="mail-accounts__checkbox">
           <input v-model="form.is_active" type="checkbox" />
@@ -254,7 +304,7 @@ const toggleActive = async (account: MailAccount) => {
 
   &__row {
     display: grid;
-    grid-template-columns: 2fr 3fr 1fr auto;
+    grid-template-columns: minmax(160px, 2fr) minmax(200px, 3fr) minmax(140px, 2fr) minmax(90px, 1fr) auto;
     align-items: center;
     gap: 12px;
     padding: 12px 16px;
@@ -269,16 +319,56 @@ const toggleActive = async (account: MailAccount) => {
       color: var(--light-text-backgroung-primary-50);
       @extend %p12-medium;
     }
+
+    @media (max-width: $screen-tablet) {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: start;
+
+      &_head {
+        display: none;
+      }
+    }
   }
 
   &__address {
     color: var(--light-text-backgroung-primary);
     overflow-wrap: anywhere;
+
+    @media (max-width: $screen-tablet) {
+      grid-column: 1;
+      grid-row: 1;
+      @include flex(cn);
+      gap: 2px;
+    }
   }
 
   &__user {
     color: var(--light-text-backgroung-primary-50);
     overflow-wrap: anywhere;
+
+    @media (max-width: $screen-tablet) {
+      grid-column: 1 / -1;
+      @include flex(cn);
+      gap: 2px;
+    }
+  }
+
+  &__mobile-label {
+    display: none;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %p12-medium;
+
+    @media (max-width: $screen-tablet) {
+      display: block;
+    }
+  }
+
+  &__status-cell {
+    @media (max-width: $screen-tablet) {
+      grid-column: 1 / -1;
+      @include flex(cn, a-start);
+      gap: 4px;
+    }
   }
 
   &__status {
@@ -301,6 +391,11 @@ const toggleActive = async (account: MailAccount) => {
 
   &__actions {
     @include flex(rn, j-end);
+
+    @media (max-width: $screen-tablet) {
+      grid-column: 2;
+      grid-row: 1;
+    }
   }
 
   &__edit {
@@ -345,7 +440,8 @@ const toggleActive = async (account: MailAccount) => {
     color: var(--light-text-backgroung-primary-50);
     @extend %text-s-regular;
 
-    input[type='text'] {
+    input[type='text'],
+    select {
       width: 100%;
       padding: 10px 12px;
       border: 1px solid var(--light-text-backgroung-primary-10);
@@ -355,13 +451,20 @@ const toggleActive = async (account: MailAccount) => {
       outline: none;
       @extend %text-s-regular;
 
+      &:focus-visible {
+        border-color: var(--primary-50);
+        outline: 2px solid var(--primary-50);
+        outline-offset: 2px;
+      }
+
       &::placeholder {
         color: var(--light-text-backgroung-primary-50);
       }
 
-      &:focus {
-        border-color: var(--primary-50);
-      }
+    }
+
+    select {
+      cursor: pointer;
     }
   }
 

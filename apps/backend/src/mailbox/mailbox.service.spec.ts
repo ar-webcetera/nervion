@@ -72,7 +72,9 @@ describe('MailboxService', () => {
   let threadsQueryBuilder: MessagesQueryBuilderMock;
 
   const mockAccountsRepository = {
+    create: jest.fn((value: Partial<MailAccounts>) => value),
     findOne: jest.fn(),
+    save: jest.fn((value: Partial<MailAccounts>) => Promise.resolve(value)),
   };
 
   const mockThreadsRepository = {
@@ -195,6 +197,8 @@ describe('MailboxService', () => {
     mockThreadsRepository.createQueryBuilder.mockImplementation(() => threadsQueryBuilder);
     mockThreadsRepository.create.mockImplementation((value: Partial<MailThreads>) => value);
     mockMessagesRepository.create.mockImplementation((value: Partial<MailMessages>) => value);
+    mockAccountsRepository.create.mockImplementation((value: Partial<MailAccounts>) => value);
+    mockAccountsRepository.save.mockImplementation((value: Partial<MailAccounts>) => Promise.resolve(value));
     mockSpamRulesRepository.findOne.mockResolvedValue(null);
     mockThreadsRepository.save.mockImplementation((value: Partial<MailThreads>) =>
       Promise.resolve({
@@ -212,7 +216,45 @@ describe('MailboxService', () => {
     mockAccountsRepository.findOne.mockResolvedValue({
       id: 1,
       address: 'user@webcetera.test',
+      user_id: 10,
       allowedUsers: [{ id: 10 }],
+    });
+  });
+
+  describe('account ownership', () => {
+    it('должен автоматически открывать владельцу доступ при создании ящика', async () => {
+      mockAccountsRepository.findOne.mockResolvedValue(null);
+
+      await service.createAccount({
+        address: 'owner@webcetera.test',
+        user_id: 12,
+        allowedUserIds: [10],
+      });
+
+      expect(mockAccountsRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 12,
+          allowedUsers: [{ id: 10 }, { id: 12 }],
+        }),
+      );
+    });
+
+    it('должен сохранять владельца среди пользователей с доступом при обновлении ящика', async () => {
+      mockAccountsRepository.findOne.mockResolvedValue({
+        id: 1,
+        address: 'owner@webcetera.test',
+        user_id: 10,
+        allowedUsers: [{ id: 10 }],
+      });
+
+      await service.updateAccount(1, { user_id: 12, allowedUserIds: [15] });
+
+      expect(mockAccountsRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          user_id: 12,
+          allowedUsers: [{ id: 15 }, { id: 12 }],
+        }),
+      );
     });
   });
 
@@ -273,6 +315,42 @@ describe('MailboxService', () => {
         }),
       );
       expect(mockThreadsRepository.save).toHaveBeenCalledWith(expect.objectContaining({ folder: MAIL_FOLDERS.trash }));
+    });
+
+    it('должен отправлять push только владельцу почтового ящика', async () => {
+      notificationsQueryBuilder.getOne.mockResolvedValue(null);
+      mockAccountsRepository.findOne.mockResolvedValue({
+        id: 1,
+        address: 'user@webcetera.test',
+        user_id: 12,
+        allowedUsers: [{ id: 10 }, { id: 12 }, { id: 15 }],
+      });
+
+      await service.ingestInbound({ id: 1, address: 'user@webcetera.test' } as MailAccounts, baseInbound());
+
+      expect(mockPushService.sendToUser).toHaveBeenCalledWith(
+        12,
+        expect.objectContaining({
+          title: 'Новое письмо от Sender',
+          url: '/mail?folder=inbox&account=1&thread=3',
+        }),
+      );
+      expect(mockPushService.sendToUsers).not.toHaveBeenCalled();
+    });
+
+    it('не должен отправлять push, если у ящика нет владельца', async () => {
+      notificationsQueryBuilder.getOne.mockResolvedValue(null);
+      mockAccountsRepository.findOne.mockResolvedValue({
+        id: 1,
+        address: 'user@webcetera.test',
+        user_id: null,
+        allowedUsers: [{ id: 10 }, { id: 15 }],
+      });
+
+      await service.ingestInbound({ id: 1, address: 'user@webcetera.test' } as MailAccounts, baseInbound());
+
+      expect(mockPushService.sendToUser).not.toHaveBeenCalled();
+      expect(mockPushService.sendToUsers).not.toHaveBeenCalled();
     });
   });
 

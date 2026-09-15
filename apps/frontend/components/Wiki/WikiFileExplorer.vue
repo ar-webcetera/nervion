@@ -425,7 +425,7 @@ const confirmDelete = async () => {
       <div v-if="previewFile" class="wiki-explorer__preview-overlay" @click.self="closePreview">
         <div class="wiki-explorer__preview">
           <div class="wiki-explorer__preview-header">
-            <span class="wiki-explorer__preview-name">{{ previewFile.name }}</span>
+            <span class="wiki-explorer__preview-name" :title="previewFile.name">{{ previewFile.name }}</span>
             <button class="wiki-explorer__close-btn" aria-label="Закрыть просмотр" @click="closePreview">
               <X :size="16" />
             </button>

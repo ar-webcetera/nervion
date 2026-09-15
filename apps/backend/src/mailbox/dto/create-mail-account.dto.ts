@@ -20,11 +20,15 @@ export class CreateMailAccountDto {
   @IsEnum(MAIL_ACCOUNT_TYPES)
   type?: MAIL_ACCOUNT_TYPES;
 
-  @ApiPropertyOptional({ description: 'ID пользователя-владельца персонального ящика', example: 5 })
+  @ApiPropertyOptional({
+    description: 'ID владельца ящика, который получает уведомления о новых письмах',
+    example: 5,
+    nullable: true,
+  })
   @IsOptional()
   @IsInt()
   @Type(() => Number)
-  user_id?: number;
+  user_id?: number | null;
 
   @ApiPropertyOptional({ description: 'HTML-подпись, добавляемая к письмам', example: '<p>С уважением, команда Webcetera</p>' })
   @IsOptional()

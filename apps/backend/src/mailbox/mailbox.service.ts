@@ -217,6 +217,9 @@ export class MailboxService {
       throw new BadRequestException(`Ящик ${address} уже существует`);
     }
 
+    const allowedUserIds = new Set(dto.allowedUserIds ?? []);
+    if (dto.user_id) allowedUserIds.add(dto.user_id);
+
     const account = this.accountsRepository.create({
       address,
       display_name: dto.display_name ?? null,
@@ -224,7 +227,7 @@ export class MailboxService {
       user_id: dto.user_id ?? null,
       signature_html: dto.signature_html ?? null,
       is_active: dto.is_active ?? true,
-      allowedUsers: (dto.allowedUserIds ?? []).map((id) => ({ id }) as Users),
+      allowedUsers: [...allowedUserIds].map((id) => ({ id }) as Users),
     });
 
     return this.accountsRepository.save(account);
@@ -258,8 +261,10 @@ export class MailboxService {
     if (dto.is_active !== undefined) {
       account.is_active = dto.is_active;
     }
-    if (dto.allowedUserIds !== undefined) {
-      account.allowedUsers = dto.allowedUserIds.map((uid) => ({ id: uid }) as Users);
+    if (dto.allowedUserIds !== undefined || dto.user_id !== undefined) {
+      const allowedUserIds = new Set(dto.allowedUserIds ?? account.allowedUsers.map((allowedUser) => allowedUser.id));
+      if (account.user_id) allowedUserIds.add(account.user_id);
+      account.allowedUsers = [...allowedUserIds].map((uid) => ({ id: uid }) as Users);
     }
 
     return this.accountsRepository.save(account);
@@ -425,17 +430,15 @@ export class MailboxService {
     try {
       const account = await this.accountsRepository.findOne({
         where: { id: accountId },
-        relations: { allowedUsers: true },
       });
-      const recipientIds = [...new Set((account?.allowedUsers ?? []).map((user) => user.id))];
-      if (recipientIds.length === 0) return;
+      if (!account?.user_id) return;
 
       const sender = data.from.name?.trim() || data.from.address;
       const subject = data.subject?.trim() || '(без темы)';
       const preview = (data.text ?? '').replace(/\s+/g, ' ').trim();
       const body = preview ? `${subject}: ${preview.slice(0, 180)}` : subject;
 
-      await this.pushService.sendToUsers(recipientIds, {
+      await this.pushService.sendToUser(account.user_id, {
         title: `Новое письмо от ${sender}`,
         body,
         url: `/mail?folder=inbox&account=${accountId}&thread=${threadId}`,
