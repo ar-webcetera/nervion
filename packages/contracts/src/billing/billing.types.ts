@@ -24,6 +24,7 @@ export interface RevenueDashboard {
 
 export interface BillingQueueItem {
   id: number;
+  taskId: number | null;
   sourceType: RevenueSourceType;
   status: BillingReviewStatus;
   project: string;

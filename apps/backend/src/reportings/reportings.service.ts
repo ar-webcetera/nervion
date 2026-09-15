@@ -23,6 +23,7 @@ import { MonthlyRevenueTarget } from './entities/monthly-revenue-target.entity';
 import { ReviewBillingDto } from './dto/review-billing.dto';
 
 export interface TimelogRow {
+  taskId: number | null;
   project: string;
   executor: string;
   specialization: string;
@@ -136,6 +137,7 @@ export class ReportingsService {
       const rate = item.billing_rate == null ? Number(item.task?.project?.hourlyRate ?? 0) : Number(item.billing_rate);
       return {
         id: item.id,
+        taskId: item.task_id ?? null,
         sourceType: RevenueSourceType.TIMELOG,
         status: item.billing_status!,
         project: item.task?.project?.name ?? 'Без проекта',
@@ -151,6 +153,7 @@ export class ReportingsService {
     });
     const fixedItems: BillingQueueItem[] = fixed.map((item) => ({
       id: item.id,
+      taskId: item.task_id ?? null,
       sourceType: RevenueSourceType.FIXED_TASK,
       status: item.status,
       project: item.project?.name ?? 'Без проекта',
@@ -338,6 +341,7 @@ export class ReportingsService {
       const executorName = author ? `${author.first_name} ${author.last_name}`.trim() : `Пользователь #${timelog.author_id}`;
 
       return {
+        taskId: timelog.task?.id ?? null,
         project: timelog.task?.project?.name || '',
         executor: executorName,
         specialization: '',

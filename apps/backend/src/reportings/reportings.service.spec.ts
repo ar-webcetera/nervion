@@ -83,6 +83,7 @@ describe('ReportingsService', () => {
       }),
     );
     expect(rows).toHaveLength(1);
+    expect(rows[0]?.taskId).toBe(10);
     expect(rows[0]?.date).toMatch(/^01\.07\.2026 \d{2}:\d{2}$/);
     expect(rows[0]?.hours).toBe(1);
     expect(rows[0]?.amount).toBe(1000);

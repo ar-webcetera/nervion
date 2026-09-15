@@ -9,6 +9,7 @@ import {
 } from '@tracker/contracts';
 
 export interface TimelogRow {
+  taskId: number | null;
   project: string;
   executor: string;
   specialization: string;

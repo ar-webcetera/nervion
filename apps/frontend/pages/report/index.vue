@@ -10,7 +10,7 @@ import {
   Save,
 } from '@lucide/vue';
 import { ReportSection } from '~/enums/report.enums';
-import { format, isBefore } from 'date-fns';
+import { format, isBefore, isSameDay } from 'date-fns';
 import type { Project } from '~/types/project';
 import type { SelectOption } from '~/types/select';
 import { type Employee, ROLES } from '~/types/user';
@@ -23,10 +23,15 @@ const { $toast } = useNuxtApp();
 const reportStore = useReportStore();
 const userStore = useUserStore();
 const projectStore = useProjectStore();
+const taskStore = useTaskStore();
+const route = useRoute();
+const router = useRouter();
 
 const activeSection = ref(ReportSection.OVERVIEW);
-const startDate = ref<Date | null>(null);
-const endDate = ref<Date | null>(null);
+const today = new Date();
+today.setHours(0, 0, 0, 0);
+const startDate = ref<Date | null>(new Date(today));
+const endDate = ref<Date | null>(new Date(today));
 const pending = ref(false);
 const employees = ref<Employee[]>([]);
 const selectedProject = ref<number | null>(null);
@@ -38,6 +43,8 @@ const targetInput = ref(0);
 const billingMorePending = ref(false);
 const billingSummaryModal = ref<{ open: () => void; close: () => void } | null>(null);
 const billingSummaryItem = ref<BillingQueueItem | null>(null);
+type BillingEditableSnapshot = { recognizedAt: string; value: number };
+const billingSnapshots = ref(new Map<string, BillingEditableSnapshot>());
 type ReportSortKey = 'project' | 'executor' | 'rate' | 'taskTitle' | 'date' | 'summary' | 'hours' | 'amount';
 type SortDirection = 'asc' | 'desc';
 
@@ -100,16 +107,52 @@ const getReportSortLabel = (key: ReportSortKey, label: string) => {
   return `Сортировать столбец «${label}» по ${nextDirection === 'asc' ? 'возрастанию' : 'убыванию'}`;
 };
 
+const openTaskSidebar = (taskId: number) => {
+  const { ['task-id']: _currentTaskId, ['task-date']: _currentTaskDate, ...query } = route.query;
+  void router.push({ query: { ...query, 'task-id': String(taskId) } });
+  taskStore.currentTaskId = taskId;
+  taskStore.currentTaskDate = null;
+};
+
+const getBillingItemKey = (item: BillingQueueItem) => `${item.sourceType}:${item.id}`;
+const getBillingItemValue = (item: BillingQueueItem) =>
+  item.sourceType === RevenueSourceType.TIMELOG ? Number(item.rate ?? 0) : Number(item.amount);
+
+const captureBillingSnapshots = (items: BillingQueueItem[], replace = false) => {
+  const snapshots = replace ? new Map<string, BillingEditableSnapshot>() : new Map(billingSnapshots.value);
+  items.forEach((item) => {
+    const key = getBillingItemKey(item);
+    if (!replace && snapshots.has(key)) return;
+    snapshots.set(key, { recognizedAt: item.recognizedAt, value: getBillingItemValue(item) });
+  });
+  billingSnapshots.value = snapshots;
+};
+
+const hasBillingItemChanges = (item: BillingQueueItem) => {
+  const snapshot = billingSnapshots.value.get(getBillingItemKey(item));
+  if (!snapshot) return false;
+  return snapshot.recognizedAt !== item.recognizedAt || snapshot.value !== getBillingItemValue(item);
+};
+
 if (userStore.user?.role !== ROLES.admin) {
   throw createError({ status: 403 });
 }
 const disabledDate = (date: Date) => {
-  return isBefore(date, new Date(startDate.value!));
+  return startDate.value ? isBefore(date, startDate.value) : false;
 };
+
+watch(startDate, (date, previousDate) => {
+  if (!date) return;
+
+  const endMatchesPreviousStart = previousDate && endDate.value && isSameDay(endDate.value, previousDate);
+  if (!endDate.value || endMatchesPreviousStart || isBefore(endDate.value, date)) {
+    endDate.value = new Date(date);
+  }
+});
 
 const getPayload = () => ({
   from: format(startDate.value!, 'yyyy-MM-dd'),
-  to: format(endDate.value!, 'yyyy-MM-dd'),
+  to: format(endDate.value ?? startDate.value!, 'yyyy-MM-dd'),
   employees: employees.value,
   project_id: selectedProject.value || null,
   executor_id: selectedExecutor.value || null,
@@ -184,18 +227,11 @@ const setCost = (cost: number, id: number) => {
   el.cost = cost;
 };
 
-const hasEmptyDates = computed(() => {
-  return !startDate.value || !endDate.value;
-});
-
-const hasPriceEmployee = computed(() => {
-  return employees.value.some((employee) => employee.cost! > 0);
-});
+const hasNoStartDate = computed(() => !startDate.value);
 
 const isDisabled = computed(
   () =>
-    hasEmptyDates.value ||
-    !hasPriceEmployee.value ||
+    hasNoStartDate.value ||
     pending.value ||
     Boolean(startDate.value && endDate.value && endDate.value < startDate.value),
 );
@@ -236,6 +272,7 @@ await useAsyncData('report-financial-data', async () => {
   await reportStore.fetchFinancialData();
   return true;
 });
+captureBillingSnapshots([...reportStore.pendingItems, ...reportStore.reviewedItems], true);
 targetInput.value = reportStore.dashboard?.target ?? 0;
 
 const targetPending = ref(false);
@@ -269,6 +306,7 @@ const reviewBillingItem = async (item: BillingQueueItem, status: BillingReviewSt
   billingSavePending.value = true;
   try {
     await reportStore.reviewItem(item, status);
+    captureBillingSnapshots([...reportStore.pendingItems, ...reportStore.reviewedItems], true);
     $toast.success('Начисление сохранено');
   } catch (e) {
     $toast.error(getErrorMessage(e));
@@ -281,6 +319,7 @@ const loadMoreBillingItems = async () => {
   try {
     billingMorePending.value = true;
     await reportStore.loadMoreBillingItems(activeBillingTab.value === 'pending');
+    captureBillingSnapshots(billingItems.value);
   } catch (e) {
     $toast.error(getErrorMessage(e));
   } finally {
@@ -433,7 +472,15 @@ definePageMeta({
           <article v-for="item in billingItems" :key="`${item.sourceType}-${item.id}`" class="finance__billing-row">
             <div class="finance__billing-source">
               <span>{{ item.sourceType === RevenueSourceType.TIMELOG ? 'Таймтрек' : 'Фиксированная задача' }}</span>
-              <strong>{{ item.task }}</strong>
+              <button
+                v-if="item.taskId"
+                type="button"
+                class="finance__billing-task"
+                @click="openTaskSidebar(item.taskId)"
+              >
+                {{ item.task }}
+              </button>
+              <strong v-else>{{ item.task }}</strong>
               <small
                 >{{ item.project }}<template v-if="item.executor"> · {{ item.executor }}</template></small
               >
@@ -485,6 +532,7 @@ definePageMeta({
             }}</strong>
             <div class="finance__billing-actions">
               <button
+                v-if="hasBillingItemChanges(item)"
                 class="report__button-secondary"
                 :disabled="billingSavePending"
                 @click="reviewBillingItem(item, item.status)"
@@ -540,7 +588,7 @@ definePageMeta({
     <section v-show="activeSection === ReportSection.EXPORT" class="report__export">
       <div class="report__detail-title">
         <h2>Отчёт по выполненной работе</h2>
-        <p>Выберите период и ставки для расчёта. Результат можно скачать в Excel.</p>
+        <p>Выберите один день или период. Ставки нужны только для расчёта суммы.</p>
       </div>
       <div class="report__form-container">
         <div class="report__form">
@@ -554,7 +602,7 @@ definePageMeta({
             />
           </div>
           <div class="report__input">
-            <div class="report__input-header">По дату</div>
+            <div class="report__input-header">По дату (необязательно)</div>
             <BaseDatePicker
               v-model="endDate"
               :format-date="'dd.MM.yyyy'"
@@ -593,7 +641,7 @@ definePageMeta({
         <details class="report__rates" open>
           <summary class="report__rates-header">
             <span class="report__rates-label">Ставки сотрудников</span>
-            <span v-if="!hasPriceEmployee" class="report__hint">Укажите ставку хотя бы одному сотруднику</span>
+            <span class="report__hint">Необязательно</span>
           </summary>
           <div class="report__rates-grid">
             <div v-for="employee of employees" :key="employee.user_id" class="report__rate-row">
@@ -612,11 +660,7 @@ definePageMeta({
         </details>
         <div class="report__form-actions">
           <span class="report__hint">{{
-            hasEmptyDates
-              ? 'Выберите начало и конец периода'
-              : !hasPriceEmployee
-                ? 'Укажите ставку хотя бы одному сотруднику'
-                : 'Ставки применяются только к этой выгрузке'
+            hasNoStartDate ? 'Выберите дату отчёта' : 'Ставки необязательны и применяются только к этой выгрузке'
           }}</span
           ><button :disabled="isDisabled" @click="loadReport">{{ pending ? 'Формируем…' : 'Сформировать отчёт' }}</button>
         </div>
@@ -656,7 +700,17 @@ definePageMeta({
                 <td>{{ row.project }}</td>
                 <td>{{ row.executor }}</td>
                 <td>{{ row.rate }}</td>
-                <td>{{ row.taskTitle }}</td>
+                <td>
+                  <button
+                    v-if="row.taskId"
+                    type="button"
+                    class="report__task-link"
+                    @click="openTaskSidebar(row.taskId)"
+                  >
+                    {{ row.taskTitle }}
+                  </button>
+                  <span v-else>{{ row.taskTitle }}</span>
+                </td>
                 <td>{{ row.date }}</td>
                 <td>{{ row.summary }}</td>
                 <td>{{ row.hours }}</td>
@@ -897,6 +951,7 @@ definePageMeta({
     min-height: 44px;
     padding: 8px 12px;
     border: 0;
+    border-radius: 0;
     background: transparent;
     color: var(--light-text-backgroung-primary-50);
     cursor: pointer;
@@ -928,6 +983,23 @@ definePageMeta({
         color: var(--primary);
         opacity: 1;
       }
+    }
+  }
+
+  &__task-link {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--light-text-backgroung-primary);
+    cursor: pointer;
+    text-align: left;
+    @extend %text-s-regular;
+
+    &:hover {
+      color: var(--primary-75);
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
   }
 
@@ -1515,6 +1587,13 @@ definePageMeta({
   &__table {
     th {
       background: var(--dark-text-background-primary);
+      text-align: left;
+    }
+    .report__sort-button,
+    .report__task-link {
+      justify-content: flex-start;
+      text-align: left;
+      border-radius: 0;
     }
     td:nth-child(4),
     td:nth-child(6) {
@@ -1584,6 +1663,26 @@ definePageMeta({
   &__billing-source strong {
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+  &__billing-task {
+    width: fit-content;
+    max-width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--light-text-backgroung-primary);
+    cursor: pointer;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    @extend %text-s-medium;
+
+    &:hover {
+      color: var(--primary-75);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
   }
   &__empty-state {
     @include flex(cn, a-start);
