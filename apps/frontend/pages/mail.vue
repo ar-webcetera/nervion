@@ -700,9 +700,13 @@ const collectReplyAddresses = (includeAllRecipients: boolean): ReplyRecipients =
   };
 
   add(to, replyRecipient.value);
-  if (includeAllRecipients && lastInboundMessage.value) {
-    for (const recipient of lastInboundMessage.value.to_addresses) add(to, recipient.address);
-    for (const recipient of lastInboundMessage.value.cc_addresses) add(cc, recipient.address);
+  if (includeAllRecipients) {
+    for (const message of orderedMessages.value) {
+      if (message.status === 'draft') continue;
+      add(cc, message.from_address);
+      for (const recipient of message.to_addresses) add(cc, recipient.address);
+      for (const recipient of message.cc_addresses) add(cc, recipient.address);
+    }
   }
 
   return { to, cc };
