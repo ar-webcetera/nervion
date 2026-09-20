@@ -355,14 +355,17 @@ export class MailboxService {
       thread.custom_folder_id = null;
     } else if (spam.isSpam && !thread.custom_folder_id && thread.folder === MAIL_FOLDERS.inbox) {
       thread.folder = MAIL_FOLDERS.spam;
+    } else if (!spam.isSpam && thread.folder === MAIL_FOLDERS.trash) {
+      thread.folder = MAIL_FOLDERS.inbox;
+      thread.custom_folder_id = null;
     }
     if (!thread.counterparty_address) {
       thread.counterparty_address = data.from.address;
     }
     await this.threadsRepository.save(thread);
 
-    if (!spam.isSpam) {
-      await this.notifyInboundMessage(account.id, thread.id, message.id, data);
+    if (!spam.isSpam && !notificationAlreadyRead) {
+      await this.notifyInboundMessage(account.id, thread, message.id, data);
     }
 
     return message;
@@ -423,7 +426,7 @@ export class MailboxService {
 
   private async notifyInboundMessage(
     accountId: number,
-    threadId: number,
+    thread: MailThreads,
     messageId: number,
     data: InboundMailData,
   ): Promise<void> {
@@ -437,11 +440,12 @@ export class MailboxService {
       const subject = data.subject?.trim() || '(без темы)';
       const preview = (data.text ?? '').replace(/\s+/g, ' ').trim();
       const body = preview ? `${subject}: ${preview.slice(0, 180)}` : subject;
+      const folder = thread.custom_folder_id ? `custom-${thread.custom_folder_id}` : thread.folder;
 
       await this.pushService.sendToUser(account.user_id, {
         title: `Новое письмо от ${sender}`,
         body,
-        url: `/mail?folder=inbox&account=${accountId}&thread=${threadId}`,
+        url: `/mail?folder=${folder}&account=${accountId}&thread=${thread.id}`,
         tag: `mail-message-${messageId}`,
       });
     } catch (error) {

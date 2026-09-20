@@ -315,6 +315,52 @@ describe('MailboxService', () => {
         }),
       );
       expect(mockThreadsRepository.save).toHaveBeenCalledWith(expect.objectContaining({ folder: MAIL_FOLDERS.trash }));
+      expect(mockPushService.sendToUser).not.toHaveBeenCalled();
+    });
+
+    it('должен возвращать цепочку из корзины во входящие при новом обычном письме', async () => {
+      notificationsQueryBuilder.getOne.mockResolvedValue(null);
+      messagesQueryBuilder.getOne.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        thread: {
+          id: 3,
+          account_id: 1,
+          folder: MAIL_FOLDERS.trash,
+          custom_folder_id: null,
+          counterparty_address: 'sender@example.com',
+        },
+      });
+      const inbound = { ...baseInbound(), notificationId: null, inReplyTo: '<old@test>' };
+
+      await service.ingestInbound({ id: 1, address: 'user@webcetera.test' } as MailAccounts, inbound);
+
+      expect(mockThreadsRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 3, folder: MAIL_FOLDERS.inbox, custom_folder_id: null }),
+      );
+      expect(mockPushService.sendToUser).toHaveBeenCalledWith(
+        10,
+        expect.objectContaining({ url: '/mail?folder=inbox&account=1&thread=3' }),
+      );
+    });
+
+    it('должен вести push в пользовательскую папку существующей цепочки', async () => {
+      notificationsQueryBuilder.getOne.mockResolvedValue(null);
+      messagesQueryBuilder.getOne.mockResolvedValueOnce(null).mockResolvedValueOnce({
+        thread: {
+          id: 3,
+          account_id: 1,
+          folder: MAIL_FOLDERS.inbox,
+          custom_folder_id: 7,
+          counterparty_address: 'sender@example.com',
+        },
+      });
+      const inbound = { ...baseInbound(), notificationId: null, inReplyTo: '<old@test>' };
+
+      await service.ingestInbound({ id: 1, address: 'user@webcetera.test' } as MailAccounts, inbound);
+
+      expect(mockPushService.sendToUser).toHaveBeenCalledWith(
+        10,
+        expect.objectContaining({ url: '/mail?folder=custom-7&account=1&thread=3' }),
+      );
     });
 
     it('должен отправлять push только владельцу почтового ящика', async () => {
