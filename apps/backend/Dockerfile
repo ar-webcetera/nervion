@@ -20,6 +20,7 @@ RUN pnpm install --frozen-lockfile --filter backend...
 # в рантайме отдаём через MEDIASOUP_WORKER_BIN. Источник бинаря:
 #  1) вендорный prebuilt apps/backend/vendor/mediasoup-worker (вне git, кладёт оператор) — если есть;
 #  2) иначе качаем prebuilt с GitHub (release-assets из РФ нестабилен — отсюда вендор как обход).
+ARG MEDIASOUP_WORKER_SHA256=6ce2288297858ecd0d7eafbebbe402e6824d4b0325b4c8d51cd14fb2ff7ac296
 COPY apps/backend/vendor/ /vendor/
 RUN if [ -f /vendor/mediasoup-worker ]; then \
       echo ">>> mediasoup: используем вендорный prebuilt"; \
@@ -30,6 +31,7 @@ RUN if [ -f /vendor/mediasoup-worker ]; then \
         && MEDIASOUP_FORCE_WORKER_PREBUILT_DOWNLOAD=true node npm-scripts.mjs postinstall \
         && cp worker/out/Release/mediasoup-worker /mediasoup-worker; \
     fi \
+ && echo "${MEDIASOUP_WORKER_SHA256}  /mediasoup-worker" | sha256sum --check --strict \
  && chmod +x /mediasoup-worker && test -x /mediasoup-worker && ls -lh /mediasoup-worker
 
 # исходники + сборка
