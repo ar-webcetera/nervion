@@ -1,7 +1,7 @@
 <script setup lang="ts"></script>
 
 <template>
-  <NuxtPage />
+  <slot />
 </template>
 
 <style scoped lang="scss"></style>

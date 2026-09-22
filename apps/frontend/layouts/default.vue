@@ -31,7 +31,7 @@ const mailDetailOpen = computed(
 <template>
   <div :class="['main', { main_hidden: isHidden, main_chat: chatId || mailDetailOpen || rootStore.isDetailFullscreen }]">
     <BaseMenuLeft :is-hidden-menu="isHidden" />
-    <NuxtPage />
+    <slot />
     <div v-if="isHidden" class="main__mob-error">
       <div class="main__mob-error-img"><img src="@/assets/blackhole.webp" alt="" /></div>
       <div class="main__mob-error-text">Нет мобильной версии</div>

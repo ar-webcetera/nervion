@@ -10,7 +10,7 @@ onUnmounted(() => {
   <div class="wiki-layout">
     <WikiSidebar />
     <div class="wiki-layout__content">
-      <NuxtPage />
+      <slot />
     </div>
   </div>
 </template>
