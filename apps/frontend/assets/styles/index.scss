@@ -13,6 +13,10 @@ body,
 
 body {
   position: relative;
+
+  @media (max-width: $screen-mobile-l) {
+    overflow: hidden;
+  }
 }
 body::before {
   content: '';

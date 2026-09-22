@@ -49,10 +49,12 @@ const mailDetailOpen = computed(
 <style scoped lang="scss">
 .main {
   height: 100%;
+  min-height: 0;
   width: 100%;
   @include flex(rn);
 
   @media (max-width: $screen-mobile-l) {
+    height: 100dvh;
     flex-direction: column;
     overflow: hidden;
   }
@@ -60,6 +62,10 @@ const mailDetailOpen = computed(
   & > * {
     &:nth-child(2) {
       @media (max-width: $screen-mobile-l) {
+        flex: 1 1 0;
+        width: 100%;
+        height: auto;
+        min-height: 0;
         overflow: auto;
       }
     }
