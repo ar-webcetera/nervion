@@ -9,12 +9,12 @@ RUN corepack enable && corepack prepare pnpm@8.15.6 --activate
 RUN apt-get update && apt-get install -y --no-install-recommends python3 build-essential && rm -rf /var/lib/apt/lists/*
 
 # манифесты сначала — кэш слоёв install
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig*.json ./
-COPY apps/backend/package.json apps/backend/
+COPY .npmrc pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig*.json ./
+COPY apps/backend/package.json apps/backend/pnpm-lock.yaml apps/backend/
 COPY packages packages
-# NB: --no-frozen-lockfile — в master pnpm-lock.yaml рассинхронизирован с packages/contracts
-# (нужно pnpm install + коммит lock в репо; для CI/прода вернуть --frozen-lockfile)
-RUN pnpm install --no-frozen-lockfile --filter backend...
+# Версия mediasoup и соответствующий worker должны оставаться синхронизированы:
+# несовместимые версии используют разные FlatBuffers-схемы RTP mapping.
+RUN pnpm install --frozen-lockfile --filter backend...
 
 # mediasoup-воркер исключён из автосборки (neverBuiltDependencies — libwebrtc компилить долго),
 # в рантайме отдаём через MEDIASOUP_WORKER_BIN. Источник бинаря:
@@ -26,7 +26,7 @@ RUN if [ -f /vendor/mediasoup-worker ]; then \
       cp /vendor/mediasoup-worker /mediasoup-worker; \
     else \
       echo ">>> mediasoup: вендорного нет, качаем prebuilt с GitHub"; \
-      cd "$(find node_modules/.pnpm -maxdepth 3 -type d -path '*mediasoup@*/node_modules/mediasoup' | head -1)" \
+      cd apps/backend/node_modules/mediasoup \
         && MEDIASOUP_FORCE_WORKER_PREBUILT_DOWNLOAD=true node npm-scripts.mjs postinstall \
         && cp worker/out/Release/mediasoup-worker /mediasoup-worker; \
     fi \
