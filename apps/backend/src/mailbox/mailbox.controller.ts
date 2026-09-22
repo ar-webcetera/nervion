@@ -54,6 +54,16 @@ export class MailboxController {
     return this.mailboxService.listAccounts(req.user);
   }
 
+  @Patch('selected-account/:id')
+  @ApiOperation({ summary: 'Сохранить выбранный почтовый ящик текущего пользователя' })
+  @ApiParam({ name: 'id', description: 'ID доступного пользователю почтового ящика', type: Number })
+  @ApiResponse({ status: 200, description: 'Выбранный ящик сохранён' })
+  @ApiResponse({ status: 403, description: 'Нет доступа к ящику' })
+  @ApiResponse({ status: 404, description: 'Ящик не найден' })
+  selectAccount(@Req() req: RequestWithCookies, @Param('id', ParseIntPipe) id: number) {
+    return this.mailboxService.selectAccount(req.user, id);
+  }
+
   @Get('accounts/manage')
   @ApiOperation({ summary: 'Список всех почтовых ящиков (администрирование)' })
   @ApiResponse({ status: 200, description: 'Список всех ящиков' })

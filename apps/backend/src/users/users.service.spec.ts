@@ -55,6 +55,7 @@ describe('UsersService', () => {
     telegram_user_id: '',
     yandex_id: null,
     role: ROLES.employee,
+    selected_mail_account_id: null,
     hashed_password: 'hashed',
     project_members: [],
     tasks_assigned: [],

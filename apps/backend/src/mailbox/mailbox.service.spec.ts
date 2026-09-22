@@ -19,6 +19,7 @@ import { MailFolders } from './entities/mail-folder.entity';
 import { MailSpamService } from './mail-spam.service';
 import { MailSpamRules } from './entities/mail-spam-rule.entity';
 import { MailDeliveryStatus, MailSpamRuleScope } from '@tracker/contracts';
+import { ROLES } from '../common/enums/roles.enum';
 
 type MessagesQueryBuilderMock = {
   createQueryBuilder: jest.Mock;
@@ -121,6 +122,7 @@ describe('MailboxService', () => {
 
   const mockUsersRepository = {
     createQueryBuilder: jest.fn(),
+    update: jest.fn(),
   };
 
   const mockStorageService = {
@@ -218,6 +220,32 @@ describe('MailboxService', () => {
       address: 'user@webcetera.test',
       user_id: 10,
       allowedUsers: [{ id: 10 }],
+    });
+    mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+  });
+
+  describe('selected account', () => {
+    it('должен сохранять доступный пользователю ящик', async () => {
+      const result = await service.selectAccount(
+        { id: 10, role: ROLES.employee } as Parameters<MailboxService['selectAccount']>[0],
+        1,
+      );
+
+      expect(mockUsersRepository.update).toHaveBeenCalledWith(10, { selected_mail_account_id: 1 });
+      expect(result).toEqual({ selected_mail_account_id: 1 });
+    });
+
+    it('не должен сохранять ящик без доступа', async () => {
+      mockAccountsRepository.findOne.mockResolvedValue({
+        id: 2,
+        address: 'other@webcetera.test',
+        allowedUsers: [{ id: 11 }],
+      });
+
+      await expect(
+        service.selectAccount({ id: 10, role: ROLES.employee } as Parameters<MailboxService['selectAccount']>[0], 2),
+      ).rejects.toThrow('Нет доступа к этому ящику');
+      expect(mockUsersRepository.update).not.toHaveBeenCalled();
     });
   });
 

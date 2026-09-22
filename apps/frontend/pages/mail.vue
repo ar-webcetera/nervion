@@ -11,6 +11,7 @@ import { ROLES } from '~/types/user';
 import { MAIL_DIRECTIONS, type MailAttachmentDescriptor, type MailMessage, type MailThread } from '~/types/mail';
 import { getErrorMessage } from '~/utils/error';
 import { useMailStore } from '~/stores/mailStore';
+import { useUserStore } from '~/stores/userStore';
 const MAIL_TZ = 'Europe/Moscow';
 const mskDay = (date: Date) =>
   new Intl.DateTimeFormat('ru-RU', { timeZone: MAIL_TZ, day: '2-digit', month: '2-digit', year: '2-digit' }).format(date);
@@ -24,6 +25,7 @@ definePageMeta({
 
 const { $toast } = useNuxtApp();
 const mailStore = useMailStore();
+const userStore = useUserStore();
 const {
   accounts,
   threads,
@@ -575,6 +577,23 @@ const openThreadById = async (id: number, unread = false) => {
 };
 
 let mailboxInitialized = false;
+let accountSelectionSave: Promise<void> = Promise.resolve();
+let persistedSelectedAccountId = userStore.user?.selected_mail_account_id ?? 0;
+const persistSelectedAccount = (accountId: number): Promise<void> => {
+  if (!accountId) return Promise.resolve();
+
+  accountSelectionSave = accountSelectionSave.catch(() => {}).then(async () => {
+    if (persistedSelectedAccountId === accountId) return;
+    const response = await mailStore.selectAccount(accountId);
+    persistedSelectedAccountId = response.selected_mail_account_id;
+    if (userStore.user) {
+      userStore.user.selected_mail_account_id = response.selected_mail_account_id;
+    }
+  });
+
+  return accountSelectionSave;
+};
+
 const loadMailPageData = async () => {
   await mailStore.fetchAccounts();
   if (!accounts.value.some((account) => account.id === selectedAccountId.value)) {
@@ -622,6 +641,10 @@ await useAsyncData('mailbox-init', async () => {
 mailboxInitialized = true;
 
 onMounted(() => {
+  void persistSelectedAccount(selectedAccountId.value).catch((error) => {
+    $toast.error(getErrorMessage(error));
+  });
+
   if (selectedThreadId.value) {
     const draft = messages.value.find((message) => message.status === 'draft');
     if (draft) {
@@ -645,6 +668,9 @@ onUnmounted(() => {
 
 watch(selectedAccountId, async (accountId) => {
   if (!mailboxInitialized || !accountId) return;
+  void persistSelectedAccount(accountId).catch((error) => {
+    $toast.error(getErrorMessage(error));
+  });
   selectedThreadId.value = null;
   if (currentCustomFolderId.value) currentFolder.value = 'inbox';
   composeForm.account_id = accountId;

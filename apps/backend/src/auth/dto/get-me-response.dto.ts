@@ -17,4 +17,12 @@ export class GetMeResponseDto {
     example: ROLES.admin,
   })
   role: ROLES;
+
+  @ApiProperty({
+    description: 'Последний выбранный пользователем почтовый ящик',
+    type: Number,
+    nullable: true,
+    example: 1,
+  })
+  selected_mail_account_id: number | null;
 }

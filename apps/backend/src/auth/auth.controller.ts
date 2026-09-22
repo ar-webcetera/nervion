@@ -73,6 +73,7 @@ export class AuthController {
       telegram_user_id: req.user.telegram_user_id,
       yandex_linked: Boolean(req.user.yandex_id),
       hidden_menu_items: req.user.hidden_menu_items ?? [],
+      selected_mail_account_id: req.user.selected_mail_account_id ?? null,
       created_at: req.user.createdAt,
       updated_at: req.user.updatedAt,
       patronymic: req.user.patronymic,

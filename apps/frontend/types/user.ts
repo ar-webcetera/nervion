@@ -39,5 +39,6 @@ export interface User {
   photo_url?: string;
   yandex_linked?: boolean;
   hidden_menu_items?: string[];
+  selected_mail_account_id?: number | null;
   deleted_at?: string | null;
 }

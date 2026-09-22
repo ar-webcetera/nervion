@@ -148,6 +148,12 @@ export class MailboxService {
     return accounts.filter((account) => canAccessAccount(user, account));
   }
 
+  async selectAccount(user: AuthenticatedUser, accountId: number): Promise<{ selected_mail_account_id: number }> {
+    await this.getAccountForUser(user, accountId);
+    await this.usersRepository.update(user.id, { selected_mail_account_id: accountId });
+    return { selected_mail_account_id: accountId };
+  }
+
   async listAllAccounts(): Promise<MailAccounts[]> {
     return this.accountsRepository.find({
       order: { id: 'ASC' },

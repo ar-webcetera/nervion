@@ -12,6 +12,7 @@ export type AuthenticatedUser = Pick<
   | 'photo_url'
   | 'role'
   | 'hidden_menu_items'
+  | 'selected_mail_account_id'
   | 'createdAt'
   | 'updatedAt'
   | 'deletedAt'

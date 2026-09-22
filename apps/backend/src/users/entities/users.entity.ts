@@ -43,6 +43,9 @@ export class Users {
   @Column({ type: 'jsonb', name: 'hidden_menu_items', default: () => "'[]'" })
   hidden_menu_items?: string[];
 
+  @Column({ type: 'integer', name: 'selected_mail_account_id', nullable: true })
+  selected_mail_account_id: number | null;
+
   @OneToMany(() => ProjectMembers, (projectUser) => projectUser.user)
   project_members: ProjectMembers[];
 

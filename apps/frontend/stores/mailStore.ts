@@ -78,6 +78,13 @@ export const useMailStore = defineStore('mail', () => {
     return accounts.value;
   };
 
+  const selectAccount = async (accountId: number) => {
+    return $fetch<{ selected_mail_account_id: number }>(`/api/mailbox/selected-account/${accountId}`, {
+      ...requestOptions(),
+      method: 'PATCH',
+    });
+  };
+
   const fetchManageAccounts = async () => {
     manageAccounts.value = await $fetch<MailAccount[]>('/api/mailbox/accounts/manage', requestOptions());
     return manageAccounts.value;
@@ -374,6 +381,7 @@ export const useMailStore = defineStore('mail', () => {
     pendingThreads,
     pendingMessages,
     fetchAccounts,
+    selectAccount,
     fetchThreads,
     fetchThread,
     markThreadRead,
