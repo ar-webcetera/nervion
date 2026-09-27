@@ -19,25 +19,25 @@
 
 ## Цвета (`assets/styles/_colors.scss`)
 
-| Переменная | Назначение |
-|---|---|
-| `--light-text-backgroung-primary` | основной светлый текст (#fefefe) |
-| `--light-text-backgroung-primary-50` | вторичный текст, подписи, плейсхолдеры |
-| `--light-text-backgroung-primary-25` | приглушённые элементы |
-| `--light-text-backgroung-primary-10` | бордеры панелей и карточек |
-| `--light-text-backgroung-primary-5` | фон панелей, карточек, инпутов, hover |
-| `--dark-text-background-primary` | тёмный фон (#131313): левые колонки, опции селекта |
-| `--dark-text-background-primary-50` | полупрозрачный тёмный |
-| `--black-50` | фон всплывающих модалок (с `backdrop-filter: blur`) |
-| `--primary` | фирменный фиолетовый (#6f57f3): первичные кнопки, акценты, бейджи |
-| `--primary-hover` | ховер первичной кнопки |
-| `--primary-50` / `--primary-25` | бордер фокуса инпутов, полупрозрачные акценты |
-| `--primary-75` | акцентные подписи |
-| `--green` | успех |
-| `--secondary` / `--accent` | оранжевые акценты |
-| `--status-in-progress` | статус «в работе» (амбер) |
-| `--danger-delete` (`-50`,`-25`) | удаление, ошибки |
-| `--white-100/50/10/5` | белый и его прозрачности (легаси, предпочитать light-text-*) |
+| Переменная                           | Назначение                                                        |
+| ------------------------------------ | ----------------------------------------------------------------- |
+| `--light-text-backgroung-primary`    | основной светлый текст (#fefefe)                                  |
+| `--light-text-backgroung-primary-50` | вторичный текст, подписи, плейсхолдеры                            |
+| `--light-text-backgroung-primary-25` | приглушённые элементы                                             |
+| `--light-text-backgroung-primary-10` | бордеры панелей и карточек                                        |
+| `--light-text-backgroung-primary-5`  | фон панелей, карточек, инпутов, hover                             |
+| `--dark-text-background-primary`     | тёмный фон (#131313): левые колонки, опции селекта                |
+| `--dark-text-background-primary-50`  | полупрозрачный тёмный                                             |
+| `--black-50`                         | фон всплывающих модалок (с `backdrop-filter: blur`)               |
+| `--primary`                          | фирменный фиолетовый (#6f57f3): первичные кнопки, акценты, бейджи |
+| `--primary-hover`                    | ховер первичной кнопки                                            |
+| `--primary-50` / `--primary-25`      | бордер фокуса инпутов, полупрозрачные акценты                     |
+| `--primary-75`                       | акцентные подписи                                                 |
+| `--green`                            | успех                                                             |
+| `--secondary` / `--accent`           | оранжевые акценты                                                 |
+| `--status-in-progress`               | статус «в работе» (амбер)                                         |
+| `--danger-delete` (`-50`,`-25`)      | удаление, ошибки                                                  |
+| `--white-100/50/10/5`                | белый и его прозрачности (легаси, предпочитать light-text-\*)     |
 
 ## Типографика (`assets/styles/_typography.scss`)
 
@@ -47,13 +47,13 @@
 
 **Где что применять (устоявшаяся практика):**
 
-| Элемент | Плейсхолдер |
-|---|---|
-| Заголовок страницы (h1) | `%display-xs-medium` (24px) |
-| Заголовок панели/треда/модалки | `%h1` (20px/700) |
-| Подзаголовок, подпись под заголовком | `%text-s-regular` + цвет `-50` |
-| Основной текст списков, инпутов, кнопок | `%text-s-regular` / `%text-s-medium` (14px) |
-| Мелкие подписи, мета, даты, бейджи | `%p12-regular` / `%p12-medium` / `%text-xs-*` (12px) |
+| Элемент                                 | Плейсхолдер                                          |
+| --------------------------------------- | ---------------------------------------------------- |
+| Заголовок страницы (h1)                 | `%display-xs-medium` (24px)                          |
+| Заголовок панели/треда/модалки          | `%h1` (20px/700)                                     |
+| Подзаголовок, подпись под заголовком    | `%text-s-regular` + цвет `-50`                       |
+| Основной текст списков, инпутов, кнопок | `%text-s-regular` / `%text-s-medium` (14px)          |
+| Мелкие подписи, мета, даты, бейджи      | `%p12-regular` / `%p12-medium` / `%text-xs-*` (12px) |
 
 ## Миксин `flex` (`assets/styles/_mixins.scss`)
 
@@ -88,12 +88,17 @@
   @include flex(cn);
   gap: 16px;
 
-  h1 { margin: 0; @extend %display-xs-medium; }
+  h1 {
+    margin: 0;
+    @extend %display-xs-medium;
+  }
 
   &__header {
     @include flex(rn between a-start);
     gap: 16px;
-    @media (max-width: $screen-tablet) { flex-direction: column; }
+    @media (max-width: $screen-tablet) {
+      flex-direction: column;
+    }
   }
 
   &__subtitle {
@@ -113,11 +118,14 @@
   width: 100%;
   height: 100dvh;
   display: grid;
-  grid-template-columns: 380px 1fr;       /* у чата 480px */
+  grid-template-columns: 380px 1fr; /* у чата 480px */
   overflow: hidden;
-  @media (max-width: $screen-tablet) { grid-template-columns: 1fr; }
+  @media (max-width: $screen-tablet) {
+    grid-template-columns: 1fr;
+  }
 
-  &__list {                                /* левая колонка */
+  &__list {
+    /* левая колонка */
     @include flex(cn);
     height: 100%;
     overflow: hidden;
@@ -125,7 +133,8 @@
     border-right: 1px solid var(--light-text-backgroung-primary-10);
   }
 
-  &__detail {                              /* правая колонка */
+  &__detail {
+    /* правая колонка */
     @include flex(cn);
     min-width: 0;
     height: 100%;
@@ -141,6 +150,14 @@
 
 ## Компоненты-паттерны
 
+### Иконки основной навигации
+
+Используем подключённый `@lucide/vue`: размер `20px`, `strokeWidth: 1.75`,
+цвет через `currentColor`. Не задаём цвет отдельным SVG-путям и не меняем
+толщину при hover/active. Ссылки имеют `aria-label`, декоративные иконки
+скрыты через `aria-hidden`. Активный раздел выделен только светлым фоном;
+фокус клавиатуры отображается внутренним контуром, не обрезаемым прокруткой.
+
 ### Панель / карточка
 
 ```scss
@@ -150,6 +167,12 @@
   border-radius: 12px;
 }
 ```
+
+Карточки внутри канбанов строятся через `BaseKanbanCard`. Компонент задаёт
+единый каркас, плотность, типографику, hover/focus и устойчивость к длинному
+тексту; предметные данные передаются слотами `header`, `title`, `description`,
+`footer` и `media`. Не дублируйте оболочку карточки в модуле задачи, CRM или
+другой доске.
 
 ### Первичная кнопка
 
@@ -163,8 +186,13 @@
   cursor: pointer;
   @extend %text-s-medium;
 
-  &:hover:not(:disabled) { background: var(--primary-hover); }
-  &:disabled { opacity: 0.5; cursor: default; }
+  &:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
 }
 ```
 
@@ -175,7 +203,7 @@
 ```scss
 .field {
   width: 100%;
-  padding: 10px 12px;                  /* в крупных формах встречается 18px 20px, radius 12px */
+  padding: 10px 12px; /* в крупных формах встречается 18px 20px, radius 12px */
   border: 1px solid var(--light-text-backgroung-primary-10);
   border-radius: 8px;
   background: var(--light-text-backgroung-primary-5);
@@ -183,8 +211,12 @@
   outline: none;
   @extend %text-s-regular;
 
-  &::placeholder { color: var(--light-text-backgroung-primary-50); }
-  &:focus { border-color: var(--primary-50); }
+  &::placeholder {
+    color: var(--light-text-backgroung-primary-50);
+  }
+  &:focus {
+    border-color: var(--primary-50);
+  }
 }
 /* нативный <select>: option { background: var(--dark-text-background-primary); } */
 ```

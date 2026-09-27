@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { VoiceParticipant } from '~/composables/useVoiceRoom';
+import { MicOff } from '@lucide/vue';
 
 interface VoiceRoom {
   projectId: number;
@@ -53,6 +54,10 @@ const handleClick = async (projectId: number) => {
     </div>
 
     <ul class="vrs__list">
+      <li v-if="orderedRooms.length === 0 || (activeCount === 0 && !isExpanded)" class="vrs__empty" role="status">
+        <MicOff :size="20" :stroke-width="1.75" aria-hidden="true" />
+        <span>{{ orderedRooms.length ? 'Активных комнат пока нет' : 'Голосовых комнат пока нет' }}</span>
+      </li>
       <li
         v-for="room in orderedRooms"
         v-show="room.participants.length > 0 || isExpanded"
@@ -208,6 +213,20 @@ const handleClick = async (projectId: number) => {
       &:hover {
         background-color: var(--green-25);
       }
+    }
+  }
+
+  &__empty {
+    min-height: 72px;
+    padding: 16px 8px;
+    color: var(--light-text-backgroung-primary-50);
+    text-align: center;
+    @include flex(cn, center, a-center);
+    gap: 8px;
+    @extend %text-xs-regular;
+
+    svg {
+      color: var(--light-text-backgroung-primary-25);
     }
   }
 

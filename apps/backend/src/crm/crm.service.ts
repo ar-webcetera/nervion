@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, EntityManager, In } from 'typeorm';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 import {
   CrmActivityKind,
+  CRM_DEFAULT_SOURCES,
   CrmQuickFilter,
   CrmStageKind,
   TaskBusinessKind,
@@ -11,7 +12,14 @@ import {
   type CrmOptions,
   type CrmTask,
 } from '@tracker/contracts';
-import { CrmActivityEntity, CrmCompanyEntity, CrmContactEntity, CrmDealEntity, CrmStageEntity } from './entities/crm.entity';
+import {
+  CrmActivityEntity,
+  CrmCompanyEntity,
+  CrmContactEntity,
+  CrmDealEntity,
+  CrmStageEntity,
+  CrmUserPreferenceEntity,
+} from './entities/crm.entity';
 import {
   CompanyDto,
   ContactDto,
@@ -42,19 +50,13 @@ export class CrmService {
   private author(user: AuthenticatedUser): string {
     return `${user.first_name} ${user.last_name}`.trim();
   }
-  async options(): Promise<CrmOptions> {
-    const [stages, companies, contacts, users, projects, sources, stats] = await Promise.all([
+  async options(userId: number): Promise<CrmOptions> {
+    const [stages, companies, contacts, users, projects, stats, preference] = await Promise.all([
       this.db.getRepository(CrmStageEntity).find({ order: { position: 'ASC' } }),
       this.db.getRepository(CrmCompanyEntity).find({ order: { name: 'ASC' } }),
-      this.db.getRepository(CrmContactEntity).find({ order: { name: 'ASC' } }),
+      this.db.getRepository(CrmContactEntity).find({ order: { last_name: 'ASC', name: 'ASC', patronymic: 'ASC' } }),
       this.db.getRepository(Users).find({ where: { role: ROLES.admin } }),
       this.db.getRepository(Projects).find({ order: { name: 'ASC' } }),
-      this.db
-        .getRepository(CrmDealEntity)
-        .createQueryBuilder('d')
-        .select('DISTINCT d.source', 'source')
-        .where("d.source <> ''")
-        .getRawMany<{ source: string }>(),
       this.db
         .getRepository(CrmDealEntity)
         .createQueryBuilder('d')
@@ -65,6 +67,7 @@ export class CrmService {
         .where("s.kind = 'open' AND d.company_id IS NOT NULL")
         .groupBy('d.company_id')
         .getRawMany<{ id: number; count: string; amount: string }>(),
+      this.db.getRepository(CrmUserPreferenceEntity).findOneBy({ user_id: userId }),
     ]);
     return {
       company_stats: Object.fromEntries(stats.map((s) => [s.id, { count: Number(s.count), amount: s.amount }])),
@@ -73,9 +76,20 @@ export class CrmService {
       contacts,
       users: users.map((u) => ({ id: u.id, name: `${u.first_name} ${u.last_name}`.trim() })),
       projects: projects.map((p) => ({ id: p.id, name: p.name })),
-      sources: sources.map((s) => s.source),
+      sources: [...CRM_DEFAULT_SOURCES],
       loss_reasons: ['Дорого', 'Нет ответа', 'Выбрали конкурента', 'Не наш клиент', 'Отложили', 'Другое'],
+      collapsed_stage_ids:
+        preference?.collapsed_stage_ids ?? stages.filter((stage) => stage.kind !== CrmStageKind.OPEN).map((stage) => stage.id),
     };
+  }
+  async saveCollapsedStages(userId: number, stageIds: number[]) {
+    const uniqueIds = [...new Set(stageIds)];
+    if (uniqueIds.length && (await this.db.getRepository(CrmStageEntity).countBy({ id: In(uniqueIds) })) !== uniqueIds.length) {
+      throw new BadRequestException('Этап CRM не найден');
+    }
+    const repository = this.db.getRepository(CrmUserPreferenceEntity);
+    await repository.save(repository.create({ user_id: userId, collapsed_stage_ids: uniqueIds }));
+    return { collapsed_stage_ids: uniqueIds };
   }
   async saveCompany(dto: CompanyDto | UpdateCompanyDto, id?: number) {
     const repo = this.db.getRepository(CrmCompanyEntity);
@@ -84,7 +98,14 @@ export class CrmService {
     if (dto.responsible_id) await this.admin(dto.responsible_id);
     Object.assign(existing, Object.fromEntries(Object.entries(dto).filter(([, value]) => value !== undefined)));
     if (!existing.name?.trim()) throw new BadRequestException('Укажите название компании');
-    const result = await repo.save(existing);
+    existing.name = existing.name.trim();
+    const duplicate = await repo
+      .createQueryBuilder('company')
+      .where('LOWER(BTRIM(company.name)) = LOWER(:name)', { name: existing.name })
+      .andWhere('company.id <> :id', { id: existing.id || 0 })
+      .getExists();
+    if (duplicate) throw new ConflictException('Компания с таким названием уже существует');
+    const result = await this.saveCompanyEntity(repo, existing);
     void this.events.sendCrmChanged();
     return result;
   }
@@ -96,9 +117,80 @@ export class CrmService {
       throw new BadRequestException('Компания не найдена');
     Object.assign(existing, Object.fromEntries(Object.entries(dto).filter(([, value]) => value !== undefined)));
     if (!existing.name?.trim()) throw new BadRequestException('Укажите имя контакта');
-    const result = await repo.save(existing);
+    existing.name = existing.name.trim();
+    existing.last_name = existing.last_name?.trim() ?? '';
+    existing.patronymic = existing.patronymic?.trim() ?? '';
+    existing.phone = existing.phone?.trim() ?? '';
+    existing.email = existing.email?.trim() ?? '';
+    existing.telegram = existing.telegram?.trim() ?? '';
+    await this.ensureContactUnique(repo, existing);
+    const result = await this.saveContactEntity(repo, existing);
     void this.events.sendCrmChanged();
     return result;
+  }
+  private async ensureContactUnique(repo: Repository<CrmContactEntity>, contact: CrmContactEntity): Promise<void> {
+    const id = contact.id || 0;
+    const phone = contact.phone.replace(/\D/g, '');
+    if (
+      phone &&
+      (await repo
+        .createQueryBuilder('contact')
+        .where("REGEXP_REPLACE(contact.phone, '[^0-9]', '', 'g') = :phone", { phone })
+        .andWhere('contact.id <> :id', { id })
+        .getExists())
+    )
+      throw new ConflictException('Контакт с таким номером телефона уже существует');
+    const email = contact.email.toLocaleLowerCase();
+    if (
+      email &&
+      (await repo
+        .createQueryBuilder('contact')
+        .where('LOWER(BTRIM(contact.email)) = :email', { email })
+        .andWhere('contact.id <> :id', { id })
+        .getExists())
+    )
+      throw new ConflictException('Контакт с таким email уже существует');
+    const telegram = contact.telegram.replace(/^@+/, '').toLocaleLowerCase();
+    if (
+      telegram &&
+      (await repo
+        .createQueryBuilder('contact')
+        .where("LOWER(REGEXP_REPLACE(BTRIM(contact.telegram), '^@+', '')) = :telegram", { telegram })
+        .andWhere('contact.id <> :id', { id })
+        .getExists())
+    )
+      throw new ConflictException('Контакт с таким Telegram уже существует');
+  }
+  private async saveCompanyEntity(repo: Repository<CrmCompanyEntity>, company: CrmCompanyEntity): Promise<CrmCompanyEntity> {
+    try {
+      return await repo.save(company);
+    } catch (error) {
+      const postgresError = error as QueryFailedError & { driverError?: { code?: string; constraint?: string } };
+      if (
+        error instanceof QueryFailedError &&
+        postgresError.driverError?.code === '23505' &&
+        postgresError.driverError.constraint === 'crm_companies_name_unique_idx'
+      )
+        throw new ConflictException('Компания с таким названием уже существует');
+      throw error;
+    }
+  }
+  private async saveContactEntity(repo: Repository<CrmContactEntity>, contact: CrmContactEntity): Promise<CrmContactEntity> {
+    try {
+      return await repo.save(contact);
+    } catch (error) {
+      const postgresError = error as QueryFailedError & { driverError?: { code?: string; constraint?: string } };
+      const constraint =
+        error instanceof QueryFailedError && postgresError.driverError?.code === '23505'
+          ? postgresError.driverError.constraint
+          : undefined;
+      if (constraint === 'crm_contacts_phone_unique_idx')
+        throw new ConflictException('Контакт с таким номером телефона уже существует');
+      if (constraint === 'crm_contacts_email_unique_idx') throw new ConflictException('Контакт с таким email уже существует');
+      if (constraint === 'crm_contacts_telegram_unique_idx')
+        throw new ConflictException('Контакт с таким Telegram уже существует');
+      throw error;
+    }
   }
   private async admin(id: number) {
     if (!(await this.db.getRepository(Users).existsBy({ id, role: ROLES.admin })))
@@ -273,6 +365,7 @@ export class CrmService {
   }
   async createTask(id: number, dto: CrmTaskDto, user: AuthenticatedUser) {
     await this.detail(id);
+    if (dto.responsible_id) await this.admin(dto.responsible_id);
     return this.tasks.createTask(
       {
         ...dto,

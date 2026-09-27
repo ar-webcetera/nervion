@@ -15,7 +15,8 @@ const selectOptions = [
 -->
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, nextTick } from 'vue';
+import { Plus } from '@lucide/vue';
 import IconArrowDown from '~/components/Icons/IconArrowDown.vue';
 import type { SelectOption } from '~/types/select';
 
@@ -32,21 +33,29 @@ const props = withDefaults(
     large?: boolean;
     small?: boolean;
     arrow?: boolean;
+    searchable?: boolean;
+    searchPlaceholder?: string;
+    actionLabel?: string;
   }>(),
   {
     disabled: false,
     resetButton: false,
     multiselect: false,
     small: false,
+    searchable: false,
+    searchPlaceholder: 'Поиск',
+    actionLabel: '',
   },
 );
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: string | number | (string | number)[] | null): void;
-  (e: 'reset'): void;
+  (e: 'reset' | 'action'): void;
 }>();
 
 const isOpen = ref(false);
+const search = ref('');
+const searchInput = ref<HTMLInputElement>();
 const selectedValues = computed(() =>
   Array.isArray(props.modelValue) ? props.modelValue : props.modelValue ? [props.modelValue] : [],
 );
@@ -66,15 +75,27 @@ const isFilledOption = computed(() => {
   return Array.isArray(props.modelValue) ? props.modelValue.length : Boolean(props.modelValue);
 });
 
-const toggleDropdown = () => {
-  if (props.options.length < 2) return;
+const filteredOptions = computed(() => {
+  const query = search.value.trim().toLocaleLowerCase();
+  if (!query) return props.options;
+  return props.options.filter((option) => String(option.label ?? '').toLocaleLowerCase().includes(query));
+});
+
+const toggleDropdown = async () => {
+  if (!props.options.length && !props.actionLabel) return;
   if (!props.disabled) {
     isOpen.value = !isOpen.value;
+    search.value = '';
+    if (isOpen.value && props.searchable) {
+      await nextTick();
+      searchInput.value?.focus();
+    }
   }
 };
 
 const closeDropdown = () => {
   isOpen.value = false;
+  search.value = '';
 };
 
 const handleClickOutside = () => {
@@ -98,8 +119,13 @@ const selectOption = (option: SelectOption) => {
 
   if (!props.multiselect) {
     emit('update:modelValue', option.value);
-    isOpen.value = false;
+    closeDropdown();
   }
+};
+
+const triggerAction = () => {
+  closeDropdown();
+  emit('action');
 };
 </script>
 
@@ -115,16 +141,23 @@ const selectOption = (option: SelectOption) => {
       v-else
       class="home-select__input"
       :class="{ 'home-select__input_error': error, 'home-select__input_large': large, 'home-select__input_small': small }"
+      role="combobox"
+      :aria-expanded="isOpen"
+      :aria-disabled="disabled"
+      :tabindex="disabled ? -1 : 0"
       @click.stop="toggleDropdown"
+      @keydown.enter.prevent="toggleDropdown"
+      @keydown.space.prevent="toggleDropdown"
+      @keydown.escape.stop="closeDropdown"
     >
-      <div v-if="props.resetButton && isFilledOption" class="home-select__reset" @click.stop="emit('reset')">
-        <IconsIconClose />
-      </div>
       <span :class="['home-select__placeholder', { 'home-select__placeholder_show': !selectedLabel }]">
         {{ selectedLabel || props.placeholder }}
       </span>
+      <div v-if="props.resetButton && isFilledOption" class="home-select__reset" @click.stop="emit('reset')">
+        <IconsIconClose />
+      </div>
       <div
-        v-if="props.options.length > 1 && arrow"
+        v-if="(props.options.length || props.actionLabel) && arrow"
         :class="['home-select__arrow', { 'home-select__arrow_small': small || large, 'home-select__arrow_flip': isOpen }]"
       >
         <IconArrowDown />
@@ -135,14 +168,31 @@ const selectOption = (option: SelectOption) => {
       v-click-outside="closeDropdown"
       :class="['home-select__dropdown', { 'home-select__dropdown_large': large, 'home-select__dropdown_small': small }]"
     >
+      <input
+        v-if="searchable"
+        ref="searchInput"
+        v-model="search"
+        class="home-select__search"
+        type="search"
+        :placeholder="searchPlaceholder"
+        aria-label="Поиск по вариантам"
+        @click.stop
+        @keydown.stop
+        @keydown.escape.stop="closeDropdown"
+      />
       <span
-        v-for="(option, index) in options"
+        v-for="(option, index) in filteredOptions"
         :key="option.value ?? index"
         :class="{ selected: selectedValues.includes(option.value!) }"
         @click.stop="selectOption(option)"
       >
         {{ option.label }}
       </span>
+      <p v-if="!filteredOptions.length" class="home-select__empty">Ничего не найдено</p>
+      <button v-if="actionLabel" type="button" class="home-select__action" @click.stop="triggerAction">
+        <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
+        {{ actionLabel }}
+      </button>
     </div>
   </div>
 </template>
@@ -184,6 +234,7 @@ const selectOption = (option: SelectOption) => {
     @include flex(rn, a-center);
     width: fit-content;
     gap: 8px;
+    text-align: left;
     cursor: pointer;
     transition: all 0.2s ease;
     user-select: none;
@@ -194,7 +245,7 @@ const selectOption = (option: SelectOption) => {
 
     &_large {
       width: 100%;
-      justify-content: space-between;
+      justify-content: flex-start;
       padding: 12px;
       border-radius: 8px;
       border: 1px solid var(--light-text-backgroung-primary-10);
@@ -207,6 +258,11 @@ const selectOption = (option: SelectOption) => {
   }
 
   &__placeholder {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
     white-space: nowrap;
     &_show {
       color: var(--light-text-backgroung-primary-50);
@@ -250,11 +306,33 @@ const selectOption = (option: SelectOption) => {
     max-height: 600px;
     overflow: auto;
 
+    .home-select__search {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      width: calc(100% - 16px);
+      min-height: 36px;
+      margin: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--light-text-backgroung-primary-10);
+      border-radius: 8px;
+      background: var(--dark-text-background-primary);
+      color: var(--light-text-backgroung-primary);
+      text-align: left;
+      @extend %text-s-regular;
+
+      &:focus-visible {
+        border-color: var(--primary);
+        outline: none;
+      }
+    }
+
     span {
       @include flex(rn, a-center);
       width: 100%;
       cursor: pointer;
       padding: 6px 8px;
+      text-align: left;
       transition: all 0.2s ease;
       white-space: nowrap;
 
@@ -284,6 +362,47 @@ const selectOption = (option: SelectOption) => {
     &_small {
       left: unset;
       right: 0;
+    }
+  }
+
+  &__empty {
+    width: 100%;
+    margin: 0;
+    padding: 10px 12px;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+
+  &__action {
+    position: sticky;
+    bottom: 0;
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: none;
+    border-top: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 0;
+    background: var(--dark-text-background-primary);
+    color: var(--light-text-backgroung-primary);
+    cursor: pointer;
+    justify-content: flex-start;
+    @include flex(rn, a-center);
+    gap: 8px;
+    @extend %text-s-medium;
+    transition: background-color 0.16s ease;
+
+    svg {
+      flex: 0 0 16px;
+      color: var(--primary);
+    }
+
+    &:hover {
+      background: var(--light-text-backgroung-primary-10);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-50);
+      outline-offset: -2px;
     }
   }
 }

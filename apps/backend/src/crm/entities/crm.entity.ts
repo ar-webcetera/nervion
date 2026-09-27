@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryColumn, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
 import { CrmActivityKind, CrmStageKind, type JsonObject } from '@tracker/contracts';
 
 @Entity('crm_companies')
@@ -15,6 +15,8 @@ export class CrmCompanyEntity {
 export class CrmContactEntity {
   @PrimaryGeneratedColumn() id: number;
   @Column() name: string;
+  @Column({ default: '' }) last_name: string;
+  @Column({ default: '' }) patronymic: string;
   @Column({ type: 'int', nullable: true }) company_id: number | null;
   @Column({ default: '' }) position: string;
   @Column({ default: '' }) phone: string;
@@ -27,6 +29,11 @@ export class CrmStageEntity {
   @Column() name: string;
   @Column() position: number;
   @Column({ type: 'varchar' }) kind: CrmStageKind;
+}
+@Entity('crm_user_preferences')
+export class CrmUserPreferenceEntity {
+  @PrimaryColumn({ type: 'int' }) user_id: number;
+  @Column({ type: 'int', array: true, default: '{}' }) collapsed_stage_ids: number[];
 }
 @Entity('crm_deals')
 export class CrmDealEntity {

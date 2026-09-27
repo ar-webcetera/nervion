@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import type { FilterChip, FilterType } from '~/types/filter';
+import type { FilterChip, FilterDefinition, FilterType } from '~/types/filter';
 import type { SelectOption } from '~/types/select';
 import AddFilterDropdown from './AddFilterDropdown.vue';
 import IconButtonLoader from '~/components/Icons/IconButtonLoader.vue';
+import { Plus } from '@lucide/vue';
 
 interface Props {
   filters?: FilterChip[];
@@ -11,6 +12,10 @@ interface Props {
   projectOptions?: SelectOption[];
   userOptions?: SelectOption[];
   taskTypeOptions?: SelectOption[];
+  businessKindOptions?: SelectOption[];
+  filterDefinitions?: FilterDefinition[];
+  searchPlaceholder?: string;
+  showExport?: boolean;
   isExporting?: boolean;
 }
 
@@ -20,6 +25,7 @@ const emit = defineEmits(['search', 'add-filter', 'remove-filter', 'toggle-filte
 
 const dropdownRef = ref<InstanceType<typeof AddFilterDropdown> | null>(null);
 const searchInput = ref('');
+const isDropdownOpen = ref(false);
 
 const selectedFilters = computed(() => {
   if (!props.filters) return [];
@@ -27,15 +33,22 @@ const selectedFilters = computed(() => {
 });
 
 const openDropdown = () => {
-  if (dropdownRef.value) {
-    dropdownRef.value.open();
+  if (!dropdownRef.value) return;
+  if (isDropdownOpen.value) {
+    dropdownRef.value.close();
+    return;
   }
+  dropdownRef.value.open();
+  isDropdownOpen.value = true;
 };
 
 const closeDropdown = () => {
-  if (dropdownRef.value) {
-    dropdownRef.value.close();
-  }
+  dropdownRef.value?.close();
+  isDropdownOpen.value = false;
+};
+
+const handleDropdownClose = () => {
+  isDropdownOpen.value = false;
 };
 
 const handleAddFilter = (filter: { type: FilterType; value: string | number; isNegative: boolean }) => {
@@ -52,9 +65,21 @@ defineExpose({ clearSearch });
 <template>
   <div class="task-filter-panel">
     <div class="task-filter-panel__left">
-      <div v-click-outside="closeDropdown" class="task-filter-panel__add-filter-wrapper">
-        <button class="task-filter-panel__add-filter-button" @click.stop="openDropdown">
-          <IconsIconPlus />
+      <div
+        v-if="filterDefinitions === undefined || filterDefinitions.length"
+        v-click-outside="closeDropdown"
+        class="task-filter-panel__add-filter-wrapper"
+      >
+        <button
+          type="button"
+          class="task-filter-panel__add-filter-button"
+          :class="{ 'task-filter-panel__add-filter-button_active': isDropdownOpen }"
+          aria-label="Добавить фильтр"
+          :aria-expanded="isDropdownOpen"
+          title="Добавить фильтр"
+          @click.stop="openDropdown"
+        >
+          <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
         </button>
         <AddFilterDropdown
           ref="dropdownRef"
@@ -62,7 +87,10 @@ defineExpose({ clearSearch });
           :project-options="projectOptions || []"
           :user-options="userOptions || []"
           :task-type-options="taskTypeOptions || []"
+          :business-kind-options="businessKindOptions || []"
+          :filter-definitions="filterDefinitions"
           :selected-filters="selectedFilters"
+          @close="handleDropdownClose"
           @add-filter="handleAddFilter"
         />
       </div>
@@ -71,13 +99,19 @@ defineExpose({ clearSearch });
       <input
         v-model="searchInput"
         type="text"
-        placeholder="Поиск по названию, коду или номеру задачи"
+        :placeholder="searchPlaceholder || 'Поиск по названию, коду или номеру задачи'"
         @input="$emit('search', $event)"
       />
       <button class="task-filter-panel__search-button">
         <IconsIconSearch />
       </button>
-      <button class="task-filter-panel__export-button" title="Экспорт в Excel" :disabled="isExporting" @click="$emit('export')">
+      <button
+        v-if="showExport !== false"
+        class="task-filter-panel__export-button"
+        title="Экспорт в Excel"
+        :disabled="isExporting"
+        @click="$emit('export')"
+      >
         <IconButtonLoader v-if="isExporting" />
         <IconsIconDownload v-else />
       </button>
@@ -168,9 +202,18 @@ defineExpose({ clearSearch });
       background-color: var(--primary);
     }
 
+    &_active {
+      background-color: var(--primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--light-text-backgroung-primary);
+      outline-offset: 2px;
+    }
+
     svg {
-      width: 24px;
-      height: 24px;
+      width: 16px;
+      height: 16px;
     }
   }
 

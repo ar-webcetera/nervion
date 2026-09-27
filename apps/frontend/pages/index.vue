@@ -138,7 +138,8 @@ await useAsyncData(
     }
   },
   {
-    getCachedData: (key, nuxtApp) => nuxtApp.payload.data[key] ?? nuxtApp.static.data[key],
+    getCachedData: (key, nuxtApp) =>
+      taskStore.tasksPageHydrated ? (nuxtApp.payload.data[key] ?? nuxtApp.static.data[key]) : undefined,
   },
 );
 
@@ -418,6 +419,17 @@ const filterChips = computed((): FilterChip[] => {
       isNegative: taskStore.filter.negativeFilters?.[chipId] || false,
     });
   });
+
+  if (userStore.user?.role === 'admin' && taskStore.businessKind) {
+    chips.push({
+      id: `${FilterType.BUSINESS_KIND}-${taskStore.businessKind}`,
+      type: FilterType.BUSINESS_KIND,
+      label: taskStore.businessKind === TaskBusinessKind.SALES ? 'Продажи' : 'Производство',
+      value: taskStore.businessKind,
+      isNegative: false,
+      canNegate: false,
+    });
+  }
   if (taskStore.filter.planned_date && taskStore.filter.planned_date.length > 0) {
     const dates = taskStore.filter.planned_date;
     const chipId = `date-${dates.join('-')}`;
@@ -490,6 +502,9 @@ const removeFilter = async (chipId: string) => {
     case FilterType.TASK_TYPE:
       taskStore.filter.taskTypes = taskStore.filter.taskTypes.filter((t) => t !== value);
       break;
+    case FilterType.BUSINESS_KIND:
+      taskStore.businessKind = '';
+      return;
     case FilterType.DATE:
       taskStore.filter.planned_date = [];
       break;
@@ -562,6 +577,10 @@ const addFilter = async (filter: { type: FilterType; value: string | number | st
       }
       break;
     }
+    case FilterType.BUSINESS_KIND: {
+      taskStore.businessKind = value as TaskBusinessKind;
+      return;
+    }
     case FilterType.DATE: {
       chipId = `date-${(value as string[]).join('-')}`;
       taskStore.filter.planned_date = value as string[];
@@ -591,7 +610,15 @@ const hasNoExtraFilters = () => {
   const hasProjects = Array.isArray(projects) ? projects.length > 0 : projects === 'null';
   const hasNegative = negativeFilters ? Object.values(negativeFilters).some(Boolean) : false;
 
-  return !statuses.length && !hasProjects && !closed_date?.length && !taskTypes.length && !title?.trim() && !hasNegative;
+  return (
+    !statuses.length &&
+    !hasProjects &&
+    !closed_date?.length &&
+    !taskTypes.length &&
+    !title?.trim() &&
+    !hasNegative &&
+    !taskStore.businessKind
+  );
 };
 
 const isTodayFilterActive = computed(() => {
@@ -619,6 +646,7 @@ const resetFiltersLocal = () => {
   taskStore.filter.planned_date = [];
   taskStore.filter.closed_date = [];
   taskStore.filter.taskTypes = [];
+  taskStore.businessKind = '';
   taskStore.filter.negativeFilters = {};
   taskStore.filter.title = undefined;
   filterPanelRef.value?.clearSearch();
@@ -671,6 +699,11 @@ const taskTypeOptions = computed(() => {
     },
   ];
 });
+
+const businessKindOptions: SelectOption[] = [
+  { label: 'Продажи', value: TaskBusinessKind.SALES },
+  { label: 'Производство', value: TaskBusinessKind.PRODUCTION },
+];
 
 definePageMeta({
   middleware: 'auth',
@@ -736,6 +769,7 @@ useHead({
         :project-options="projectOptions"
         :user-options="usersOptions"
         :task-type-options="taskTypeOptions"
+        :business-kind-options="userStore.user?.role === 'admin' ? businessKindOptions : []"
         :is-exporting="isExporting"
         @add-filter="addFilter"
         @search="handleSearch"
@@ -752,6 +786,7 @@ useHead({
       <div v-if="filterChips && filterChips.length" class="home__filter-chips home__filter-chips_mob">
         <div v-for="chip in filterChips" :key="chip.id" class="home__filter-chip">
           <button
+            v-if="chip.canNegate !== false"
             class="home__filter-chip-toggle"
             :class="{ 'home__filter-chip-toggle_negative': chip.isNegative }"
             @click="toggleFilterMode(chip.id)"
@@ -767,14 +802,6 @@ useHead({
       </div>
 
       <div class="toggle-view-type">
-        <label v-if="userStore.user?.role === 'admin'"
-          >Направление
-          <select v-model="taskStore.businessKind" aria-label="Направление задач">
-            <option value="">Все</option>
-            <option :value="TaskBusinessKind.SALES">Продажи</option>
-            <option :value="TaskBusinessKind.PRODUCTION">Производство</option>
-          </select>
-        </label>
         <span
           class="toggle-view-type__button"
           :class="{ 'toggle-view-type__button_active': viewType === ViewType.KANBAN }"
@@ -833,6 +860,7 @@ useHead({
     <div v-if="filterChips && filterChips.length" class="home__filter-chips">
       <div v-for="chip in filterChips" :key="chip.id" class="home__filter-chip">
         <button
+          v-if="chip.canNegate !== false"
           class="home__filter-chip-toggle"
           :class="{ 'home__filter-chip-toggle_negative': chip.isNegative }"
           @click="toggleFilterMode(chip.id)"

@@ -7,5 +7,6 @@ export * from "./mailbox";
 export * from "./billing";
 
 export * from "./project-realtime-event.enum";
+export * from "./crm/crm.constants";
 export * from "./crm/crm.enums";
 export * from "./crm/crm.types";

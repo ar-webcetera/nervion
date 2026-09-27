@@ -17,7 +17,7 @@ import { DeepseekService } from '../deepseek/deepseek.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CommentsModule } from '../comments/comments.module';
-import { CrmColumn, CrmDealDetail, TaskBusinessKind } from '@tracker/contracts';
+import { CRM_DEFAULT_SOURCES, CrmColumn, CrmDealDetail, CrmOptions, TaskBusinessKind } from '@tracker/contracts';
 import { Tasks } from '../tasks/entities/task.entity';
 import { Projects } from '../projects/entities/project.entity';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -40,6 +40,7 @@ integration('CRM integration (disposable PostgreSQL)', () => {
   let adminCookie: string;
   let employeeCookie: string;
   let adminId: number;
+  let employeeId: number;
   let dealId: number;
   let salesId: number;
   let productionId: number;
@@ -101,6 +102,7 @@ integration('CRM integration (disposable PostgreSQL)', () => {
       }),
     );
     adminId = admin.id;
+    employeeId = employee.id;
     const jwt = app.get(JwtAuthService);
     adminCookie = `authToken=${jwt.generateToken({ id: admin.id, email: admin.email, role: admin.role })}`;
     employeeCookie = `authToken=${jwt.generateToken({ id: employee.id, email: employee.email, role: employee.role })}`;
@@ -117,19 +119,55 @@ integration('CRM integration (disposable PostgreSQL)', () => {
       .expect(201);
     const { token, record } = issued.body as { token: string; record: { id: number } };
     const authorization = `Bearer ${token}`;
+    await request(server()).post('/api/crm/companies').set('Authorization', authorization).send({ name: '   ' }).expect(400);
+    await request(server()).post('/api/crm/contacts').set('Authorization', authorization).send({ name: '   ' }).expect(400);
     const company = await request(server())
       .post('/api/crm/companies')
       .set('Authorization', authorization)
       .send({ name: 'Клиент из API', inn: '1234567890' })
       .expect(201);
     const companyId = (company.body as { id: number }).id;
+    await request(server())
+      .post('/api/crm/companies')
+      .set('Authorization', authorization)
+      .send({ name: '  КЛИЕНТ ИЗ API  ' })
+      .expect(409);
     const userCount = await db.getRepository(Users).count();
     const contact = await request(server())
       .post('/api/crm/contacts')
       .set('Authorization', authorization)
-      .send({ name: 'Контакт из API', company_id: companyId, email: 'client@example.test' })
+      .send({
+        name: 'Иван',
+        last_name: 'Петров',
+        patronymic: 'Сергеевич',
+        company_id: companyId,
+        phone: '+7 900 000-00-00',
+        email: 'client@example.test',
+        telegram: '@ClientLead',
+      })
       .expect(201);
+    expect(contact.body).toMatchObject({ name: 'Иван', last_name: 'Петров', patronymic: 'Сергеевич' });
     const contactId = (contact.body as { id: number }).id;
+    await request(server())
+      .post('/api/crm/contacts')
+      .set('Authorization', authorization)
+      .send({ name: 'Дубликат телефона', phone: '79000000000' })
+      .expect(409);
+    await request(server())
+      .post('/api/crm/contacts')
+      .set('Authorization', authorization)
+      .send({ name: 'Дубликат email', email: ' CLIENT@EXAMPLE.TEST ' })
+      .expect(409);
+    await request(server())
+      .post('/api/crm/contacts')
+      .set('Authorization', authorization)
+      .send({ name: 'Дубликат Telegram', telegram: 'clientlead' })
+      .expect(409);
+    await request(server())
+      .patch(`/api/crm/contacts/${contactId}`)
+      .set('Authorization', authorization)
+      .send({ phone: '+7 (900) 000-00-00', email: 'client@example.test', telegram: '@ClientLead' })
+      .expect(200);
     const created = await request(server())
       .post('/api/crm/deals')
       .set('Authorization', authorization)
@@ -154,6 +192,8 @@ integration('CRM integration (disposable PostgreSQL)', () => {
       .set('Authorization', authorization)
       .send({ source: 'Форма сайта' })
       .expect(200);
+    const options = await request(server()).get('/api/crm/options').set('Authorization', authorization).expect(200);
+    expect((options.body as CrmOptions).sources).toEqual(expect.arrayContaining([...CRM_DEFAULT_SOURCES, 'Форма сайта']));
     await request(server()).post('/api/crm/deals').set('Authorization', authorization).send({}).expect(400);
     await request(server()).delete(`/api/api-tokens/${record.id}`).set('Cookie', adminCookie).expect(204);
     await request(server()).get('/api/crm/options').set('Authorization', authorization).expect(401);
@@ -187,6 +227,10 @@ integration('CRM integration (disposable PostgreSQL)', () => {
     const schema = document.components?.schemas?.DealDto;
     expect(schema && 'required' in schema && schema.required).toEqual(['title']);
     expect(schema && 'properties' in schema && schema.properties).toHaveProperty('contact_ids');
+    const contactSchema = document.components?.schemas?.ContactDto;
+    expect(contactSchema && 'required' in contactSchema && contactSchema.required).toEqual(['name']);
+    expect(contactSchema && 'properties' in contactSchema && contactSchema.properties).toHaveProperty('last_name');
+    expect(contactSchema && 'properties' in contactSchema && contactSchema.properties).toHaveProperty('patronymic');
     const updateSchema = document.components?.schemas?.UpdateDealDto;
     expect(updateSchema && 'properties' in updateSchema && updateSchema.properties).toHaveProperty('amount');
   });
@@ -194,6 +238,16 @@ integration('CRM integration (disposable PostgreSQL)', () => {
   it('guards CRM and creates a deal from its title alone', async () => {
     await request(server()).get('/api/crm/options').expect(401);
     await request(server()).get('/api/crm/options').set('Cookie', employeeCookie).expect(403);
+    const options = await request(server()).get('/api/crm/options').set('Cookie', adminCookie).expect(200);
+    expect((options.body as CrmOptions).stages[0]?.name).toBe('Неразобранное');
+    expect((options.body as CrmOptions).collapsed_stage_ids).toEqual([7, 8]);
+    await request(server())
+      .patch('/api/crm/preferences/collapsed-stages')
+      .set('Cookie', adminCookie)
+      .send({ collapsed_stage_ids: [1, 8] })
+      .expect(200);
+    const savedOptions = await request(server()).get('/api/crm/options').set('Cookie', adminCookie).expect(200);
+    expect((savedOptions.body as CrmOptions).collapsed_stage_ids).toEqual([1, 8]);
     const response = await request(server())
       .post('/api/crm/deals')
       .set('Cookie', adminCookie)
@@ -212,6 +266,11 @@ integration('CRM integration (disposable PostgreSQL)', () => {
       .send({ title: 'Уточнить решение по КП', planned_date: '2026-01-01' })
       .expect(201);
     salesId = (response.body as Tasks).id;
+    await request(server())
+      .post(`/api/crm/deals/${dealId}/tasks`)
+      .set('Cookie', adminCookie)
+      .send({ title: 'Недопустимый исполнитель', responsible_id: employeeId })
+      .expect(400);
     await request(server()).get(`/api/tasks/${salesId}`).set('Cookie', employeeCookie).expect(404);
     await request(server()).patch(`/api/tasks/${salesId}`).set('Cookie', employeeCookie).send({ title: 'Взлом' }).expect(404);
     await request(server()).delete(`/api/tasks/${salesId}`).set('Cookie', employeeCookie).expect(404);

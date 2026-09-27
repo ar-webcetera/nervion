@@ -426,39 +426,33 @@ const dragend = () => {
         :class="{ 'kanban__cards_with-placeholder': hoveredColumn === colIndex }"
       >
         <template v-for="(card, cardIndex) in column.cards" :key="card.id">
-          <div
+          <BaseKanbanCard
+            as="div"
             draggable="true"
-            class="kanban__card"
+            role="button"
+            tabindex="0"
             :class="{
               kanban__card_hidden: draggedCard?.id === card.id,
-              kanban__card_closed: card.status === TASK_STATUSES.closed,
             }"
+            :muted="card.status === TASK_STATUSES.closed"
             @click="$emit('click-to-card', card.id)"
+            @keydown.enter.prevent="$emit('click-to-card', card.id)"
+            @keydown.space.prevent="$emit('click-to-card', card.id)"
             @dragstart="onDragStart(colIndex, cardIndex, card, $event)"
             @dragover="onDragOver"
             @drop="onDropToCard(colIndex, cardIndex, $event)"
             @dragend="dragend()"
           >
-            <div v-if="card.taskType === TaskType.USER_STORY && card.coverImage" class="kanban_cover">
-              <img :src="resolveAwsUrl(card.coverImage)" alt="" draggable="false" />
-            </div>
-
-            <div class="kanban__card-header">
+            <template v-if="card.taskType === TaskType.USER_STORY && card.coverImage" #media>
+              <div class="kanban_cover">
+                <img :src="resolveAwsUrl(card.coverImage)" alt="" draggable="false" />
+              </div>
+            </template>
+            <template #header>
               <div class="kanban__project-name" :title="card.projectName">{{ card.projectName }}</div>
               <TaskCode :id="card.id" />
-
-              <svg v-if="false" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path
-                  d="M12.5 15.8333C12.5 13.9924 10.2614 12.5 7.5 12.5C4.73858 12.5 2.5 13.9924 2.5 15.8333M15.8333 13.3333V10.8333M15.8333 10.8333V8.33334M15.8333 10.8333H13.3333M15.8333 10.8333H18.3333M7.5 10C5.65905 10 4.16667 8.50763 4.16667 6.66668C4.16667 4.82573 5.65905 3.33334 7.5 3.33334C9.34095 3.33334 10.8333 4.82573 10.8333 6.66668C10.8333 8.50763 9.34095 10 7.5 10Z"
-                  stroke="#FEFEFE"
-                  stroke-opacity="0.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-
-            <div class="kanban__card_title">
+            </template>
+            <template #title>
               <span v-if="card.taskType === TaskType.TASK" class="kanban__card-status kanban__card-status_task">
                 <IconsIconTypeTask />
               </span>
@@ -466,11 +460,9 @@ const dragend = () => {
                 <IconsIconTypeUserStory />
               </span>
               {{ card.title }}
-            </div>
-            <div v-if="card.description" class="kanban__card_desc">
-              {{ card.description }}
-            </div>
-            <div v-if="card.planned_date || card.story_points != null || card.users?.length" class="kanban__card_footer">
+            </template>
+            <template v-if="card.description" #description>{{ card.description }}</template>
+            <template v-if="card.planned_date || card.story_points != null || card.users?.length" #footer>
               <span
                 v-if="card.planned_date"
                 class="kanban__card_deadline"
@@ -482,8 +474,8 @@ const dragend = () => {
               <div v-if="card.users?.length" class="kanban__card_users">
                 <img v-for="(user, idx) in card.users" :key="idx" :src="user" class="kanban__card_user" @error="onImgError" />
               </div>
-            </div>
-          </div>
+            </template>
+          </BaseKanbanCard>
         </template>
         <div
           v-if="column.cards.length < (column.total ?? column.cards.length)"
@@ -505,22 +497,6 @@ const dragend = () => {
   border-radius: 8px;
   box-sizing: border-box;
   height: 100%;
-
-  &__card-header {
-    @include flex(rn, between, a-center);
-    width: 100%;
-    gap: 16px;
-    min-width: 0;
-    color: var(--light-text-backgroung-primary-50);
-
-    @extend %text-xs-regular;
-
-    @media (max-width: $screen-tablet) and (pointer: coarse) {
-      :deep(.task-code) {
-        min-height: 32px;
-      }
-    }
-  }
 
   &__column {
     position: relative;
@@ -780,7 +756,8 @@ const dragend = () => {
     gap: 8px;
     overflow-y: auto;
     overflow-x: hidden;
-    min-width: 290px;
+    width: 100%;
+    min-width: 0;
     flex: 1;
 
     &_with-placeholder {
@@ -797,33 +774,6 @@ const dragend = () => {
   }
 
   &__card {
-    position: relative;
-    cursor: pointer;
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 8px;
-    gap: 4px;
-    min-width: 290px;
-    border-radius: 8px;
-    background: var(--light-text-backgroung-primary-5);
-    box-shadow: 0 2px 4px 0 var(--black-10);
-    backdrop-filter: blur(12px);
-    &:hover {
-      background: var(--light-text-backgroung-primary-10);
-      backdrop-filter: blur(12px);
-    }
-
-    @media (max-width: $screen-tablet) {
-      padding-top: 4px;
-    }
-
-    &_closed {
-      text-decoration: line-through;
-      opacity: 0.6;
-    }
-
     &_project {
       @extend %p12-medium;
       color: var(--light-text-backgroung-primary-50);
@@ -845,33 +795,12 @@ const dragend = () => {
       object-fit: cover;
     }
 
-    &_title {
-      @extend %text-s-medium;
-      color: var(--light-text-backgroung-primary);
-      width: 100%;
-      display: block;
-      overflow: hidden;
-    }
-
     &-status {
       float: left;
       margin-right: 4px;
       display: flex;
       align-items: center;
       justify-content: center;
-    }
-
-    &_desc {
-      word-wrap: break-word;
-      overflow-wrap: break-word;
-      word-break: break-word;
-      width: 100%;
-      @extend %text-xs-regular;
-      color: color-mix(in srgb, var(--light-text-backgroung-primary) 70%, transparent);
-      overflow: hidden;
-      display: -webkit-box;
-      -webkit-box-orient: vertical;
-      -webkit-line-clamp: 1;
     }
 
     &_hidden {
@@ -885,15 +814,6 @@ const dragend = () => {
       border-radius: 4px;
       padding: 1px 6px;
       align-self: flex-start;
-    }
-
-    &_footer {
-      margin-top: 4px;
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 8px;
-      width: 100%;
     }
 
     &_deadline {

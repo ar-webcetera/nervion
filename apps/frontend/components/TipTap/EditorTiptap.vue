@@ -50,6 +50,7 @@ import {
   looksLikeCodeEditorHtml,
   wrapBareTextNodes,
 } from '~/utils/tiptap/markdown';
+import type { User } from '~/types/user';
 
 const config = useRuntimeConfig();
 const taskStore = useTaskStore();
@@ -76,6 +77,7 @@ const props = defineProps<{
   shortMenu?: boolean;
   showMic?: boolean;
   filePrefix?: string;
+  mentionUsers?: User[];
 }>();
 const { $toast } = useNuxtApp();
 const AWS_ENDPOINT = config.public.AWS_ENDPOINT;
@@ -347,6 +349,14 @@ const tiptapExtensions = [
     suggestion: {
       ...suggestion,
       items: ({ query }: { query: string }) => {
+        if (props.mentionUsers) {
+          const normalizedQuery = query.trim().toLocaleLowerCase();
+          return props.mentionUsers.filter((user) =>
+            [user.first_name, user.last_name, user.patronymic, `${user.last_name} ${user.first_name}`]
+              .filter(Boolean)
+              .some((value) => value.toLocaleLowerCase().includes(normalizedQuery)),
+          );
+        }
         const candidates = suggestion.items({ query });
         if (!mentionProjectId) return candidates;
         const members = mentionProjectStore.projects.find((project) => project.id === mentionProjectId.value)?.members ?? [];

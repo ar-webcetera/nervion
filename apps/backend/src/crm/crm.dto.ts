@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsEnum,
   IsInt,
+  IsIn,
   IsNumber,
   IsObject,
   IsOptional,
@@ -15,9 +16,10 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
-import { CrmQuickFilter, type JsonObject } from '@tracker/contracts';
+import { CRM_DEFAULT_SOURCES, CrmQuickFilter, type JsonObject } from '@tracker/contracts';
 export class CompanyDto {
   @ApiProperty({ type: String, description: 'Название компании', example: 'Альфа' })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @Length(1, 200)
   name: string;
@@ -53,10 +55,23 @@ export class CompanyDto {
 }
 export class UpdateCompanyDto extends PartialType(CompanyDto) {}
 export class ContactDto {
-  @ApiProperty({ type: String, description: 'Имя контактного лица', example: 'Иван Петров' })
+  @ApiProperty({ type: String, description: 'Имя контактного лица', example: 'Иван' })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @Length(1, 200)
   name: string;
+  @ApiPropertyOptional({ type: String, description: 'Фамилия контактного лица', example: 'Петров' })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(200)
+  last_name?: string;
+  @ApiPropertyOptional({ type: String, description: 'Отчество контактного лица', example: 'Сергеевич' })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(200)
+  patronymic?: string;
   @ApiPropertyOptional({ type: Number, nullable: true, description: 'ID компании; null — без компании' })
   @IsOptional()
   @IsInt()
@@ -69,16 +84,19 @@ export class ContactDto {
   position?: string;
   @ApiPropertyOptional({ type: String })
   @IsOptional()
+  @Transform(({ value }: { value: string }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(100)
   phone?: string;
   @ApiPropertyOptional({ type: String })
   @IsOptional()
+  @Transform(({ value }: { value: string }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(254)
   email?: string;
   @ApiPropertyOptional({ type: String })
   @IsOptional()
+  @Transform(({ value }: { value: string }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MaxLength(100)
   telegram?: string;
@@ -131,9 +149,11 @@ export class DealDto {
   @IsInt()
   @Min(1)
   responsible_id?: number | null;
-  @ApiPropertyOptional({ type: String, description: 'Источник заявки' })
+  @ApiPropertyOptional({ type: String, enum: CRM_DEFAULT_SOURCES, description: 'Источник заявки' })
   @IsOptional()
+  @Transform(({ value }: { value: string }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
+  @IsIn(['', ...CRM_DEFAULT_SOURCES])
   @MaxLength(200)
   source?: string;
   @ApiPropertyOptional({ type: String, nullable: true, description: 'Ожидаемая дата закрытия YYYY-MM-DD' })
@@ -240,4 +260,11 @@ export class CrmTaskDto {
   @IsInt()
   @Min(1)
   responsible_id?: number;
+}
+export class CrmCollapsedStagesDto {
+  @ApiProperty({ type: Number, isArray: true, description: 'ID свёрнутых этапов CRM' })
+  @IsArray()
+  @ArrayUnique()
+  @IsInt({ each: true })
+  collapsed_stage_ids: number[];
 }

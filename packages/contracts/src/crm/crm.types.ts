@@ -1,5 +1,9 @@
 import type { JsonObject } from "../common/json";
-import type { CrmStageKind, CrmActivityKind, TaskBusinessKind } from "./crm.enums";
+import type {
+  CrmStageKind,
+  CrmActivityKind,
+  TaskBusinessKind,
+} from "./crm.enums";
 import type { TASK_STATUSES } from "../tasks/task-status.enum";
 export interface CrmCompany {
   id: number;
@@ -13,6 +17,8 @@ export interface CrmCompany {
 export interface CrmContact {
   id: number;
   name: string;
+  last_name: string;
+  patronymic: string;
   company_id: number | null;
   position: string;
   phone: string;
@@ -80,4 +86,5 @@ export interface CrmOptions {
   projects: { id: number; name: string }[];
   sources: string[];
   loss_reasons: string[];
+  collapsed_stage_ids: number[];
 }

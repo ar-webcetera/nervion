@@ -216,11 +216,14 @@ const removeTaskLocally = (taskId: number) => {
 
 let taskRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 const scheduleTaskRefetch = () => {
-  if (!import.meta.client || route.name !== 'home') return;
+  if (!import.meta.client) return;
+  taskStore.invalidateTasksPage();
+  if (route.name !== 'home') return;
   if (taskRefetchTimer) clearTimeout(taskRefetchTimer);
   taskRefetchTimer = setTimeout(() => {
-    Promise.allSettled([fetchTasks({ useSavedFilters: true }), getKanban({ useSavedFilters: true })]).catch(() => {});
-  }, 1500);
+    Promise.allSettled([fetchTasks({ useSavedFilters: true }), getKanban({ useSavedFilters: true })])
+      .catch(() => {});
+  }, 100);
 };
 
 const addComment = (newComment: Comment) => {

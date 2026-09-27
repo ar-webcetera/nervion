@@ -2,13 +2,15 @@
 import { ref, computed } from 'vue';
 import { format } from 'date-fns';
 import type { SelectOption } from '~/types/select';
-import { FilterType } from '~/types/filter';
+import { FilterType, type FilterDefinition } from '~/types/filter';
 
 interface Props {
   statusOptions: SelectOption[];
   projectOptions: SelectOption[];
   userOptions: SelectOption[];
   taskTypeOptions: SelectOption[];
+  businessKindOptions: SelectOption[];
+  filterDefinitions?: FilterDefinition[];
   selectedFilters?: Array<{ type: FilterType; value: string | number | string[] }>;
 }
 
@@ -40,35 +42,49 @@ const selectedValue = ref<string | number | null>(null);
 const selectedDate = ref<Date[] | string | null>(null);
 const valuesTop = ref(0);
 
-const filterTypes = [
-  { type: FilterType.STATUS, label: 'Статус' },
-  { type: FilterType.PROJECT, label: 'Проект' },
-  { type: FilterType.RESPONSIBLE, label: 'Ответственный' },
-  { type: FilterType.TASK_TYPE, label: 'Тип' },
-  { type: FilterType.DATE, label: 'Дата дедлайна' },
-  { type: FilterType.CLOSED_DATE, label: 'Дата закрытия' },
-];
+const filterTypes = computed(() => {
+  if (props.filterDefinitions !== undefined) {
+    return props.filterDefinitions.map(({ type, label }) => ({ type, label }));
+  }
+
+  return [
+    { type: FilterType.STATUS, label: 'Статус' },
+    { type: FilterType.PROJECT, label: 'Проект' },
+    { type: FilterType.RESPONSIBLE, label: 'Ответственный' },
+    { type: FilterType.TASK_TYPE, label: 'Тип' },
+    ...(props.businessKindOptions.length ? [{ type: FilterType.BUSINESS_KIND, label: 'Направление' }] : []),
+    { type: FilterType.DATE, label: 'Дата дедлайна' },
+    { type: FilterType.CLOSED_DATE, label: 'Дата закрытия' },
+  ];
+});
 
 const currentOptions = computed(() => {
   if (!selectedType.value) return [];
 
   let options: SelectOption[] = [];
 
-  switch (selectedType.value) {
-    case FilterType.STATUS:
-      options = props.statusOptions;
-      break;
-    case FilterType.PROJECT:
-      options = props.projectOptions;
-      break;
-    case FilterType.RESPONSIBLE:
-      options = props.userOptions;
-      break;
-    case FilterType.TASK_TYPE:
-      options = props.taskTypeOptions;
-      break;
-    default:
-      return [];
+  if (props.filterDefinitions !== undefined) {
+    options = props.filterDefinitions.find((definition) => definition.type === selectedType.value)?.options ?? [];
+  } else {
+    switch (selectedType.value) {
+      case FilterType.STATUS:
+        options = props.statusOptions;
+        break;
+      case FilterType.PROJECT:
+        options = props.projectOptions;
+        break;
+      case FilterType.RESPONSIBLE:
+        options = props.userOptions;
+        break;
+      case FilterType.TASK_TYPE:
+        options = props.taskTypeOptions;
+        break;
+      case FilterType.BUSINESS_KIND:
+        options = props.businessKindOptions;
+        break;
+      default:
+        return [];
+    }
   }
 
   if (props.selectedFilters && props.selectedFilters.length > 0) {
@@ -80,7 +96,7 @@ const currentOptions = computed(() => {
   return options;
 });
 
-const selectType = (type: FilterType, event?: MouseEvent) => {
+const selectType = (type: FilterType, event?: Event) => {
   selectedType.value = type;
   selectedValue.value = null;
   selectedDate.value = '';
@@ -144,6 +160,8 @@ const handleDateChange = (value: Date[] | string | null) => {
           class="add-filter-dropdown__item"
           :class="{ 'add-filter-dropdown__item_active': selectedType === filterType.type }"
           @mouseenter="selectType(filterType.type, $event)"
+          @focus="selectType(filterType.type, $event)"
+          @click.stop="selectType(filterType.type, $event)"
         >
           <span class="add-filter-dropdown__item-label">{{ filterType.label }}</span>
           <IconsIconArrowRightSmall />

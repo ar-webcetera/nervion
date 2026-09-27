@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Timer, TimerOff } from '@lucide/vue';
 import TaskComponent from '~/components/TaskComponent.vue';
 import BaseModal from '~/components/BaseModal.vue';
 import BaseTimetrack from '~/components/BaseTimetrack.vue';
@@ -20,9 +21,7 @@ const isTimerRunning = computed(() => {
   return timelogStore.currentTimelogs.some((t) => t.status === TIMELOG_STATUSES.in_progress);
 });
 
-const unboundTimelogs = computed(() =>
-  timelogStore.currentTimelogs.filter((t) => t.task_id === null || t.task_id === undefined),
-);
+const unboundTimelogs = computed(() => timelogStore.currentTimelogs.filter((t) => t.task_id === null || t.task_id === undefined));
 
 const toggle = () => {
   isOpen.value = !isOpen.value;
@@ -224,9 +223,17 @@ onBeforeUnmount(() => {
 
 <template>
   <div :class="['base-top-tracker', { 'base-top-tracker_open': isOpen }]">
-    <div class="cursor-pointer timer-icon-wrapper" :class="{ 'timer-running': isTimerRunning }" @click="toggle">
-      <IconsIconTimer />
-    </div>
+    <button
+      type="button"
+      class="timer-icon-wrapper"
+      :class="{ 'timer-running': isTimerRunning }"
+      aria-label="Тайм-трекер"
+      title="Тайм-трекер"
+      :aria-expanded="isOpen"
+      @click="toggle"
+    >
+      <Timer :size="20" :stroke-width="1.75" aria-hidden="true" />
+    </button>
     <div v-if="isOpen" class="tracker-modal">
       <div class="tracker-modal__header">
         <p @click="toggle"><IconLongBack />Тайм-трекер</p>
@@ -261,11 +268,7 @@ onBeforeUnmount(() => {
               />
             </template>
             <template v-else>
-              <span
-                class="unbound-row__title-text"
-                :title="t.title || UNBOUND_TIMELOG_TITLE"
-                @click="startEditTitle(t)"
-              >
+              <span class="unbound-row__title-text" :title="t.title || UNBOUND_TIMELOG_TITLE" @click="startEditTitle(t)">
                 {{ t.title || UNBOUND_TIMELOG_TITLE }}
               </span>
               <span class="unbound-row__badge">не привязан</span>
@@ -288,74 +291,80 @@ onBeforeUnmount(() => {
           @bind-task="openChangeTaskModal(task)"
         />
       </div>
-      <div v-else class="empty-message">
-        <img src="@/assets/empty_timer.webp" alt="" />
-        <p>У вас нет активных таймеров</p>
+      <div v-else class="empty-message" role="status">
+        <TimerOff :size="28" :stroke-width="1.75" aria-hidden="true" />
+        <strong>Активных таймеров пока нет</strong>
+        <p>Запустите новый таймер или включите учёт времени в задаче.</p>
       </div>
     </div>
 
     <teleport to="#teleports">
-    <BaseModal ref="newTimerModal">
-      <div class="new-timer-modal">
-        <h2>Новый таймер</h2>
-        <p class="new-timer-modal__hint">Название необязательно. Если оставить пустым, будет "{{ UNBOUND_TIMELOG_TITLE }}".</p>
-        <input
-          v-model="newTimerTitle"
-          type="text"
-          placeholder="Например: разбор почты"
-          class="new-timer-modal__input"
-          maxlength="120"
-          @keydown.enter.prevent="createUnboundTimelog"
-        />
-        <button type="button" :disabled="newTimerPending" @click="createUnboundTimelog">Запустить</button>
-      </div>
-    </BaseModal>
-
-    <BaseModal ref="attachModal">
-      <div class="attach-modal">
-        <h2>{{ attachModalTitle }}</h2>
-
-        <template v-if="attachConfirmTask">
-          <p class="attach-modal__confirm">
-            Перенести {{ attachTargetSpent }} с задачи "{{ attachCurrentTask?.title }}" на "{{ attachConfirmTask.title }}"?
-          </p>
-          <div class="attach-modal__confirm-actions">
-            <button type="button" class="attach-modal__cancel" :disabled="attachPending" @click="attachConfirmTask = null">
-              Отмена
-            </button>
-            <button type="button" class="attach-modal__submit" :disabled="attachPending" @click="applyAttach(attachConfirmTask)">
-              Перенести
-            </button>
-          </div>
-        </template>
-
-        <template v-else>
+      <BaseModal ref="newTimerModal">
+        <div class="new-timer-modal">
+          <h2>Новый таймер</h2>
+          <p class="new-timer-modal__hint">Название необязательно. Если оставить пустым, будет "{{ UNBOUND_TIMELOG_TITLE }}".</p>
           <input
-            v-model="attachSearch"
+            v-model="newTimerTitle"
             type="text"
-            placeholder="Поиск задачи по названию"
-            class="attach-modal__search"
-            @input="runAttachSearch"
+            placeholder="Например: разбор почты"
+            class="new-timer-modal__input"
+            maxlength="120"
+            @keydown.enter.prevent="createUnboundTimelog"
           />
-          <div class="attach-modal__list">
-            <div v-if="!attachResults.length" class="attach-modal__empty">
-              {{ attachSearch ? 'Ничего не найдено' : 'Начните вводить название задачи' }}
+          <button type="button" :disabled="newTimerPending" @click="createUnboundTimelog">Запустить</button>
+        </div>
+      </BaseModal>
+
+      <BaseModal ref="attachModal">
+        <div class="attach-modal">
+          <h2>{{ attachModalTitle }}</h2>
+
+          <template v-if="attachConfirmTask">
+            <p class="attach-modal__confirm">
+              Перенести {{ attachTargetSpent }} с задачи "{{ attachCurrentTask?.title }}" на "{{ attachConfirmTask.title }}"?
+            </p>
+            <div class="attach-modal__confirm-actions">
+              <button type="button" class="attach-modal__cancel" :disabled="attachPending" @click="attachConfirmTask = null">
+                Отмена
+              </button>
+              <button
+                type="button"
+                class="attach-modal__submit"
+                :disabled="attachPending"
+                @click="applyAttach(attachConfirmTask)"
+              >
+                Перенести
+              </button>
             </div>
-            <button
-              v-for="task of attachResults"
-              :key="task.id"
-              type="button"
-              class="attach-modal__item"
-              :disabled="attachPending || task.id === attachCurrentTask?.id"
-              @click="pickAttachTask(task)"
-            >
-              <span class="attach-modal__item-title">{{ task.title }}</span>
-              <span v-if="task.projectName" class="attach-modal__item-project">{{ task.projectName }}</span>
-            </button>
-          </div>
-        </template>
-      </div>
-    </BaseModal>
+          </template>
+
+          <template v-else>
+            <input
+              v-model="attachSearch"
+              type="text"
+              placeholder="Поиск задачи по названию"
+              class="attach-modal__search"
+              @input="runAttachSearch"
+            />
+            <div class="attach-modal__list">
+              <div v-if="!attachResults.length" class="attach-modal__empty">
+                {{ attachSearch ? 'Ничего не найдено' : 'Начните вводить название задачи' }}
+              </div>
+              <button
+                v-for="task of attachResults"
+                :key="task.id"
+                type="button"
+                class="attach-modal__item"
+                :disabled="attachPending || task.id === attachCurrentTask?.id"
+                @click="pickAttachTask(task)"
+              >
+                <span class="attach-modal__item-title">{{ task.title }}</span>
+                <span v-if="task.projectName" class="attach-modal__item-project">{{ task.projectName }}</span>
+              </button>
+            </div>
+          </template>
+        </div>
+      </BaseModal>
     </teleport>
   </div>
 </template>
@@ -364,27 +373,44 @@ onBeforeUnmount(() => {
 .base-top-tracker {
   position: relative;
 
-  svg {
-    stroke: var(--light-text-backgroung-primary-50);
+  > .timer-icon-wrapper {
+    color: var(--light-text-backgroung-primary-50);
   }
 
   &_open {
     border-radius: 8px;
     background-color: var(--light-text-backgroung-primary-10);
 
-    svg {
-      stroke: var(--light-text-backgroung-primary);
+    > .timer-icon-wrapper {
+      color: var(--light-text-backgroung-primary);
     }
   }
 }
 
 .timer-icon-wrapper {
   position: relative;
-  @include flex();
+  @include flex(center);
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
 
-  svg {
-    width: 24px;
-    height: 24px;
+  &:hover,
+  &:focus-visible {
+    color: var(--light-text-backgroung-primary);
+    background: var(--light-text-backgroung-primary-5);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: -2px;
+  }
+
+  &:active {
+    background: var(--light-text-backgroung-primary-25);
   }
 
   &.timer-running::after {
@@ -399,32 +425,38 @@ onBeforeUnmount(() => {
     border: 1.5px solid var(--dark-text-background-primary);
     animation: pulse 2s infinite;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    &.timer-running::after {
+      animation: none;
+    }
+  }
 }
 
 .empty-message {
   width: 100%;
+  height: 100%;
+  max-width: 280px;
+  margin: auto;
   @include flex(cn, center);
   gap: 8px;
-  padding: 24px;
+  padding: 24px 0;
+  color: var(--light-text-backgroung-primary-50);
+  text-align: center;
 
-  @media (max-width: $screen-mobile-l) {
-    height: 100%;
+  svg {
+    margin-bottom: 4px;
+    color: var(--light-text-backgroung-primary-25);
   }
 
-  img {
-    width: 163px;
-    height: auto;
-
-    @media (max-width: $screen-mobile-l) {
-      width: 260px;
-    }
+  strong {
+    color: var(--light-text-backgroung-primary);
+    @extend %text-s-medium;
   }
 
   p {
-    @extend %text-s-medium;
-    color: var(--light-text-backgroung-primary);
-    text-align: center;
-    width: 138px;
+    margin: 0;
+    @extend %text-xs-regular;
   }
 }
 

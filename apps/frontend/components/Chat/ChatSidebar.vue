@@ -7,6 +7,7 @@ import BaseModal from '~/components/BaseModal.vue';
 import { ROLES } from '~/types/user';
 import { gitHubEmojis } from '@tiptap/extension-emoji';
 import VoiceRoomSection from '~/components/Voice/VoiceRoomSection.vue';
+import { MessageCircleOff } from '@lucide/vue';
 
 interface User {
   id: number;
@@ -341,7 +342,12 @@ const vImgReveal = {
       </div>
     </div>
     <div class="chat-list">
-      <ul class="chat-list__items">
+      <div v-if="!chatList.length" class="chat-list__empty" role="status">
+        <MessageCircleOff :size="28" :stroke-width="1.75" aria-hidden="true" />
+        <strong>Чатов пока нет</strong>
+        <p>Создайте чат, чтобы начать общение.</p>
+      </div>
+      <ul v-else class="chat-list__items">
         <li
           v-for="chat in chatList"
           :key="String(chat.chatId)"
@@ -624,6 +630,32 @@ const vImgReveal = {
       user-select: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
+    }
+  }
+
+  &__empty {
+    width: 100%;
+    min-height: 200px;
+    padding: 32px 16px;
+    color: var(--light-text-backgroung-primary-50);
+    text-align: center;
+    @include flex(cn, center, a-center);
+    gap: 8px;
+
+    svg {
+      margin-bottom: 4px;
+      color: var(--light-text-backgroung-primary-25);
+    }
+
+    strong {
+      color: var(--light-text-backgroung-primary);
+      @extend %text-s-medium;
+    }
+
+    p {
+      max-width: 220px;
+      margin: 0;
+      @extend %text-xs-regular;
     }
   }
 }

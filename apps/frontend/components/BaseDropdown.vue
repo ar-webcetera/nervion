@@ -158,6 +158,8 @@ const selectOption = (option: SelectOption) => {
     @include flex(rn, a-center);
     width: fit-content;
     gap: 4px;
+    justify-content: flex-start;
+    text-align: left;
     cursor: pointer;
     transition: all 0.2s ease;
     user-select: none;
@@ -170,6 +172,10 @@ const selectOption = (option: SelectOption) => {
   }
 
   &__placeholder {
+    min-width: 0;
+    overflow: hidden;
+    text-align: left;
+    text-overflow: ellipsis;
     white-space: nowrap;
     &_show {
       color: var(--light-text-backgroung-primary-50);
@@ -205,6 +211,7 @@ const selectOption = (option: SelectOption) => {
       @include flex(rn, a-center);
       padding: 6px 8px;
       width: 100%;
+      text-align: left;
       cursor: pointer;
       transition: all 0.2s ease;
       white-space: nowrap;

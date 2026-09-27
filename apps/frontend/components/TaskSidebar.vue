@@ -1392,6 +1392,7 @@ input {
 
   &__name {
     padding: 0 24px;
+    overflow-wrap: anywhere;
 
     @media (max-width: $screen-mobile-l) {
       padding: 12px 16px 24px;
@@ -1411,6 +1412,7 @@ input {
 
     input {
       width: 100%;
+      min-width: 0;
       padding: 3px 6px;
       @extend %display-s-bold;
       color: var(--light-text-backgroung-primary);
@@ -1829,6 +1831,7 @@ input {
 
   &__info-left {
     flex: 1;
+    min-width: 0;
     @include flex(cn);
     gap: 16px;
 
@@ -1883,6 +1886,7 @@ input {
 
   &__title {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     gap: 24px;
     align-items: flex-start;
@@ -1906,6 +1910,7 @@ input {
     @include flex(rn, a-center);
     gap: 12px;
     flex-shrink: 0;
+    margin-left: auto;
 
     .task-sidebar__duplicate-button,
     .task-sidebar__delete-button {

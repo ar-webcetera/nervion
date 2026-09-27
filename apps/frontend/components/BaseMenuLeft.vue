@@ -8,6 +8,27 @@ import { useChatStore } from '~/stores/chatStore';
 import { useMailStore } from '~/stores/mailStore';
 import BaseTopTracker from '~/components/BaseTopTracker.vue';
 import { computed } from 'vue';
+import {
+  ListTodo,
+  FolderKanban,
+  Funnel,
+  BookOpen,
+  MessagesSquare,
+  Mail,
+  CalendarDays,
+  CalendarClock,
+  ChartNoAxesCombined,
+  Users,
+  ScrollText,
+  ListChecks,
+  MonitorCheck,
+  Mailbox,
+  GitBranch,
+  ChevronDown,
+} from '@lucide/vue';
+
+const navigationIconProps = { size: 20, strokeWidth: 1.75, 'aria-hidden': true } as const;
+const mainNavigationIconProps = { size: 19, strokeWidth: 1.75, 'aria-hidden': true } as const;
 
 defineProps<{
   isHiddenMenu?: boolean;
@@ -38,6 +59,7 @@ const totalUnreadCount = computed(() => {
 const mailInboxUnreadCount = computed(() => Number(mailStore.accountUnreadCounts[selectedMailAccountId.value]?.inbox) || 0);
 const router = useRouter();
 const route = useRoute();
+const isCrmRoute = computed(() => route.path === '/crm' || route.path.startsWith('/crm/'));
 const { $toast } = useNuxtApp();
 
 const { openPopup, closePopup, isPopupOpen } = useProfile();
@@ -127,272 +149,165 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
       >
         <div class="base-menu-left__items">
           <NuxtLink
+            aria-label="Задачи"
             :to="{ name: PAGE_NAMES.home }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
             :data-tooltip="'Задачи'"
           >
-            <IconsIconAllTasks />
+            <ListTodo v-bind="mainNavigationIconProps" />
+          </NuxtLink>
+          <NuxtLink
+            v-if="userStore.user?.role === ROLES.admin && isMenuVisible('crm')"
+            to="/crm/deals"
+            class="base-menu-left__item"
+            :class="{ 'base-menu-left__item_active': isCrmRoute }"
+            :aria-current="isCrmRoute ? 'page' : undefined"
+            data-tooltip="CRM"
+            aria-label="CRM"
+          >
+            <Funnel v-bind="mainNavigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="isMenuVisible('projects')"
+            aria-label="Проекты"
             :data-tooltip="'Проекты'"
             :to="{ name: PAGE_NAMES.projects }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
-            <IconsIconProjects />
+            <FolderKanban v-bind="mainNavigationIconProps" />
           </NuxtLink>
-
-          <NuxtLink
-            v-if="userStore.user?.role === ROLES.admin && isMenuVisible('crm')"
-            to="/crm/deals"
-            class="base-menu-left__item"
-            :class="{ 'base-menu-left__item_active': route.path.startsWith('/crm') }"
-            data-tooltip="CRM"
-            aria-label="CRM"
-            ><svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
-            >
-              <path d="M3 4h18l-7 8v7l-4 2v-9z" /></svg
-          ></NuxtLink>
           <NuxtLink
             v-if="isMenuVisible('wiki')"
+            aria-label="Вики"
             :data-tooltip="'Вики'"
             :to="{ name: PAGE_NAMES.wiki }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
-            <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path
-                d="M4.5 0.5H3.7002C2.58009 0.5 2.01962 0.5 1.5918 0.717987C1.21547 0.909734 0.909734 1.21547 0.717987 1.5918C0.5 2.01962 0.5 2.58009 0.5 3.7002V13.3002C0.5 14.4203 0.5 14.9801 0.717987 15.4079C0.909734 15.7842 1.21547 16.0905 1.5918 16.2822C2.0192 16.5 2.57899 16.5 3.69691 16.5H4.5M4.5 0.5H13.3002C14.4203 0.5 14.9796 0.5 15.4074 0.717987C15.7837 0.909734 16.0905 1.21547 16.2822 1.5918C16.5 2.0192 16.5 2.57899 16.5 3.69691V13.3036C16.5 14.4215 16.5 14.9805 16.2822 15.4079C16.0905 15.7842 15.7837 16.0905 15.4074 16.2822C14.98 16.5 14.421 16.5 13.3031 16.5H4.5M4.5 0.5V16.5M8.5 7.5H12.5M8.5 4.5H12.5"
-                stroke="#FEFEFE"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
+            <BookOpen v-bind="mainNavigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="isMenuVisible('chat')"
+            aria-label="Чаты"
             :data-tooltip="'Чаты'"
             :to="{ name: PAGE_NAMES.CHAT }"
             class="base-menu-left__item chat-icon-wrapper"
             active-class="base-menu-left__item_active"
           >
             <div v-if="totalUnreadCount > 0" class="chat-unread-badge">{{ totalUnreadCount }}</div>
-            <IconsIconChat />
+            <MessagesSquare v-bind="mainNavigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="(userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee) && isMenuVisible('mail')"
+            aria-label="Почта"
             :data-tooltip="'Почта'"
             :to="{ name: PAGE_NAMES.MAIL }"
             class="base-menu-left__item chat-icon-wrapper"
             active-class="base-menu-left__item_active"
           >
             <div v-if="mailInboxUnreadCount > 0" class="chat-unread-badge">{{ mailInboxUnreadCount }}</div>
-            <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect
-                x="0.5"
-                y="2.5"
-                width="16"
-                height="12"
-                rx="1.5"
-                stroke="#FEFEFE"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path d="M1.5 4L8.5 9L15.5 4" stroke="#FEFEFE" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
+            <Mail v-bind="mainNavigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="(userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee) && isMenuVisible('planning')"
+            aria-label="Планирование"
             :data-tooltip="'Планирование'"
             :to="{ name: PAGE_NAMES.planning }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
-            <IconsIconCalendarMenu />
+            <CalendarDays v-bind="mainNavigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="userStore.user?.role !== ROLES.guest && isMenuVisible('schedule')"
+            aria-label="График работы"
             :data-tooltip="'График работы'"
             :to="{ name: PAGE_NAMES.SCHEDULE }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
-            <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect
-                x="0.5"
-                y="0.5"
-                width="7"
-                height="7"
-                rx="1.5"
-                stroke="#FEFEFE"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <rect
-                x="9.5"
-                y="0.5"
-                width="7"
-                height="7"
-                rx="1.5"
-                stroke="#FEFEFE"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <rect
-                x="0.5"
-                y="9.5"
-                width="7"
-                height="7"
-                rx="1.5"
-                stroke="#FEFEFE"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <rect
-                x="9.5"
-                y="9.5"
-                width="7"
-                height="7"
-                rx="1.5"
-                stroke="#FEFEFE"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
+            <CalendarClock v-bind="mainNavigationIconProps" />
           </NuxtLink>
         </div>
         <div class="base-menu-left__items">
           <NuxtLink
             v-if="userStore.user?.role === ROLES.admin && isMenuVisible('report')"
+            aria-label="Отчеты"
             :data-tooltip="'Отчеты'"
             :to="{ name: PAGE_NAMES.report }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
             <div v-if="reportStore.pendingCount > 0" class="chat-unread-badge">{{ reportStore.pendingCount }}</div>
-            <IconsIconReports />
+            <ChartNoAxesCombined v-bind="navigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="userStore.user?.role === ROLES.admin && isMenuVisible('users-management')"
+            aria-label="Управление пользователями"
             :data-tooltip="'Управление пользователями'"
             :to="{ name: PAGE_NAMES.USERS_MANAGEMENT }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
-            <IconsIconUsers />
+            <Users v-bind="navigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="userStore.user?.role === ROLES.admin && isMenuVisible('changelogs')"
+            aria-label="Changelog"
             :data-tooltip="'Changelog'"
             :to="{ name: PAGE_NAMES.CHANGELOGS }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
-            <IconsIconChangelog />
+            <ScrollText v-bind="navigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="userStore.user?.role === ROLES.admin && isMenuVisible('audit-logs')"
+            aria-label="Журнал действий"
             :data-tooltip="'Журнал действий'"
             :to="{ name: PAGE_NAMES.AUDIT_LOGS }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
-            <svg width="24" height="24" viewBox="0 0 16 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect
-                x="0.5"
-                y="0.5"
-                width="3"
-                height="3"
-                rx="0.75"
-                stroke="#FEFEFE"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path d="M6 2H15.5" stroke="#FEFEFE" stroke-linecap="round" />
-              <rect
-                x="0.5"
-                y="6"
-                width="3"
-                height="3"
-                rx="0.75"
-                stroke="#FEFEFE"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path d="M6 7.5H15.5" stroke="#FEFEFE" stroke-linecap="round" />
-              <rect
-                x="0.5"
-                y="11.5"
-                width="3"
-                height="3"
-                rx="0.75"
-                stroke="#FEFEFE"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path d="M6 13H12.5" stroke="#FEFEFE" stroke-linecap="round" />
-            </svg>
+            <ListChecks v-bind="navigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="userStore.user?.role === ROLES.admin && isMenuVisible('healthchecks')"
+            aria-label="Healthcheck-мониторы"
             :data-tooltip="'Healthcheck-мониторы'"
             :to="{ name: PAGE_NAMES.HEALTHCHECKS }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
-            <svg width="24" height="24" viewBox="0 0 17 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path
-                d="M11.5 15.5H5.5M0.5 9.3002V3.7002C0.5 2.58009 0.5 2.01962 0.717987 1.5918C0.909734 1.21547 1.21547 0.909734 1.5918 0.717987C2.01962 0.5 2.58009 0.5 3.7002 0.5H13.3002C14.4203 0.5 14.9796 0.5 15.4074 0.717987C15.7837 0.909734 16.0905 1.21547 16.2822 1.5918C16.5 2.0192 16.5 2.57899 16.5 3.69691V9.30309C16.5 10.421 16.5 10.98 16.2822 11.4074C16.0905 11.7837 15.7837 12.0905 15.4074 12.2822C14.98 12.5 14.421 12.5 13.3031 12.5H3.69691C2.57899 12.5 2.0192 12.5 1.5918 12.2822C1.21547 12.0905 0.909734 11.7837 0.717987 11.4074C0.5 10.9796 0.5 10.4203 0.5 9.3002Z"
-                stroke="#FEFEFE"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
+            <MonitorCheck v-bind="navigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="userStore.user?.role === ROLES.admin && isMenuVisible('mail-accounts')"
+            aria-label="Почтовые ящики"
             :data-tooltip="'Почтовые ящики'"
             :to="{ name: PAGE_NAMES.MAIL_ACCOUNTS }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
-            <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="0.75" y="3.25" width="14.5" height="9.5" rx="1.5" stroke="#FEFEFE" />
-              <path d="M1.5 4.5L8 8.5L14.5 4.5" stroke="#FEFEFE" stroke-linecap="round" />
-              <circle cx="12.6" cy="11" r="2.4" fill="var(--dark-text-background-primary)" stroke="#FEFEFE" />
-            </svg>
+            <Mailbox v-bind="navigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="userStore.user?.role === ROLES.admin && isMenuVisible('git')"
+            aria-label="Git"
             :data-tooltip="'Git'"
             :to="{ name: PAGE_NAMES.GIT }"
             class="base-menu-left__item"
             active-class="base-menu-left__item_active"
           >
-            <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="4" cy="3" r="2" stroke="#FEFEFE" stroke-width="1.2" />
-              <circle cx="4" cy="13" r="2" stroke="#FEFEFE" stroke-width="1.2" />
-              <circle cx="12" cy="6" r="2" stroke="#FEFEFE" stroke-width="1.2" />
-              <path d="M4 5V11" stroke="#FEFEFE" stroke-width="1.2" stroke-linecap="round" />
-              <path d="M12 8C12 10 10 11 7 11" stroke="#FEFEFE" stroke-width="1.2" stroke-linecap="round" />
-            </svg>
+            <GitBranch v-bind="navigationIconProps" />
           </NuxtLink>
         </div>
       </div>
       <div v-show="canScrollDown" class="base-menu-left__nav-fade base-menu-left__nav-fade_bottom" aria-hidden="true">
         <span class="base-menu-left__nav-chevron">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+          <ChevronDown :size="14" :stroke-width="1.75" aria-hidden="true" />
         </span>
       </div>
     </div>
@@ -419,7 +334,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
         aria-label="Задачи"
         title="Задачи"
       >
-        <IconsIconAllTasks />
+        <ListTodo v-bind="navigationIconProps" />
       </NuxtLink>
       <NuxtLink
         aria-label="Чаты"
@@ -429,7 +344,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
         active-class="base-menu-left__item_active"
       >
         <div v-if="totalUnreadCount > 0" class="chat-unread-badge">{{ totalUnreadCount }}</div>
-        <IconsIconChat />
+        <MessagesSquare v-bind="navigationIconProps" />
       </NuxtLink>
       <NuxtLink
         v-if="(userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee) && isMenuVisible('mail')"
@@ -440,19 +355,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
         active-class="base-menu-left__item_active"
       >
         <div v-if="mailInboxUnreadCount > 0" class="chat-unread-badge">{{ mailInboxUnreadCount }}</div>
-        <svg width="24" height="24" viewBox="0 0 17 17" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect
-            x="0.5"
-            y="2.5"
-            width="16"
-            height="12"
-            rx="1.5"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-          <path d="M1.5 4L8.5 9L15.5 4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
+        <Mail v-bind="navigationIconProps" />
       </NuxtLink>
     </div>
   </div>
@@ -480,7 +383,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
   height: 100%;
   width: 100%;
   max-width: 80px;
-  padding: 20px;
+  padding: 20px 17px;
   @include flex(cn);
   gap: 24px;
   background-color: var(--dark-text-background-primary);
@@ -544,12 +447,6 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
 
       span {
         display: none;
-      }
-
-      svg {
-        &:last-child {
-          display: none;
-        }
       }
     }
 
@@ -637,6 +534,10 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
     color: var(--light-text-backgroung-primary-50);
     @include flex(center);
     animation: base-menu-scroll-hint 1.4s ease-in-out infinite;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+    }
   }
 
   &__header {
@@ -652,8 +553,8 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
       cursor: pointer;
       position: relative;
       @include flex(center);
-      height: 40px;
-      width: 40px;
+      height: 44px;
+      width: 44px;
       @include flex(rn, a-center);
       color: var(--white-50);
       transition: width 0.2s ease;
@@ -712,37 +613,28 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
     cursor: pointer;
     position: relative;
     @include flex(center);
-    height: 40px;
-    width: 40px;
-    @include flex(rn, a-center);
-    color: var(--white-50);
-    transition: width 0.2s ease;
-
+    height: 44px;
+    width: 44px;
+    flex-shrink: 0;
+    color: var(--light-text-backgroung-primary-50);
     border-radius: 8px;
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+
     svg {
-      width: 18px;
-      height: 18px;
-      stroke: var(--light-text-backgroung-primary-50);
-      stroke-opacity: 0.5;
+      flex-shrink: 0;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
+      color: var(--light-text-backgroung-primary);
     }
 
     &_active {
       background-color: var(--light-text-backgroung-primary-10);
-      color: var(--white-100);
-      svg {
-        stroke: var(--light-text-backgroung-primary);
-        stroke-opacity: 1;
-      }
-    }
-
-    @media (hover: hover) and (pointer: fine) {
-      &:hover {
-        background-color: var(--light-text-backgroung-primary-5);
-        color: var(--white-100);
-        svg {
-          stroke: var(--light-text-backgroung-primary-50);
-        }
-      }
+      color: var(--light-text-backgroung-primary);
     }
 
     &_mob {
@@ -750,15 +642,26 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
       height: 48px;
       flex: 0 0 48px;
       padding: 12px;
+    }
 
-      &:focus-visible {
-        outline: 2px solid var(--primary);
-        outline-offset: 2px;
+    @media (hover: hover) and (pointer: fine) {
+      &:hover {
+        background-color: var(--light-text-backgroung-primary-5);
+        color: var(--light-text-backgroung-primary);
       }
 
-      svg {
-        stroke-opacity: 1;
+      &_active:hover {
+        background-color: var(--light-text-backgroung-primary-10);
       }
+    }
+
+    &:active {
+      background-color: var(--light-text-backgroung-primary-25);
+      color: var(--light-text-backgroung-primary);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      transition: none;
     }
   }
 

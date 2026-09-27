@@ -135,6 +135,10 @@ export const useTaskStore = defineStore('task', () => {
   const endModal = ref<HTMLElement | null>(null);
   const businessKind = ref<import('@tracker/contracts').TaskBusinessKind | ''>('');
 
+  const invalidateTasksPage = () => {
+    tasksPageHydrated.value = false;
+  };
+
   const getTrackingDateFromTimelogs = (taskId: number) => {
     return timelogStore.currentTimelogs.find((timelog) => timelog.task_id === taskId)?.tracking_date ?? null;
   };
@@ -673,6 +677,7 @@ export const useTaskStore = defineStore('task', () => {
     kanban,
     viewType,
     tasksPageHydrated,
+    invalidateTasksPage,
     setColumnCollapsed,
     saveViewType,
     linkExistingTask,

@@ -9,6 +9,7 @@ import { CrmService } from './crm.service';
 import {
   CompanyDto,
   ContactDto,
+  CrmCollapsedStagesDto,
   CrmCommentDto,
   CrmQueryDto,
   CrmTaskDto,
@@ -27,8 +28,11 @@ import {
 @Roles(ROLES.admin)
 export class CrmController {
   constructor(private readonly crm: CrmService) {}
-  @Get('options') options() {
-    return this.crm.options();
+  @Get('options') options(@Req() req: RequestWithCookies) {
+    return this.crm.options(req.user.id);
+  }
+  @Patch('preferences/collapsed-stages') collapsedStages(@Body() dto: CrmCollapsedStagesDto, @Req() req: RequestWithCookies) {
+    return this.crm.saveCollapsedStages(req.user.id, dto.collapsed_stage_ids);
   }
   @ApiOperation({ summary: 'Создать компанию клиента' })
   @Post('companies')

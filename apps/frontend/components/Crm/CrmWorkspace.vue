@@ -9,28 +9,56 @@ import {
   type CrmDealDetail,
   type CrmDeal,
   type CrmOptions,
-  type JsonObject,
 } from '@tracker/contracts';
 import type { JSONContent } from '@tiptap/core';
 import EditorTiptap from '~/components/TipTap/EditorTiptap.vue';
 import { CrmSection, CrmPanel, CrmProjectChoice } from '~/enums/crm.enums';
 import type { Task } from '~/types/task';
+import { ROLES, type User } from '~/types/user';
+import type { SelectOption } from '~/types/select';
+import type { FilterChip, FilterDefinition } from '~/types/filter';
+import { FilterType } from '~/types/filter';
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Expand,
+  ExternalLink,
+  History,
+  Mail,
+  Minimize2,
+  Phone,
+  Plus,
+  Send,
+  UserRound,
+  X,
+} from '@lucide/vue';
+import IconSortAsc from '~/components/Icons/IconSortAsc.vue';
+import IconSortDesc from '~/components/Icons/IconSortDesc.vue';
+import { TYPE_SORT_LABELS, TypeSort } from '~/constants/sort.constants';
+import { hasTiptapContent } from '~/utils/tiptap/content';
+import { debounce } from '~/utils/debounce';
+import { MAX_TASK_NAME_LENGTH } from '~/constants/task.constants';
+import { format } from 'date-fns';
 
 const props = defineProps<{ section: CrmSection }>();
 useHead({ title: 'CRM' });
 const route = useRoute();
 const router = useRouter();
 const taskStore = useTaskStore();
+const userStore = useUserStore();
 const baseURL = useApiBaseUrl();
 const headers = useRequestHeaders(['cookie']);
 const request = { baseURL, headers, credentials: 'include' as const };
+if (!userStore.users.length) await userStore.fetchUsers();
 const emptyDoc = (): JSONContent => ({ type: 'doc', content: [{ type: 'paragraph' }] });
 const search = ref('');
 const companyFilter = ref('');
 const ownerFilter = ref('');
 const sourceFilter = ref('');
 const quick = ref(CrmQuickFilter.ALL);
-const collapsed = ref<number[]>([7, 8]);
+const collapsed = ref<number[]>([]);
 const dragging = ref<number | null>(null);
 const today = () => new Intl.DateTimeFormat('sv-SE').format(new Date());
 const query = computed(() => ({
@@ -46,13 +74,16 @@ const {
   error: optionsError,
   refresh: refreshOptions,
 } = await useAsyncData('crm-options', () => $fetch<CrmOptions>('/api/crm/options', request));
+collapsed.value = [...(options.value?.collapsed_stage_ids ?? [])];
 const {
   data: board,
   error: boardError,
   pending,
   refresh: refreshBoard,
 } = await useAsyncData(`crm-board-${props.section}`, () =>
-  props.section === CrmSection.DEALS ? $fetch<CrmColumn[]>('/api/crm/board', { ...request, query: query.value }) : Promise.resolve([]),
+  props.section === CrmSection.DEALS
+    ? $fetch<CrmColumn[]>('/api/crm/board', { ...request, query: query.value })
+    : Promise.resolve([]),
 );
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 watch(query, () => {
@@ -66,8 +97,42 @@ const money = (amount: string | number | null) =>
   amount === null
     ? 'Не указана'
     : new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2 }).format(Number(amount));
+const stageColor = (stage: CrmColumn['stage']) => {
+  if (stage.kind === CrmStageKind.WON) return 'var(--status-emerald)';
+  if (stage.kind === CrmStageKind.LOST) return 'var(--danger-delete)';
+
+  return (
+    {
+      1: 'var(--light-text-backgroung-primary-50)',
+      2: 'var(--status-blue)',
+      3: 'var(--status-blue)',
+      4: 'var(--primary)',
+      5: 'var(--status-in-progress)',
+      6: 'var(--status-in-progress)',
+    }[stage.position] ?? 'var(--primary)'
+  );
+};
+const setStageCollapsed = async (stageId: number, value: boolean) => {
+  const previous = [...collapsed.value];
+  collapsed.value = value ? [...new Set([...collapsed.value, stageId])] : collapsed.value.filter((id) => id !== stageId);
+  try {
+    await $fetch('/api/crm/preferences/collapsed-stages', {
+      ...request,
+      method: 'PATCH',
+      body: { collapsed_stage_ids: collapsed.value },
+    });
+  } catch (cause) {
+    collapsed.value = previous;
+    error.value = getErrorMessage(cause);
+  }
+};
 const companyName = (id: number | null) => options.value?.companies.find((c) => c.id === id)?.name ?? 'Без компании';
 const ownerName = (id: number | null) => options.value?.users.find((u) => u.id === id)?.name ?? 'Не назначен';
+const contactFullName = (contact: Pick<CrmContact, 'name' | 'last_name' | 'patronymic'>) =>
+  [contact.name, contact.last_name, contact.patronymic]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(' ');
 const stats = (id: number) => options.value?.company_stats[id] ?? { count: 0, amount: '0' };
 const companies = computed(() =>
   (options.value?.companies ?? []).filter((c) => c.name.toLocaleLowerCase().includes(search.value.toLocaleLowerCase())),
@@ -75,9 +140,12 @@ const companies = computed(() =>
 const contacts = computed(() =>
   (options.value?.contacts ?? []).filter(
     (c) =>
-      c.name.toLocaleLowerCase().includes(search.value.toLocaleLowerCase()) &&
+      contactFullName(c).toLocaleLowerCase().includes(search.value.toLocaleLowerCase()) &&
       (!companyFilter.value || c.company_id === Number(companyFilter.value)),
   ),
+);
+const companyContacts = computed(() =>
+  companyForm.value.id ? (options.value?.contacts ?? []).filter((contact) => contact.company_id === companyForm.value.id) : [],
 );
 const panelId = computed(() => Number(route.query.deal || 0));
 const {
@@ -103,11 +171,33 @@ watch(panel, async (value, previous) => {
   if (value) panelElement.value?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
   else panelTrigger?.focus({ preventScroll: true });
 });
+const directoryPanel = ref<CrmPanel.COMPANY | CrmPanel.CONTACT | null>(null);
+const directoryElement = ref<HTMLElement>();
+let directoryTrigger: HTMLElement | null = null;
+watch(directoryPanel, async (value, previous) => {
+  if (!import.meta.client) return;
+  if (value && !previous) directoryTrigger = document.activeElement as HTMLElement | null;
+  await nextTick();
+  if (value) directoryElement.value?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: true });
+  else directoryTrigger?.focus({ preventScroll: true });
+});
 const expanded = ref(false);
 const returnToDeal = ref(false);
 const savedScroll = ref(0);
 const companyForm = ref<CrmCompany>({ id: 0, name: '', legal_name: '', inn: '', website: '', notes: '', responsible_id: null });
-const contactForm = ref<CrmContact>({ id: 0, name: '', company_id: null, position: '', phone: '', email: '', telegram: '' });
+const contactForm = ref<CrmContact>({
+  id: 0,
+  name: '',
+  last_name: '',
+  patronymic: '',
+  company_id: null,
+  position: '',
+  phone: '',
+  email: '',
+  telegram: '',
+});
+const isCompanyFormValid = computed(() => companyForm.value.name.trim().length > 0);
+const isContactFormValid = computed(() => contactForm.value.name.trim().length > 0);
 const draft = reactive({
   title: '',
   stage_id: 1,
@@ -120,7 +210,6 @@ const draft = reactive({
   expected_close: '',
   project_id: null as number | null,
 });
-const description = ref<JSONContent>(emptyDoc());
 let syncedDealId = 0;
 let savedFields = '';
 const commentDrafts = useState<Record<number, JSONContent>>('crm-comment-drafts', () => ({}));
@@ -131,18 +220,67 @@ const comment = computed({
     commentDrafts.value[panelId.value] = value;
   },
 });
-const timelineFilter = ref('all');
-const timeline = computed(
-  () => deal.value?.activities.filter((a) => timelineFilter.value === 'all' || a.kind === timelineFilter.value) ?? [],
+const timelineSort = useCookie<TypeSort>('crm-timeline-sort', {
+  default: () => TypeSort.ASC,
+  maxAge: 365 * 24 * 60 * 60,
+  path: '/',
+});
+const timeline = computed(() =>
+  [...(deal.value?.activities ?? [])].sort((a, b) => {
+    const comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime() || a.id - b.id;
+    return timelineSort.value === TypeSort.DESC ? -comparison : comparison;
+  }),
 );
+const toggleTimelineSort = () => {
+  timelineSort.value = timelineSort.value === TypeSort.ASC ? TypeSort.DESC : TypeSort.ASC;
+};
+const formatCommentDate = (date: string) => format(new Date(date), 'dd.MM.yy ⋅ HH:mm');
+const formatActivityDate = (date: string) =>
+  new Date(date).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+const authorInitials = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toLocaleUpperCase())
+    .join('');
+const tomorrowDate = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return new Intl.DateTimeFormat('sv-SE').format(date);
+};
 const taskTitle = ref('');
-const taskDate = ref('');
-const taskOwner = ref<number | null>(null);
+const taskDate = ref(tomorrowDate());
+const taskOwner = ref<number | null>(userStore.user?.id ?? null);
+const isTaskFormOpen = ref(false);
+const taskTitleInput = ref<HTMLInputElement>();
+const openTaskForm = async () => {
+  taskTitle.value = '';
+  taskDate.value = tomorrowDate();
+  taskOwner.value = userStore.user?.id ?? null;
+  isTaskFormOpen.value = true;
+  await nextTick();
+  taskTitleInput.value?.focus();
+};
+const closeTaskForm = () => {
+  isTaskFormOpen.value = false;
+};
 const taskSearch = ref('');
 const taskResults = ref<Task[]>([]);
+const taskSearchPending = ref(false);
+const isTaskLinkOpen = ref(false);
+const taskLinkInput = ref<HTMLInputElement>();
 const showCompleted = ref(false);
 const tasks = computed(() => deal.value?.tasks.filter((t) => showCompleted.value || t.status !== 'closed') ?? []);
 const newTitle = ref('');
+const newDealCompanyId = ref<number | null>(null);
+const newDealContactId = ref<number | null>(null);
 const newDealDialog = ref<HTMLDialogElement>();
 const stageDialog = ref<HTMLDialogElement>();
 const stageChange = ref<{ id: number; stage: number; kind: CrmStageKind } | null>(null);
@@ -150,10 +288,209 @@ const reason = ref('');
 const projectChoice = ref(CrmProjectChoice.NONE);
 const selectedProject = ref<number | null>(null);
 const relatedDeals = ref<CrmDeal[]>([]);
+const companyOptions = computed<SelectOption[]>(() => [
+  { value: '', label: 'Все компании' },
+  ...(options.value?.companies.map((company) => ({ value: company.id, label: company.name })) ?? []),
+]);
+const ownerOptions = computed<SelectOption[]>(() => [
+  { value: '', label: 'Все ответственные' },
+  ...(options.value?.users.map((user) => ({ value: user.id, label: user.name })) ?? []),
+]);
+const sourceOptions = computed<SelectOption[]>(() => [
+  { value: '', label: 'Все источники' },
+  ...(options.value?.sources.map((source) => ({ value: source, label: source })) ?? []),
+]);
+const optionalCompanyOptions = computed<SelectOption[]>(() => [
+  { value: null, label: 'Без компании' },
+  ...companyOptions.value.slice(1),
+]);
+const optionalSourceOptions = computed<SelectOption[]>(() => [
+  { value: null, label: 'Источник не определён' },
+  ...sourceOptions.value.slice(1),
+]);
+const crmFilterPanel = ref<{ clearSearch: () => void } | null>(null);
+const quickFilterOptions: SelectOption[] = [
+  { value: CrmQuickFilter.OVERDUE, label: 'Просроченные действия' },
+  { value: CrmQuickFilter.UNSCHEDULED, label: 'Без следующего шага' },
+];
+const isMineFilterActive = computed(() => quick.value === CrmQuickFilter.MINE);
+const toggleMineFilter = () => {
+  quick.value = isMineFilterActive.value ? CrmQuickFilter.ALL : CrmQuickFilter.MINE;
+};
+const crmFilterDefinitions = computed<FilterDefinition[]>(() => {
+  if (props.section === CrmSection.COMPANIES) return [];
+
+  const definitions: FilterDefinition[] = [
+    { type: FilterType.COMPANY, label: 'Компания', options: companyOptions.value.slice(1) },
+  ];
+  if (props.section === CrmSection.DEALS) {
+    definitions.push(
+      { type: FilterType.RESPONSIBLE, label: 'Ответственный', options: ownerOptions.value.slice(1) },
+      { type: FilterType.SOURCE, label: 'Источник', options: sourceOptions.value.slice(1) },
+      { type: FilterType.DEAL_QUICK, label: 'Быстрый фильтр', options: quickFilterOptions },
+    );
+  }
+  return definitions;
+});
+const crmFilterChips = computed<FilterChip[]>(() => {
+  const chips: FilterChip[] = [];
+  if (companyFilter.value) {
+    chips.push({
+      id: FilterType.COMPANY,
+      type: FilterType.COMPANY,
+      label: options.value?.companies.find((company) => company.id === Number(companyFilter.value))?.name ?? 'Компания',
+      value: Number(companyFilter.value),
+      isNegative: false,
+      canNegate: false,
+    });
+  }
+  if (ownerFilter.value) {
+    chips.push({
+      id: FilterType.RESPONSIBLE,
+      type: FilterType.RESPONSIBLE,
+      label: options.value?.users.find((user) => user.id === Number(ownerFilter.value))?.name ?? 'Ответственный',
+      value: Number(ownerFilter.value),
+      isNegative: false,
+      canNegate: false,
+    });
+  }
+  if (sourceFilter.value) {
+    chips.push({
+      id: FilterType.SOURCE,
+      type: FilterType.SOURCE,
+      label: sourceFilter.value,
+      value: sourceFilter.value,
+      isNegative: false,
+      canNegate: false,
+    });
+  }
+  if (quick.value !== CrmQuickFilter.ALL && quick.value !== CrmQuickFilter.MINE) {
+    chips.push({
+      id: FilterType.DEAL_QUICK,
+      type: FilterType.DEAL_QUICK,
+      label: String(quickFilterOptions.find((option) => option.value === quick.value)?.label ?? 'Быстрый фильтр'),
+      value: quick.value,
+      isNegative: false,
+      canNegate: false,
+    });
+  }
+  if (search.value) {
+    chips.push({
+      id: FilterType.SEARCH,
+      type: FilterType.SEARCH,
+      label: `Поиск: "${search.value}"`,
+      value: search.value,
+      isNegative: false,
+      canNegate: false,
+    });
+  }
+  return chips;
+});
+const handleCrmSearch = (event: Event) => {
+  search.value = (event.target as HTMLInputElement).value.trim();
+};
+const addCrmFilter = (filter: { type: FilterType; value: string | number }) => {
+  if (filter.type === FilterType.COMPANY) companyFilter.value = String(filter.value);
+  if (filter.type === FilterType.RESPONSIBLE) ownerFilter.value = String(filter.value);
+  if (filter.type === FilterType.SOURCE) sourceFilter.value = String(filter.value);
+  if (filter.type === FilterType.DEAL_QUICK) quick.value = filter.value as CrmQuickFilter;
+};
+const removeCrmFilter = (chipId: string) => {
+  if (chipId === FilterType.COMPANY) companyFilter.value = '';
+  if (chipId === FilterType.RESPONSIBLE) ownerFilter.value = '';
+  if (chipId === FilterType.SOURCE) sourceFilter.value = '';
+  if (chipId === FilterType.DEAL_QUICK) quick.value = CrmQuickFilter.ALL;
+  if (chipId === FilterType.SEARCH) {
+    search.value = '';
+    crmFilterPanel.value?.clearSearch();
+  }
+};
+const stageOptions = computed<SelectOption[]>(
+  () => options.value?.stages.map((stage) => ({ value: stage.id, label: stage.name })) ?? [],
+);
+const projectOptions = computed<SelectOption[]>(
+  () => options.value?.projects.map((project) => ({ value: project.id, label: project.name })) ?? [],
+);
+const dealProjectOptions = computed<SelectOption[]>(() => [{ value: 0, label: 'Без проекта' }, ...projectOptions.value]);
+const responsibleOptions = computed<SelectOption[]>(
+  () => options.value?.users.map((user) => ({ value: user.id, label: user.name })) ?? [],
+);
+const optionalResponsibleOptions = computed<SelectOption[]>(() => [
+  { value: null, label: 'Не назначен' },
+  ...responsibleOptions.value,
+]);
+const crmMentionUsers = computed<User[]>(() =>
+  userStore.users.filter((user) => user.role === ROLES.admin && user.id !== userStore.user?.id),
+);
+const dealResponsibleOptions = computed<SelectOption[]>(() => [{ value: 0, label: 'Не назначен' }, ...responsibleOptions.value]);
+const contactOptions = computed<SelectOption[]>(
+  () =>
+    options.value?.contacts.map((contact) => {
+      const company = options.value?.companies.find((item) => item.id === contact.company_id);
+      const name = contactFullName(contact);
+      return { value: contact.id, label: company ? `${name} · ${company.name}` : name };
+    }) ?? [],
+);
+const optionalContactOptions = computed<SelectOption[]>(() => [
+  { value: null, label: 'Контактное лицо не выбрано' },
+  ...contactOptions.value,
+]);
+const dealContactOptions = computed<SelectOption[]>(
+  () => [
+    { value: null, label: 'Контактное лицо не выбрано' },
+    ...(options.value?.contacts.map((contact) => ({ value: contact.id, label: contactFullName(contact) })) ?? []),
+  ],
+);
+const selectedContactId = computed<number | null>({
+  get: () => draft.primary_contact_id ?? draft.contact_ids[0] ?? null,
+  set: (value) => {
+    const id = Number(value) || null;
+    draft.contact_ids = id ? [id] : [];
+    draft.primary_contact_id = id;
+  },
+});
+const selectedContact = computed(() =>
+  options.value?.contacts.find((contact) => contact.id === selectedContactId.value),
+);
+const selectedContactTelegramHref = computed(() => {
+  const telegram = selectedContact.value?.telegram?.trim();
+  if (!telegram) return '';
+  if (/^https?:\/\//i.test(telegram)) return telegram;
+  return `https://t.me/${telegram.replace(/^@/, '')}`;
+});
+const hasSelectedContactChannels = computed(() =>
+  Boolean(selectedContact.value?.phone || selectedContact.value?.email || selectedContact.value?.telegram),
+);
+const directoryTitle = computed(() => {
+  if (directoryPanel.value === CrmPanel.COMPANY) return companyForm.value.id ? 'Компания' : 'Новая компания';
+  return contactForm.value.id ? 'Контакт' : 'Новый контакт';
+});
 const copyLink = () =>
   run(async () => {
     await navigator.clipboard.writeText(window.location.href);
   });
+
+const openNewDealDialog = () => {
+  error.value = '';
+  newTitle.value = '';
+  newDealCompanyId.value = null;
+  newDealContactId.value = null;
+  newDealDialog.value?.showModal();
+};
+
+const selectNewDealCompany = (value: string | number | (string | number)[] | null) => {
+  const companyId = Number(value) || null;
+  newDealCompanyId.value = companyId;
+  const contact = options.value?.contacts.find((item) => item.id === newDealContactId.value);
+  if (contact?.company_id && contact.company_id !== companyId) newDealContactId.value = null;
+};
+
+const selectNewDealContact = (value: string | number | (string | number)[] | null) => {
+  const contactId = Number(value) || null;
+  newDealContactId.value = contactId;
+  const contact = options.value?.contacts.find((item) => item.id === contactId);
+  if (contact?.company_id) newDealCompanyId.value = contact.company_id;
+};
 
 const run = async (action: () => Promise<void>) => {
   if (busy.value) return;
@@ -171,21 +508,25 @@ const refreshAll = async () => {
   await Promise.all([refreshBoard(), refreshOptions(), panelId.value ? refreshDeal() : Promise.resolve()]);
 };
 const openDeal = async (id: number) => {
+  directoryPanel.value = null;
   returnToDeal.value = false;
+  isTaskFormOpen.value = false;
   panel.value = CrmPanel.DEAL;
   await router.push({ query: { ...route.query, deal: id } });
 };
 const closePanel = async () => {
-  if (returnToDeal.value) {
-    panel.value = CrmPanel.DEAL;
-    returnToDeal.value = false;
-    await nextTick();
-    if (panelElement.value) panelElement.value.scrollTop = savedScroll.value;
-    return;
-  }
+  directoryPanel.value = null;
+  returnToDeal.value = false;
   panel.value = null;
   const { deal: _deal, ...rest } = route.query;
   await router.replace({ query: rest });
+};
+const closeDirectory = async () => {
+  const shouldRestoreDeal = returnToDeal.value;
+  directoryPanel.value = null;
+  returnToDeal.value = false;
+  await nextTick();
+  if (shouldRestoreDeal && panelElement.value) panelElement.value.scrollTop = savedScroll.value;
 };
 const openDirectory = async (kind: CrmPanel.COMPANY | CrmPanel.CONTACT, id = 0, fromDeal = false) => {
   error.value = '';
@@ -206,6 +547,8 @@ const openDirectory = async (kind: CrmPanel.COMPANY | CrmPanel.CONTACT, id = 0, 
     contactForm.value = {
       id: 0,
       name: '',
+      last_name: '',
+      patronymic: '',
       company_id: fromDeal ? draft.company_id : null,
       position: '',
       phone: '',
@@ -213,7 +556,7 @@ const openDirectory = async (kind: CrmPanel.COMPANY | CrmPanel.CONTACT, id = 0, 
       telegram: '',
       ...options.value?.contacts.find((c) => c.id === id),
     };
-  panel.value = kind;
+  directoryPanel.value = kind;
   relatedDeals.value = [];
   if (id)
     await run(async () => {
@@ -225,10 +568,13 @@ const openDirectory = async (kind: CrmPanel.COMPANY | CrmPanel.CONTACT, id = 0, 
     });
 };
 const saveDirectory = async () => {
+  const kind = directoryPanel.value;
+  if (!kind) return;
   await run(async () => {
-    const form = panel.value === CrmPanel.COMPANY ? companyForm.value : contactForm.value;
-    const { id, ...body } = form;
-    const path = panel.value === CrmPanel.COMPANY ? CrmSection.COMPANIES : CrmSection.CONTACTS;
+    const form = kind === CrmPanel.COMPANY ? companyForm.value : contactForm.value;
+    const { id, ...fields } = form;
+    const body = { ...fields, name: fields.name.trim() };
+    const path = kind === CrmPanel.COMPANY ? CrmSection.COMPANIES : CrmSection.CONTACTS;
     const result = await $fetch<CrmCompany | CrmContact>(`/api/crm/${path}${id ? `/${id}` : ''}`, {
       ...request,
       method: id ? 'PATCH' : 'POST',
@@ -236,15 +582,18 @@ const saveDirectory = async () => {
     });
     await refreshOptions();
     if (returnToDeal.value && !id) {
-      if (panel.value === CrmPanel.COMPANY) draft.company_id = result.id;
-      else {
-        draft.contact_ids.push(result.id);
-        draft.primary_contact_id ??= result.id;
+      if (kind === CrmPanel.COMPANY) {
+        draft.company_id = result.id;
+        await persistDeal({ company_id: result.id });
+      } else {
+        draft.contact_ids = [result.id];
+        draft.primary_contact_id = result.id;
+        await persistDeal({ contact_ids: [result.id], primary_contact_id: result.id });
       }
     }
-    if (panel.value === CrmPanel.COMPANY) companyForm.value = result as CrmCompany;
+    if (kind === CrmPanel.COMPANY) companyForm.value = result as CrmCompany;
     else contactForm.value = result as CrmContact;
-    if (returnToDeal.value) await closePanel();
+    if (returnToDeal.value) await closeDirectory();
   });
 };
 const createDeal = async () => {
@@ -252,9 +601,16 @@ const createDeal = async () => {
     const created = await $fetch<CrmDealDetail>('/api/crm/deals', {
       ...request,
       method: 'POST',
-      body: { title: newTitle.value },
+      body: {
+        title: newTitle.value.trim(),
+        company_id: newDealCompanyId.value,
+        contact_ids: newDealContactId.value ? [newDealContactId.value] : [],
+        primary_contact_id: newDealContactId.value,
+      },
     });
     newTitle.value = '';
+    newDealCompanyId.value = null;
+    newDealContactId.value = null;
     newDealDialog.value?.close();
     await refreshBoard();
     await openDeal(created.id);
@@ -271,15 +627,54 @@ const dealBody = () => {
     source: draft.source,
     expected_close: draft.expected_close || null,
     project_id: draft.project_id,
-    description: description.value as JsonObject,
   };
 };
-const saveDeal = async () => {
-  await run(async () => {
-    await $fetch(`/api/crm/deals/${panelId.value}`, { ...request, method: 'PATCH', body: dealBody() });
-    savedFields = JSON.stringify(dealBody());
-    await refreshAll();
-  });
+const persistDeal = async (body: Record<string, unknown> = dealBody()) => {
+  await $fetch(`/api/crm/deals/${panelId.value}`, { ...request, method: 'PATCH', body });
+  savedFields = JSON.stringify(dealBody());
+  await refreshAll();
+};
+const saveDeal = async (body: Record<string, unknown> = dealBody()) => {
+  await run(() => persistDeal(body));
+};
+const updateDealAmount = async (event: Event) => {
+  const value = (event.target as HTMLInputElement).value;
+  draft.amount = value === '' ? null : Number(value);
+  await saveDeal({ amount: draft.amount });
+};
+const updateDealResponsible = async (value: string | number | (string | number)[] | null) => {
+  draft.responsible_id = Number(value) || null;
+  await saveDeal({ responsible_id: draft.responsible_id });
+};
+const updateDealCompany = async (value: string | number | (string | number)[] | null) => {
+  draft.company_id = Number(value) || null;
+  await saveDeal({ company_id: draft.company_id });
+};
+const updateDealContact = async (value: string | number | (string | number)[] | null) => {
+  selectedContactId.value = Number(value) || null;
+  await saveDeal({ contact_ids: draft.contact_ids, primary_contact_id: draft.primary_contact_id });
+};
+const updateDealSource = async (value: string | number | (string | number)[] | null) => {
+  draft.source = typeof value === 'string' ? value : '';
+  await saveDeal({ source: draft.source });
+};
+const updateDealProject = async (value: string | number | (string | number)[] | null) => {
+  draft.project_id = Number(value) || null;
+  await saveDeal({ project_id: draft.project_id });
+};
+const isEditingDealTitle = ref(false);
+const startDealTitleEdit = () => {
+  isEditingDealTitle.value = true;
+};
+const cancelDealTitleEdit = () => {
+  draft.title = deal.value?.title ?? draft.title;
+  isEditingDealTitle.value = false;
+};
+const saveDealTitle = async () => {
+  if (!draft.title.trim()) return;
+  draft.title = draft.title.trim();
+  await saveDeal({ title: draft.title });
+  if (!error.value) isEditingDealTitle.value = false;
 };
 const changeStage = async (id: number, stageId: number) => {
   const stage = options.value?.stages.find((s) => s.id === stageId);
@@ -293,7 +688,9 @@ const changeStage = async (id: number, stageId: number) => {
   }
   await run(async () => {
     await $fetch(`/api/crm/deals/${id}`, {
-      ...request, method: 'PATCH', body: { ...(panelId.value === id ? dealBody() : {}), stage_id: stageId },
+      ...request,
+      method: 'PATCH',
+      body: { ...(panelId.value === id ? dealBody() : {}), stage_id: stageId },
     });
     if (panelId.value === id) savedFields = JSON.stringify(dealBody());
     await refreshAll();
@@ -332,6 +729,7 @@ const loadMore = async (column: CrmColumn) => {
   });
 };
 const sendComment = async () => {
+  if (!hasTiptapContent(comment.value)) return;
   await run(async () => {
     await $fetch(`/api/crm/deals/${panelId.value}/comments`, { ...request, method: 'POST', body: { message: comment.value } });
     comment.value = emptyDoc();
@@ -346,21 +744,54 @@ const createTask = async () => {
       method: 'POST',
       body: { title: taskTitle.value, planned_date: taskDate.value || undefined, responsible_id: taskOwner.value || undefined },
     });
+    taskStore.invalidateTasksPage();
     taskTitle.value = '';
-    taskDate.value = '';
+    taskDate.value = tomorrowDate();
+    isTaskFormOpen.value = false;
     await refreshAll();
   });
 };
+let taskSearchRequest = 0;
 const searchTasks = async () => {
-  await run(async () => {
-    taskResults.value = await taskStore.searchTasks(taskSearch.value);
-  });
+  const query = taskSearch.value.trim();
+  const requestId = ++taskSearchRequest;
+  if (!query) {
+    taskResults.value = [];
+    taskSearchPending.value = false;
+    return;
+  }
+  taskSearchPending.value = true;
+  try {
+    const linkedTaskIds = new Set(deal.value?.tasks.map((task) => task.id) ?? []);
+    const results = await taskStore.searchTasks(query);
+    if (requestId === taskSearchRequest) taskResults.value = results.filter((task) => !linkedTaskIds.has(task.id));
+  } catch (cause) {
+    if (requestId === taskSearchRequest) error.value = getErrorMessage(cause);
+  } finally {
+    if (requestId === taskSearchRequest) taskSearchPending.value = false;
+  }
+};
+const debouncedSearchTasks = debounce(() => void searchTasks(), 300);
+const handleTaskSearchInput = () => {
+  if (!taskSearch.value.trim()) taskResults.value = [];
+  debouncedSearchTasks();
+};
+const openTaskLink = async () => {
+  isTaskLinkOpen.value = true;
+  await nextTick();
+  taskLinkInput.value?.focus();
+};
+const cancelTaskLink = () => {
+  taskSearchRequest += 1;
+  taskSearch.value = '';
+  taskResults.value = [];
+  taskSearchPending.value = false;
+  isTaskLinkOpen.value = false;
 };
 const linkTask = async (id: number) => {
   await run(async () => {
     await $fetch(`/api/crm/deals/${panelId.value}/task-links`, { ...request, method: 'POST', body: { task_id: id } });
-    taskResults.value = [];
-    taskSearch.value = '';
+    cancelTaskLink();
     await refreshDeal();
   });
 };
@@ -385,9 +816,6 @@ const completeTask = async (id: number) => {
     await refreshAll();
   });
 };
-const toggleContact = (id: number, checked: boolean) => {
-  draft.contact_ids = checked ? [...draft.contact_ids, id] : draft.contact_ids.filter((c) => c !== id);
-};
 watch(
   deal,
   (value) => {
@@ -398,7 +826,6 @@ watch(
         amount: value.amount === null ? null : Number(value.amount),
         expected_close: value.expected_close ?? '',
       });
-      description.value = value.description ?? emptyDoc();
       syncedDealId = value.id;
       savedFields = JSON.stringify(dealBody());
     }
@@ -418,23 +845,30 @@ onBeforeUnmount(() => {
   $webSocket?.off('crm:changed', refreshFromEvent);
   window.removeEventListener('focus', refreshFromEvent);
 });
-const stageSelected = (event: Event) => {
-  const select = event.target as HTMLSelectElement;
-  const stage = Number(select.value);
-  select.value = String(deal.value?.stage_id ?? 1);
-  void changeStage(panelId.value, stage);
+const selectStage = (value: string | number | (string | number)[] | null) => {
+  if (typeof value === 'number') void changeStage(panelId.value, value);
 };
 </script>
 
 <template>
   <main class="crm">
     <header class="crm__header">
-      <h1>CRM</h1>
+      <div>
+        <h1>CRM</h1>
+        <p>Сделки и клиентская база</p>
+      </div>
       <button
         class="crm__primary"
-        @click="section === CrmSection.DEALS ? newDealDialog?.showModal() : openDirectory(section === CrmSection.COMPANIES ? CrmPanel.COMPANY : CrmPanel.CONTACT)"
+        @click="
+          section === CrmSection.DEALS
+            ? openNewDealDialog()
+            : openDirectory(section === CrmSection.COMPANIES ? CrmPanel.COMPANY : CrmPanel.CONTACT)
+        "
       >
-        {{ section === CrmSection.DEALS ? 'Новая сделка' : section === CrmSection.COMPANIES ? 'Добавить компанию' : 'Добавить контакт' }}
+        <Plus :size="20" :stroke-width="1.75" aria-hidden="true" />
+        {{
+          section === CrmSection.DEALS ? 'Новая сделка' : section === CrmSection.COMPANIES ? 'Новая компания' : 'Новый контакт'
+        }}
       </button>
     </header>
     <nav class="crm__tabs" aria-label="Разделы CRM">
@@ -450,42 +884,39 @@ const stageSelected = (event: Event) => {
         >{{ tab.label }}</NuxtLink
       >
     </nav>
-    <div class="crm__filters">
-      <label>Поиск<input v-model="search" type="search" placeholder="Название или имя" /></label>
-      <label v-if="section !== CrmSection.COMPANIES"
-        >Компания<select v-model="companyFilter">
-          <option value="">Все компании</option>
-          <option v-for="c in options?.companies" :key="c.id" :value="c.id">{{ c.name }}</option>
-        </select></label
+    <div class="crm__filters" aria-label="Фильтры CRM">
+      <TaskFilterPanel
+        ref="crmFilterPanel"
+        :filters="crmFilterChips"
+        :filter-definitions="crmFilterDefinitions"
+        :show-export="false"
+        :search-placeholder="section === CrmSection.DEALS ? 'Поиск по сделкам' : 'Название или имя'"
+        @add-filter="addCrmFilter"
+        @search="handleCrmSearch"
+        @remove-filter="removeCrmFilter"
+      />
+      <label
+        v-if="section === CrmSection.DEALS"
+        class="crm__mine-filter"
+        :class="{ 'crm__mine-filter_active': isMineFilterActive }"
       >
-      <template v-if="section === CrmSection.DEALS"
-        ><label
-          >Ответственный<select v-model="ownerFilter">
-            <option value="">Все</option>
-            <option v-for="u in options?.users" :key="u.id" :value="u.id">{{ u.name }}</option>
-          </select></label
-        ><label
-          >Источник<select v-model="sourceFilter">
-            <option value="">Все</option>
-            <option v-for="s in options?.sources" :key="s">{{ s }}</option>
-          </select></label
-        ></template
-      >
+        <input type="checkbox" :checked="isMineFilterActive" @change="toggleMineFilter" />
+        <span>Мои</span>
+      </label>
+      <span v-if="pending" class="crm__loading" role="status">Обновление…</span>
     </div>
-    <div v-if="section === CrmSection.DEALS" class="crm__quick">
-      <button
-        v-for="f in [
-          { value: CrmQuickFilter.ALL, label: 'Все сделки' },
-          { value: CrmQuickFilter.MINE, label: 'Мои' },
-          { value: CrmQuickFilter.OVERDUE, label: 'Просроченные действия' },
-          { value: CrmQuickFilter.UNSCHEDULED, label: 'Без следующего шага' },
-        ]"
-        :key="f.value"
-        :aria-pressed="quick === f.value"
-        @click="quick = f.value"
-      >
-        {{ f.label }}</button
-      ><span v-if="pending" role="status">Обновление…</span>
+    <div v-if="crmFilterChips.length" class="crm__filter-chips">
+      <div v-for="chip in crmFilterChips" :key="chip.id" class="crm__filter-chip">
+        <span class="crm__filter-chip-label">{{ chip.label }}</span>
+        <button
+          type="button"
+          class="crm__filter-chip-remove"
+          :aria-label="`Убрать фильтр «${chip.label}»`"
+          @click="removeCrmFilter(chip.id)"
+        >
+          <IconsIconCloseFilter aria-hidden="true" />
+        </button>
+      </div>
     </div>
     <div v-if="optionsError || boardError" role="alert" class="crm__error">
       Не удалось загрузить CRM. <button @click="refreshAll">Повторить</button>
@@ -497,6 +928,7 @@ const stageSelected = (event: Event) => {
         :key="column.stage.id"
         class="crm__column"
         :class="{ crm__column_collapsed: collapsed.includes(column.stage.id) }"
+        :style="{ '--crm-stage-color': stageColor(column.stage) }"
         @dragover.prevent
         @drop.prevent="
           dragging && changeStage(dragging, column.stage.id);
@@ -504,40 +936,71 @@ const stageSelected = (event: Event) => {
         "
       >
         <button
-          class="crm__column-heading"
-          :aria-expanded="!collapsed.includes(column.stage.id)"
-          @click="
-            collapsed = collapsed.includes(column.stage.id)
-              ? collapsed.filter((id) => id !== column.stage.id)
-              : [...collapsed, column.stage.id]
-          "
+          v-if="collapsed.includes(column.stage.id)"
+          class="crm__column-collapsed"
+          type="button"
+          :aria-label="`Развернуть этап «${column.stage.name}»`"
+          aria-expanded="false"
+          @click="setStageCollapsed(column.stage.id, false)"
         >
-          <strong>{{ column.stage.name }}</strong
-          ><span>{{ column.total }} · {{ money(column.amount) }}</span>
+          <ChevronRight :size="16" :stroke-width="2" aria-hidden="true" />
+          <span class="crm__column-count">{{ column.total }}</span>
+          <span class="crm__column-collapsed-title"><i></i>{{ column.stage.name }}</span>
         </button>
+        <div v-else class="crm__column-heading">
+          <div class="crm__column-heading-main">
+            <i></i>
+            <strong :title="column.stage.name">{{ column.stage.name }}</strong>
+            <span class="crm__column-heading-count">{{ column.total }}</span>
+            <button
+              type="button"
+              :aria-label="`Свернуть этап «${column.stage.name}»`"
+              title="Свернуть колонку"
+              @click="setStageCollapsed(column.stage.id, true)"
+            >
+              <ChevronLeft :size="16" :stroke-width="2" aria-hidden="true" />
+            </button>
+          </div>
+          <div class="crm__column-meta">
+            <b>{{ money(column.amount) }}</b>
+          </div>
+        </div>
         <div v-if="!collapsed.includes(column.stage.id)" class="crm__cards">
-          <button
+          <BaseKanbanCard
             v-for="card in column.cards"
             :key="card.id"
-            class="crm__card"
             draggable="true"
             @dragstart="dragging = card.id"
             @dragend="dragging = null"
             @click="openDeal(card.id)"
           >
-            <strong>{{ card.title }}</strong
-            ><span>{{ card.company_name || 'Без компании' }}</span
-            ><b>{{ money(card.amount) }}</b
-            ><span>{{ card.responsible_name || 'Не назначен' }}</span
-            ><span
-              v-if="card.next_task"
-              class="crm__next"
-              :class="{ crm__next_overdue: card.next_task.planned_date && card.next_task.planned_date < today() }"
-              >{{ card.next_task.planned_date && card.next_task.planned_date < today() ? 'Просрочено · ' : ''
-              }}{{ card.next_task.planned_date }}<br />{{ card.next_task.title }}</span
-            ><span v-else-if="column.stage.kind === CrmStageKind.OPEN" class="crm__next">Следующий шаг не запланирован</span>
-          </button>
-          <p v-if="!column.total" class="crm__empty">Сделок пока нет</p>
+            <template #header>
+              <span>{{ card.company_name || 'Без компании' }}</span>
+              <b>{{ money(card.amount) }}</b>
+            </template>
+            <template #title>{{ card.title }}</template>
+            <template #description>
+              <span class="crm__card-owner">
+                <UserRound :size="14" :stroke-width="1.75" aria-hidden="true" />{{ card.responsible_name || 'Не назначен' }}
+              </span>
+            </template>
+            <template v-if="card.next_task || column.stage.kind === CrmStageKind.OPEN" #footer>
+              <span
+                v-if="card.next_task"
+                class="crm__next"
+                :class="{ crm__next_overdue: card.next_task.planned_date && card.next_task.planned_date < today() }"
+              >
+                <CalendarDays :size="14" :stroke-width="1.75" aria-hidden="true" />
+                <span
+                  >{{ card.next_task.planned_date && card.next_task.planned_date < today() ? 'Просрочено · ' : ''
+                  }}{{ card.next_task.planned_date || 'Без даты' }} · {{ card.next_task.title }}</span
+                >
+              </span>
+              <span v-else class="crm__next crm__next_empty">
+                <CalendarDays :size="14" :stroke-width="1.75" aria-hidden="true" />Следующий шаг не запланирован
+              </span>
+            </template>
+          </BaseKanbanCard>
           <button v-if="column.has_more" :disabled="busy" @click="loadMore(column)">Показать ещё</button>
         </div>
       </section>
@@ -577,7 +1040,7 @@ const stageSelected = (event: Event) => {
         <tbody>
           <tr v-for="c in contacts" :key="c.id">
             <td>
-              <button @click="openDirectory(CrmPanel.CONTACT, c.id)">{{ c.name }}</button>
+              <button @click="openDirectory(CrmPanel.CONTACT, c.id)">{{ contactFullName(c) }}</button>
             </td>
             <td>{{ companyName(c.company_id) }}</td>
             <td>{{ c.position }}</td>
@@ -590,217 +1053,505 @@ const stageSelected = (event: Event) => {
       </p>
     </div>
 
+    <div
+      v-if="panel === CrmPanel.DEAL && !taskStore.currentTaskId"
+      class="crm__panel-backdrop"
+      aria-hidden="true"
+      @click="closePanel"
+    ></div>
     <aside
-      v-if="panel"
+      v-if="panel === CrmPanel.DEAL"
       v-show="!taskStore.currentTaskId"
       ref="panelElement"
       class="crm__panel"
       :class="{ crm__panel_expanded: expanded }"
-      aria-label="Карточка CRM"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Карточка сделки"
+      :aria-hidden="directoryPanel ? 'true' : undefined"
+      :inert="directoryPanel ? true : undefined"
       @keydown.esc="closePanel"
     >
       <header class="crm__panel-header">
-        <button @click="closePanel">{{ returnToDeal ? 'Назад к сделке' : 'Закрыть' }}</button
-        ><button @click="expanded = !expanded">{{ expanded ? 'Свернуть' : 'Расширить' }}</button
-        ><button v-if="panel === CrmPanel.DEAL" @click="copyLink">Копировать ссылку</button>
+        <form v-if="isEditingDealTitle" class="crm__panel-title-form" @submit.prevent="saveDealTitle">
+          <input
+            v-model="draft.title"
+            aria-label="Название сделки"
+            required
+            maxlength="200"
+            autofocus
+            placeholder="Введите название"
+            @keydown.esc.prevent="cancelDealTitleEdit"
+          />
+          <div class="crm__panel-title-actions">
+            <button
+              type="submit"
+              class="crm__panel-title-save"
+              :disabled="busy || !draft.title.trim()"
+              aria-label="Сохранить название"
+            >
+              {{ busy ? 'Сохранение…' : 'Сохранить' }}
+            </button>
+            <button
+              type="button"
+              class="crm__panel-title-cancel"
+              :disabled="busy"
+              aria-label="Отменить изменение названия"
+              title="Отменить"
+              @click="cancelDealTitleEdit"
+            >
+              <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+            </button>
+          </div>
+        </form>
+        <h2
+          v-else
+          id="crm-deal-title"
+          class="crm__panel-title"
+          title="Дважды нажмите, чтобы изменить"
+          @dblclick="startDealTitleEdit"
+        >
+          {{ deal?.title || 'Загрузка сделки…' }}
+        </h2>
+        <button
+          :aria-label="expanded ? 'Свернуть панель' : 'Расширить панель'"
+          :title="expanded ? 'Свернуть' : 'Расширить'"
+          @click="expanded = !expanded"
+        >
+          <Minimize2 v-if="expanded" :size="20" :stroke-width="1.75" aria-hidden="true" />
+          <Expand v-else :size="20" :stroke-width="1.75" aria-hidden="true" />
+        </button>
+        <button aria-label="Копировать ссылку" title="Копировать ссылку" @click="copyLink">
+          <Copy :size="20" :stroke-width="1.75" aria-hidden="true" />
+        </button>
+        <button aria-label="Закрыть панель" title="Закрыть" @click="closePanel">
+          <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+        </button>
       </header>
       <p v-if="error" class="crm__error" role="alert">{{ error }}</p>
-      <template v-if="panel === CrmPanel.DEAL">
-        <p v-if="dealError" role="alert">Не удалось открыть сделку. <button @click="refreshDeal()">Повторить</button></p>
-        <template v-else-if="deal">
-          <h2>{{ deal.title }}</h2>
-          <p v-if="deal.loss_reason">Причина проигрыша: {{ deal.loss_reason }}</p>
-          <label
-            >Этап<select :value="deal.stage_id" :disabled="busy" @change="stageSelected">
-              <option v-for="s in options?.stages" :key="s.id" :value="s.id">{{ s.name }}</option>
-            </select></label
-          >
-          <form id="crm-deal-fields" class="crm__form" @submit.prevent="saveDeal">
-            <label>Название<input v-model="draft.title" required maxlength="200" /></label>
-            <div class="crm__fields">
+      <p v-if="dealError" role="alert">Не удалось открыть сделку. <button @click="refreshDeal()">Повторить</button></p>
+      <template v-else-if="deal">
+          <p v-if="deal.loss_reason" class="crm__deal-loss-reason">Причина проигрыша: {{ deal.loss_reason }}</p>
+          <div class="crm__deal-content">
+            <div class="crm__deal-main">
+              <section class="crm__section crm__section_tasks" aria-labelledby="crm-tasks-title">
+                <div class="crm__section-header">
+                  <h3 id="crm-tasks-title">Привязанные задачи</h3>
+                  <label class="crm__check"><input v-model="showCompleted" type="checkbox" />Показать завершённые</label>
+                </div>
+                <div v-for="t in tasks" :key="t.id" class="crm__task">
+                  <button @click="openTask(t.id)">
+                    {{ t.title }}
+                    <small
+                      >{{ t.planned_date || 'Без даты' }} ·
+                      {{ t.status === 'closed' ? 'Закрыта' : t.status === 'in_progress' ? 'Выполняется' : 'К выполнению' }}</small
+                    >
+                  </button>
+                  <button v-if="t.status !== 'closed'" :disabled="busy" @click="completeTask(t.id)">Завершить</button>
+                </div>
+                <div class="crm__link-task">
+                  <button
+                    v-if="!isTaskLinkOpen"
+                    type="button"
+                    class="crm__link-task-trigger"
+                    aria-controls="crm-task-link-form"
+                    :aria-expanded="isTaskLinkOpen"
+                    @click="openTaskLink"
+                  >
+                    <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
+                    <span>Привязать существующую задачу</span>
+                  </button>
+                  <div v-else id="crm-task-link-form" class="crm__link-task-editor">
+                    <div class="crm__link-task-input">
+                      <input
+                        ref="taskLinkInput"
+                        v-model="taskSearch"
+                        :maxlength="MAX_TASK_NAME_LENGTH"
+                        type="search"
+                        role="combobox"
+                        autocomplete="off"
+                        placeholder="Найдите существующую задачу"
+                        aria-label="Поиск существующей задачи"
+                        aria-autocomplete="list"
+                        aria-controls="crm-task-link-results"
+                        :aria-expanded="Boolean(taskSearchPending || taskSearch.trim())"
+                        @input="handleTaskSearchInput"
+                        @keydown.escape="cancelTaskLink"
+                      />
+                      <div
+                        v-if="taskSearchPending || taskSearch.trim()"
+                        id="crm-task-link-results"
+                        class="crm__link-task-dropdown"
+                        role="listbox"
+                        aria-label="Результаты поиска задач"
+                      >
+                        <span v-if="taskSearchPending" class="crm__link-task-state" role="status">Поиск…</span>
+                        <template v-else>
+                          <button
+                            v-for="task in taskResults"
+                            :key="task.id"
+                            type="button"
+                            class="crm__link-task-result"
+                            role="option"
+                            :disabled="busy"
+                            @click="linkTask(task.id)"
+                          >
+                            {{ task.title }}
+                          </button>
+                          <span v-if="!taskResults.length" class="crm__link-task-state" role="status">
+                            Подходящих задач не найдено
+                          </span>
+                        </template>
+                      </div>
+                    </div>
+                    <div class="crm__link-task-actions">
+                      <button type="button" class="button button_secondary" :disabled="busy" @click="cancelTaskLink">
+                        Отменить
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="crm__comments">
+                <div class="crm__comments-header">
+                  <span>Действия</span>
+                  <div class="crm__comments-tools">
+                    <button
+                      class="crm__comments-add"
+                      type="button"
+                      :aria-expanded="isTaskFormOpen"
+                      @click="isTaskFormOpen ? closeTaskForm() : openTaskForm()"
+                    >
+                      <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
+                      {{ isTaskFormOpen ? 'Отменить' : 'Добавить' }}
+                    </button>
+                    <button class="crm__comments-sort" type="button" @click="toggleTimelineSort">
+                      <span>{{ TYPE_SORT_LABELS[timelineSort] }}</span>
+                      <IconSortAsc v-if="timelineSort === TypeSort.ASC" aria-hidden="true" />
+                      <IconSortDesc v-else aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+                <p class="crm__next-action" :class="{ 'crm__next-action_empty': !deal.next_task }">
+                  <CalendarDays :size="18" :stroke-width="1.75" aria-hidden="true" />
+                  <span v-if="deal.next_task"
+                    >Следующее действие: {{ deal.next_task.title }} · {{ deal.next_task.planned_date || 'без даты' }}</span
+                  >
+                  <span v-else>Следующий шаг не запланирован</span>
+                </p>
+                <form v-if="isTaskFormOpen" class="crm__inline-form" @submit.prevent="createTask" @keydown.esc.stop="closeTaskForm">
+                  <label class="crm__inline-form-title">
+                    <span>Название задачи</span>
+                    <input
+                      ref="taskTitleInput"
+                      v-model="taskTitle"
+                      required
+                      minlength="3"
+                      maxlength="150"
+                      placeholder="Что нужно сделать"
+                    />
+                  </label>
+                  <label>
+                    <span>Ответственный</span>
+                    <BaseSelect
+                      v-model="taskOwner"
+                      :options="responsibleOptions"
+                      placeholder="Выберите ответственного"
+                      large
+                      arrow
+                    />
+                  </label>
+                  <label>
+                    <span>Дата</span>
+                    <input v-model="taskDate" type="date" required />
+                  </label>
+                  <button class="crm__primary" :disabled="busy">
+                    <Plus :size="18" :stroke-width="1.75" aria-hidden="true" />Создать
+                  </button>
+                </form>
+                <div v-if="timelineSort === TypeSort.DESC" class="crm__comments-form">
+                  <div class="crm__comments-input">
+                    <EditorTiptap
+                      :key="`comment-${deal.id}-top`"
+                      ref="commentEditor"
+                      v-model="comment"
+                      placeholder="Напишите комментарий..."
+                      :value="comment"
+                      :is-editable="true"
+                      :file-prefix="`crm/deals/${deal.id}/`"
+                      :mention-users="crmMentionUsers"
+                      @enter="sendComment"
+                    />
+                    <button class="crm__primary" :disabled="busy || !hasTiptapContent(comment)" @click="sendComment">
+                      Отправить
+                    </button>
+                  </div>
+                </div>
+                <div v-if="timeline.length" class="crm__comments-body crm__comments-body_timeline">
+                  <div
+                    v-for="activity in timeline"
+                    :key="activity.id"
+                    class="crm__comments-event"
+                    :class="{ 'crm__comments-event_comment': activity.kind === CrmActivityKind.COMMENT }"
+                  >
+                    <article v-if="activity.kind === CrmActivityKind.COMMENT" class="crm__timeline-comment">
+                      <span class="crm__timeline-avatar" aria-hidden="true">{{ authorInitials(activity.author_name) }}</span>
+                      <div class="crm__timeline-comment-content">
+                        <header>
+                          <span>{{ activity.author_name }}</span>
+                          <time :datetime="activity.created_at">{{ formatCommentDate(activity.created_at) }}</time>
+                        </header>
+                        <EditorTiptap
+                          v-if="activity.message"
+                          :value="activity.message"
+                          :model-value="activity.message"
+                          :is-editable="false"
+                        />
+                      </div>
+                    </article>
+                    <article v-else class="crm__timeline-activity">
+                      <History class="crm__timeline-activity-icon" :size="16" aria-hidden="true" />
+                      <div class="crm__timeline-activity-content">
+                        <header>
+                          <strong>{{ activity.author_name }}</strong>
+                          <time :datetime="activity.created_at" :title="formatActivityDate(activity.created_at)">
+                            {{ formatActivityDate(activity.created_at) }}
+                          </time>
+                        </header>
+                        <div>{{ activity.summary }}</div>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+                <div v-else class="crm__comments-body">Комментариев и действий пока нет</div>
+                <div v-if="timelineSort === TypeSort.ASC" class="crm__comments-form">
+                  <div class="crm__comments-input">
+                    <EditorTiptap
+                      :key="`comment-${deal.id}-bottom`"
+                      ref="commentEditor"
+                      v-model="comment"
+                      placeholder="Напишите комментарий..."
+                      :value="comment"
+                      :is-editable="true"
+                      :file-prefix="`crm/deals/${deal.id}/`"
+                      :mention-users="crmMentionUsers"
+                      @enter="sendComment"
+                    />
+                    <button class="crm__primary" :disabled="busy || !hasTiptapContent(comment)" @click="sendComment">
+                      Отправить
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div id="crm-deal-fields" class="crm__deal-meta" :aria-busy="busy">
+              <label
+                >Этап<BaseDropdown
+                  :model-value="deal.stage_id"
+                  :options="stageOptions"
+                  placeholder="Этап"
+                  :disabled="busy"
+                  @update:model-value="selectStage"
+              /></label>
               <label
                 >Сумма, ₽<input
-                  v-model.number="draft.amount"
+                  :value="draft.amount ?? ''"
                   type="number"
                   min="0"
                   max="9999999999.99"
                   step="0.01"
-                  placeholder="Не указана" /></label
-              ><label
-                >Ответственный<select v-model="draft.responsible_id">
-                  <option :value="null">Не назначен</option>
-                  <option v-for="u in options?.users" :key="u.id" :value="u.id">{{ u.name }}</option>
-                </select></label
-              >
-            </div>
-            <label
-              >Компания<select v-model="draft.company_id">
-                <option :value="null">Без компании</option>
-                <option v-for="c in options?.companies" :key="c.id" :value="c.id">{{ c.name }}</option>
-              </select></label
-            >
-            <div class="crm__actions">
-              <button type="button" @click="openDirectory(CrmPanel.COMPANY, 0, true)">Добавить компанию</button
-              ><button v-if="draft.company_id" type="button" @click="openDirectory(CrmPanel.COMPANY, draft.company_id, true)">
-                Открыть компанию
-              </button>
-            </div>
-            <fieldset>
-              <legend>Контакты сделки</legend>
-              <div v-for="c in options?.contacts" :key="c.id" class="crm__contact">
-                <label
-                  ><input
-                    type="checkbox"
-                    :checked="draft.contact_ids.includes(c.id)"
-                    @change="toggleContact(c.id, ($event.target as HTMLInputElement).checked)"
-                  />{{ c.name }} · {{ companyName(c.company_id) }}</label
-                ><button type="button" @click="openDirectory(CrmPanel.CONTACT, c.id, true)">Открыть</button>
-              </div>
-              <button type="button" @click="openDirectory(CrmPanel.CONTACT, 0, true)">Добавить контакт</button>
-            </fieldset>
-            <label
-              >Основной контакт<select v-model="draft.primary_contact_id">
-                <option :value="null">Не выбран</option>
-                <option v-for="c in options?.contacts.filter((c) => draft.contact_ids.includes(c.id))" :key="c.id" :value="c.id">
-                  {{ c.name }}
-                </option>
-              </select></label
-            >
-            <div class="crm__fields">
-              <label
-                >Источник<input v-model="draft.source" list="crm-sources" maxlength="200" /><datalist id="crm-sources">
-                  <option v-for="s in options?.sources" :key="s" :value="s" /></datalist></label
-              ><label>Ожидаемая дата закрытия<input v-model="draft.expected_close" type="date" /></label>
-            </div>
-            <label
-              >Проект<select v-model="draft.project_id">
-                <option :value="null">Без проекта</option>
-                <option v-for="p in options?.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-              </select></label
-            >
-          </form>
-          <div class="crm__form">
-            <label>Описание</label
-            ><EditorTiptap
-              :key="`description-${deal.id}`"
-              v-model="description"
-              :value="description"
-              :is-editable="true"
-              :file-prefix="`crm/deals/${deal.id}/`"
-            />
-            <button form="crm-deal-fields" class="crm__primary" :disabled="busy">{{ busy ? 'Сохранение…' : 'Сохранить изменения' }}</button>
-          </div>
-          <section class="crm__section">
-            <h3>Задачи по сделке</h3>
-            <p v-if="deal.next_task">Следующее действие: {{ deal.next_task.title }} · {{ deal.next_task.planned_date }}</p>
-            <p v-else>Следующий шаг не запланирован</p>
-            <div v-for="t in tasks" :key="t.id" class="crm__task">
-              <button @click="openTask(t.id)">
-                {{ t.title
-                }}<small
-                  >{{ t.planned_date || 'Без даты' }} ·
-                  {{ t.status === 'closed' ? 'Закрыта' : t.status === 'in_progress' ? 'Выполняется' : 'К выполнению' }}</small
-                ></button
-              ><button v-if="t.status !== 'closed'" :disabled="busy" @click="completeTask(t.id)">Завершить</button>
-            </div>
-            <label class="crm__check"><input v-model="showCompleted" type="checkbox" />Показать завершённые</label>
-            <form class="crm__form" @submit.prevent="createTask">
-              <label
-                >Новая задача<input
-                  v-model="taskTitle"
-                  required
-                  minlength="3"
-                  maxlength="150"
-                  placeholder="Например, уточнить решение по КП"
+                  placeholder="Не указана"
+                  :disabled="busy"
+                  @change="updateDealAmount"
               /></label>
-              <div class="crm__fields">
-                <label>Срок<input v-model="taskDate" type="date" /></label
-                ><label
-                  >Ответственный<select v-model="taskOwner">
-                    <option :value="null">Я</option>
-                    <option v-for="u in options?.users" :key="u.id" :value="u.id">{{ u.name }}</option>
-                  </select></label
-                >
+              <label
+                >Ответственный<BaseDropdown
+                  :model-value="draft.responsible_id"
+                  :options="dealResponsibleOptions"
+                  placeholder="Не назначен"
+                  :disabled="busy"
+                  @update:model-value="updateDealResponsible"
+              /></label>
+              <div class="crm__deal-meta-field">
+                <span>Компания</span>
+                <div class="crm__deal-company-control">
+                  <BaseSelect
+                    :model-value="draft.company_id"
+                    :options="optionalCompanyOptions"
+                    placeholder="Без компании"
+                    large
+                    arrow
+                    searchable
+                    search-placeholder="Поиск компании"
+                    action-label="Добавить компанию"
+                    :disabled="busy"
+                    @update:model-value="updateDealCompany"
+                    @action="openDirectory(CrmPanel.COMPANY, 0, true)"
+                  />
+                  <button
+                    v-if="draft.company_id"
+                    class="crm__deal-company-open"
+                    type="button"
+                    aria-label="Открыть компанию"
+                    title="Открыть компанию"
+                    :disabled="busy"
+                    @click="openDirectory(CrmPanel.COMPANY, draft.company_id, true)"
+                  >
+                    <ExternalLink :size="16" :stroke-width="1.75" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-              <button :disabled="busy">Добавить задачу</button>
-            </form>
-            <details>
-              <summary>Привязать существующую задачу</summary>
-              <form @submit.prevent="searchTasks">
-                <label>Поиск задачи<input v-model="taskSearch" required /></label><button :disabled="busy">Найти</button>
-              </form>
-              <button v-for="t in taskResults" :key="t.id" :disabled="busy" @click="linkTask(t.id)">
-                {{ t.title }} · Привязать
-              </button>
-            </details>
-          </section>
-          <section class="crm__section">
-            <h3>Комментарии и активность</h3>
-            <label
-              >Показывать<select v-model="timelineFilter">
-                <option value="all">Всё</option>
-                <option :value="CrmActivityKind.COMMENT">Комментарии</option>
-                <option :value="CrmActivityKind.CHANGE">Активности</option>
-              </select></label
-            >
-            <article v-for="a in timeline" :key="a.id" class="crm__activity">
-              <small>{{ a.author_name }} · {{ new Date(a.created_at).toLocaleString('ru-RU') }}</small
-              ><EditorTiptap v-if="a.message" :value="a.message" :model-value="a.message" :is-editable="false" />
-              <p v-else>{{ a.summary }}</p>
-            </article>
-            <div>
-              <label>Комментарий</label
-              ><EditorTiptap
-                :key="`comment-${deal.id}`"
-                ref="commentEditor"
-                v-model="comment"
-                :value="comment"
-                :is-editable="true"
-                :file-prefix="`crm/deals/${deal.id}/`"
-              /><button :disabled="busy" @click="sendComment">Отправить</button>
+              <label
+                >Контактное лицо<BaseSelect
+                  :model-value="selectedContactId"
+                  :options="dealContactOptions"
+                  placeholder="Контактное лицо не выбрано"
+                  large
+                  arrow
+                  searchable
+                  search-placeholder="Поиск контакта"
+                  action-label="Добавить контакт"
+                  :disabled="busy"
+                  @update:model-value="updateDealContact"
+                  @action="openDirectory(CrmPanel.CONTACT, 0, true)"
+              /></label>
+              <address v-if="selectedContact" class="crm__deal-contact-summary">
+                <strong>{{ contactFullName(selectedContact) }}</strong>
+                <a v-if="selectedContact.phone" :href="`tel:${selectedContact.phone}`">
+                  <Phone :size="16" :stroke-width="1.75" aria-hidden="true" />
+                  <span>{{ selectedContact.phone }}</span>
+                </a>
+                <a v-if="selectedContact.email" :href="`mailto:${selectedContact.email}`">
+                  <Mail :size="16" :stroke-width="1.75" aria-hidden="true" />
+                  <span>{{ selectedContact.email }}</span>
+                </a>
+                <a
+                  v-if="selectedContact.telegram"
+                  :href="selectedContactTelegramHref"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Send :size="16" :stroke-width="1.75" aria-hidden="true" />
+                  <span>{{ selectedContact.telegram }}</span>
+                </a>
+                <span v-if="!hasSelectedContactChannels" class="crm__deal-contact-empty">Контактные данные не указаны</span>
+              </address>
+              <label
+                >Источник заявки<BaseSelect
+                  :model-value="draft.source"
+                  :options="optionalSourceOptions"
+                  placeholder="Источник не определён"
+                  large
+                  arrow
+                  :disabled="busy"
+                  @update:model-value="updateDealSource"
+              /></label>
+              <label
+                >Проект<BaseDropdown
+                  :model-value="draft.project_id"
+                  :options="dealProjectOptions"
+                  placeholder="Без проекта"
+                  :disabled="busy"
+                  @update:model-value="updateDealProject"
+              /></label>
             </div>
-          </section>
-        </template>
-        <p v-else role="status">Загрузка сделки…</p>
+          </div>
       </template>
-      <form v-else-if="panel === CrmPanel.COMPANY" class="crm__form" @submit.prevent="saveDirectory">
+      <p v-else role="status">Загрузка сделки…</p>
+    </aside>
+
+    <div
+      v-if="directoryPanel && !taskStore.currentTaskId"
+      class="crm__directory-backdrop"
+      aria-hidden="true"
+      @click="closeDirectory"
+    ></div>
+    <aside
+      v-if="directoryPanel"
+      v-show="!taskStore.currentTaskId"
+      ref="directoryElement"
+      class="crm__panel crm__panel_directory"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="directoryTitle"
+      @keydown.esc="closeDirectory"
+    >
+      <header class="crm__panel-header">
+        <button
+          v-if="returnToDeal"
+          aria-label="Назад к сделке"
+          title="Назад к сделке"
+          @click="closeDirectory"
+        >
+          <ChevronLeft :size="20" :stroke-width="1.75" aria-hidden="true" />
+        </button>
+        <span>{{ returnToDeal ? 'Назад к сделке' : directoryTitle }}</span>
+        <button v-if="!returnToDeal" aria-label="Закрыть окно" title="Закрыть" @click="closeDirectory">
+          <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+        </button>
+      </header>
+      <p v-if="error" class="crm__error" role="alert">{{ error }}</p>
+      <form v-if="directoryPanel === CrmPanel.COMPANY" class="crm__form" @submit.prevent="saveDirectory">
         <h2>{{ companyForm.id ? companyForm.name : 'Новая компания' }}</h2>
-        <label>Название<input v-model="companyForm.name" required maxlength="200" /></label
-        ><label>Юридическое название<input v-model="companyForm.legal_name" /></label
-        ><label>ИНН<input v-model="companyForm.inn" maxlength="20" /></label
-        ><label>Сайт<input v-model="companyForm.website" /></label
-        ><label
-          >Ответственный<select v-model="companyForm.responsible_id">
-            <option :value="null">Не назначен</option>
-            <option v-for="u in options?.users" :key="u.id" :value="u.id">{{ u.name }}</option>
-          </select></label
-        ><label>Примечания<textarea v-model="companyForm.notes" rows="4" /></label
-        ><button class="crm__primary" :disabled="busy">Сохранить</button>
+        <div class="crm__fields">
+          <label
+            ><span>Название<span class="crm__required" aria-hidden="true">*</span></span
+            ><input v-model="companyForm.name" required aria-required="true" maxlength="200"
+          /></label>
+          <label>Юридическое название<input v-model="companyForm.legal_name" /></label>
+          <label>ИНН<input v-model="companyForm.inn" maxlength="20" /></label>
+          <label>Сайт<input v-model="companyForm.website" /></label>
+          <label
+            >Ответственный<BaseSelect
+              v-model="companyForm.responsible_id"
+              :options="optionalResponsibleOptions"
+              placeholder="Не назначен"
+              large
+              arrow
+          /></label>
+          <label class="crm__field_full">Примечания<textarea v-model="companyForm.notes" rows="4" /></label>
+        </div>
+        <button class="crm__primary" :disabled="busy || !isCompanyFormValid">Сохранить</button>
         <h3>Контакты</h3>
         <button
-          v-for="c in options?.contacts.filter((c) => c.company_id === companyForm.id)"
+          v-for="c in companyContacts"
           :key="c.id"
           type="button"
           @click="openDirectory(CrmPanel.CONTACT, c.id, returnToDeal)"
         >
-          {{ c.name }} · {{ c.position }}
+          {{ contactFullName(c) }} · {{ c.position }}
         </button>
+        <p v-if="!companyContacts.length" class="crm__form-empty">У компании пока нет контактов</p>
       </form>
       <form v-else class="crm__form" @submit.prevent="saveDirectory">
-        <h2>{{ contactForm.id ? contactForm.name : 'Новый контакт' }}</h2>
-        <label>Имя<input v-model="contactForm.name" required maxlength="200" /></label
-        ><label
-          >Компания<select v-model="contactForm.company_id">
-            <option :value="null">Без компании</option>
-            <option v-for="c in options?.companies" :key="c.id" :value="c.id">{{ c.name }}</option>
-          </select></label
-        ><label>Должность<input v-model="contactForm.position" /></label
-        ><label>Телефон<input v-model="contactForm.phone" type="tel" /></label
-        ><label>Email<input v-model="contactForm.email" type="email" /></label
-        ><label>Telegram<input v-model="contactForm.telegram" /></label
-        ><button class="crm__primary" :disabled="busy">Сохранить</button>
+        <h2>{{ contactForm.id ? contactFullName(contactForm) : 'Новый контакт' }}</h2>
+        <div class="crm__fields">
+          <label
+            ><span>Имя<span class="crm__required" aria-hidden="true">*</span></span
+            ><input v-model="contactForm.name" required aria-required="true" maxlength="200"
+          /></label>
+          <label>Фамилия<input v-model="contactForm.last_name" maxlength="200" /></label>
+          <label>Отчество<input v-model="contactForm.patronymic" maxlength="200" /></label>
+          <label
+            >Компания<BaseSelect
+              v-model="contactForm.company_id"
+              :options="optionalCompanyOptions"
+              placeholder="Без компании"
+              large
+              arrow
+              searchable
+              search-placeholder="Поиск компании"
+          /></label>
+          <label>Должность<input v-model="contactForm.position" /></label>
+          <label>Телефон<input v-model="contactForm.phone" type="tel" /></label>
+          <label>Email<input v-model="contactForm.email" type="email" /></label>
+          <label>Telegram<input v-model="contactForm.telegram" /></label>
+        </div>
+        <button class="crm__primary" :disabled="busy || !isContactFormValid">Сохранить</button>
       </form>
-      <section v-if="panel !== CrmPanel.DEAL" class="crm__section">
+      <section class="crm__section">
         <h3>Сделки и проекты</h3>
         <p v-if="!relatedDeals.length">Связанных сделок пока нет</p>
         <div v-for="d in relatedDeals" :key="d.id">
@@ -812,11 +1563,42 @@ const stageSelected = (event: Event) => {
     <dialog ref="newDealDialog" class="crm__dialog">
       <form @submit.prevent="createDeal">
         <h2>Новая сделка</h2>
-        <label>Название<input v-model="newTitle" required maxlength="200" autofocus /></label>
+        <label
+          ><span>Название<span class="crm__required" aria-hidden="true">*</span></span
+          ><input
+            v-model="newTitle"
+            required
+            aria-required="true"
+            maxlength="200"
+            autofocus
+            placeholder="Введите название сделки"
+        /></label>
+        <label
+          >Компания<BaseSelect
+            :model-value="newDealCompanyId"
+            :options="optionalCompanyOptions"
+            placeholder="Без компании"
+            large
+            arrow
+            searchable
+            search-placeholder="Поиск компании"
+            @update:model-value="selectNewDealCompany"
+        /></label>
+        <label
+          >Контактное лицо<BaseSelect
+            :model-value="newDealContactId"
+            :options="optionalContactOptions"
+            placeholder="Контактное лицо не выбрано"
+            large
+            arrow
+            searchable
+            search-placeholder="Поиск контакта"
+            @update:model-value="selectNewDealContact"
+        /></label>
         <p v-if="error" role="alert">{{ error }}</p>
         <div class="crm__actions">
           <button type="button" @click="newDealDialog?.close()">Отмена</button
-          ><button class="crm__primary" :disabled="busy">Создать</button>
+          ><button class="crm__primary" :disabled="busy || !newTitle.trim()">{{ busy ? 'Создание…' : 'Создать' }}</button>
         </div>
       </form>
     </dialog>
@@ -866,47 +1648,41 @@ const stageSelected = (event: Event) => {
   min-width: 0;
   flex: 1;
   padding: 16px;
-  @include flex(cn);
-  gap: 16px;
   overflow: hidden;
   color: var(--light-text-backgroung-primary);
+  @include flex(cn);
+  gap: 12px;
   @extend %text-s-regular;
+
   h1 {
     margin: 0;
     @extend %display-xs-medium;
   }
   h2 {
-    margin: 16px 0;
-    @extend %h1;
+    margin: 0;
+    @extend %display-s-bold;
     overflow-wrap: anywhere;
   }
   h3 {
-    margin: 0 0 12px;
+    margin: 0;
     @extend %text-m-medium;
   }
+
   button,
   input,
   select,
   textarea {
     font: inherit;
     color: inherit;
-    border: 1px solid var(--light-text-backgroung-primary-10);
-    background: var(--light-text-backgroung-primary-5);
-    border-radius: 8px;
-    padding: 10px 12px;
-    min-height: 44px;
     min-width: 0;
   }
+
   button {
     cursor: pointer;
-    text-align: left;
-    &:hover {
-      background: var(--light-text-backgroung-primary-10);
-    }
-    &:disabled {
-      opacity: 0.5;
-      cursor: default;
-    }
+  }
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
   :is(button, input, select, textarea, a):focus-visible {
     outline: 2px solid var(--primary);
@@ -916,277 +1692,1544 @@ const stageSelected = (event: Event) => {
     background: var(--dark-text-background-primary);
   }
   label {
-    @include flex(cn);
-    gap: 6px;
     min-width: 0;
-  }
-  input[type='checkbox'] {
-    width: 18px;
-    height: 18px;
-    min-height: 18px;
-    padding: 0;
-    flex: 0 0 18px;
-    accent-color: var(--primary);
   }
   small {
     display: block;
     color: var(--light-text-backgroung-primary-50);
   }
-  fieldset {
+
+  input:not([type='checkbox']),
+  select,
+  textarea {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 12px;
     border: 1px solid var(--light-text-backgroung-primary-10);
     border-radius: 8px;
-    max-height: 240px;
-    overflow: auto;
+    background: transparent;
+    text-align: left;
   }
+
+  select {
+    text-align-last: left;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  input[type='checkbox'] {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    accent-color: var(--primary);
+  }
+
   &__header,
   &__actions,
-  &__quick,
   &__tabs {
     @include flex(rw, a-center);
     gap: 8px;
   }
+
   &__header {
     justify-content: space-between;
+    gap: 24px;
+
+    > div {
+      min-width: 0;
+    }
+
+    p {
+      margin: 4px 0 0;
+      color: var(--light-text-backgroung-primary-50);
+      @extend %text-s-regular;
+    }
   }
+
   &__primary {
+    @include flex(rn, a-center);
+    gap: 8px;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 8px;
     background: var(--primary) !important;
     color: var(--light-text-backgroung-primary);
+    @extend %text-s-medium;
+
+    &:hover:not(:disabled) {
+      background: var(--primary-hover) !important;
+    }
   }
+
   &__tabs {
+    min-height: 40px;
     border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+
     a {
-      padding: 12px 16px;
-      color: inherit;
+      height: 40px;
+      padding: 8px 4px;
+      color: var(--light-text-backgroung-primary-50);
       text-decoration: none;
-      border-bottom: 2px solid transparent;
+      border-bottom: 1px solid transparent;
+
       &[aria-current='page'] {
         border-color: var(--primary);
+        color: var(--light-text-backgroung-primary);
+      }
+      &:hover {
+        color: var(--light-text-backgroung-primary);
       }
     }
   }
+
   &__filters {
-    @include flex(rw);
-    gap: 12px;
-    label {
-      flex: 1;
-      max-width: 280px;
+    min-width: 0;
+    flex-shrink: 0;
+    @include flex(rn, a-center);
+    gap: 8px;
+
+    :deep(.task-filter-panel) {
+      width: min(760px, 100%);
+    }
+
+    :deep(.task-filter-panel__right input:focus-visible) {
+      outline: none;
+      outline-offset: 0;
+      box-shadow: none;
+    }
+
+    @media (max-width: $screen-mobile-l) {
+      flex-wrap: wrap;
     }
   }
-  &__quick {
-    button[aria-pressed='true'] {
+
+  &__mine-filter {
+    flex-shrink: 0;
+    padding: 8px 10px;
+    gap: 8px;
+    border: 1px solid var(--primary-50);
+    border-radius: 8px;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+    user-select: none;
+    transition:
+      color 0.2s,
+      background 0.2s,
+      border-color 0.2s;
+    @include flex(rn, a-center);
+    @extend %text-s-medium;
+
+    input {
+      width: 14px;
+      height: 14px;
+      flex: 0 0 14px;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    &:hover {
+      color: var(--light-text-backgroung-primary);
+      background: var(--primary-5);
+    }
+
+    &_active {
+      color: var(--light-text-backgroung-primary);
+      background: var(--primary-10);
       border-color: var(--primary);
     }
   }
+
+  &__filter-chips {
+    flex-shrink: 0;
+    @include flex(rw, a-center);
+    gap: 6px;
+  }
+
+  &__filter-chip {
+    height: 24px;
+    padding: 2px 4px;
+    border-radius: 4px;
+    background: var(--primary-25);
+    @include flex(rn, a-center);
+    gap: 2px;
+  }
+
+  &__filter-chip-label {
+    color: var(--light-text-backgroung-primary);
+    white-space: nowrap;
+    @extend %text-s-regular;
+  }
+
+  &__filter-chip-remove {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
+    @include flex(center);
+
+    &:hover {
+      background: var(--light-text-backgroung-primary-10);
+    }
+
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+
+  &__loading {
+    margin-left: 4px;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-xs-regular;
+  }
+
   &__board {
-    @include flex(rn);
-    gap: 12px;
-    overflow-x: auto;
     min-height: 0;
     flex: 1;
-    align-items: stretch;
-    padding-bottom: 8px;
+    width: 100%;
+    padding: 4px 2px 8px;
+    overflow-x: auto;
+    scroll-padding-inline: 2px;
+    @include flex(rn, stretch);
+    gap: 0;
   }
+
   &__column {
-    flex: 0 0 288px;
-    min-width: 0;
-    @include flex(cn);
-    background: var(--light-text-backgroung-primary-5);
-    border-radius: 12px;
-    overflow: hidden;
+    position: relative;
+    flex: 0 0 300px;
+    width: 300px;
+    min-width: 300px;
+    max-width: 300px;
+    height: 100%;
+    padding: 0 8px;
+    gap: 8px;
+    border-right: 1px solid var(--light-text-backgroung-primary-10);
+    @include flex(cn, a-start);
+
+    &:first-child {
+      padding-left: 0;
+    }
+
+    &:last-child {
+      padding-right: 0;
+      border-right: none;
+    }
+
     &_collapsed {
-      flex-basis: 64px;
-      .crm__column-heading {
-        writing-mode: vertical-rl;
-        height: 100%;
-        align-items: start;
-        justify-content: start;
+      flex: 0 0 auto;
+      width: 44px;
+      min-width: 0;
+      padding: 0;
+      gap: 0;
+    }
+  }
+
+  &__column-collapsed {
+    width: 100%;
+    height: 100%;
+    padding: 12px 0;
+    gap: 10px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    @include flex(cn, a-center);
+    justify-content: flex-start;
+
+    &:hover {
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+    }
+  }
+
+  &__column-count {
+    min-width: 20px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: var(--light-text-backgroung-primary-10);
+    color: var(--light-text-backgroung-primary);
+    font-variant-numeric: tabular-nums;
+    @extend %text-s-medium;
+  }
+
+  &__column-collapsed-title {
+    gap: 8px;
+    writing-mode: vertical-rl;
+    white-space: nowrap;
+    color: var(--light-text-backgroung-primary);
+    @include flex(rn, a-center);
+    @extend %text-l-regular;
+
+    i {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--crm-stage-color);
+    }
+  }
+
+  &__column-heading {
+    width: 100%;
+    min-width: 0;
+    min-height: 56px;
+    padding: 0 4px;
+    flex-shrink: 0;
+    @include flex(cn);
+    gap: 6px;
+
+    &-main {
+      min-width: 0;
+      min-height: 28px;
+      @include flex(rn, a-center);
+      gap: 8px;
+
+      > i {
+        width: 8px;
+        height: 8px;
+        flex-shrink: 0;
+        border-radius: 50%;
+        background: var(--crm-stage-color);
+      }
+      strong {
+        min-width: 0;
+        overflow-wrap: anywhere;
+        @extend %text-m-medium;
+      }
+
+      &-count {
+        flex-shrink: 0;
+        color: var(--light-text-backgroung-primary-50);
+        font-variant-numeric: tabular-nums;
+        @extend %text-m-regular;
+      }
+
+      button {
+        margin-left: auto;
+        width: 28px;
+        height: 28px;
+        padding: 4px;
+        flex-shrink: 0;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--light-text-backgroung-primary-50);
+        @include flex(center);
+        &:hover {
+          color: var(--light-text-backgroung-primary);
+          background: var(--light-text-backgroung-primary-10);
+        }
       }
     }
   }
-  &__column-heading {
-    @include flex(cn, stretch);
-    text-align: left;
+
+  &__column-meta {
+    min-width: 0;
+    padding-left: 16px;
+    color: var(--light-text-backgroung-primary-50);
+    font-variant-numeric: tabular-nums;
+    @include flex(rn, flex-end, a-center);
     gap: 8px;
-    border: 0 !important;
-    padding: 16px !important;
-    border-radius: 0 !important;
-    span {
-      @extend %p12-regular;
-      color: var(--light-text-backgroung-primary-50);
-      font-variant-numeric: tabular-nums;
+    @extend %text-xs-regular;
+
+    b {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: inherit;
+      font-weight: 400;
     }
   }
+
   &__cards {
-    @include flex(cn);
-    gap: 8px;
-    padding: 8px;
-    overflow-y: auto;
-    min-height: 0;
-  }
-  &__card {
-    @include flex(cn, stretch);
-    text-align: left;
-    gap: 8px;
-    flex-shrink: 0;
     width: 100%;
-    padding: 16px !important;
-    overflow-wrap: anywhere;
-    strong {
-      @extend %text-s-medium;
+    min-width: 0;
+    min-height: 0;
+    flex: 1;
+    gap: 10px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    @include flex(cn);
+  }
+
+  :deep(.base-kanban-card__header) {
+    gap: 8px;
+
+    span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     b {
+      flex-shrink: 0;
+      color: inherit;
+      font-weight: 400;
       font-variant-numeric: tabular-nums;
     }
-    > span {
-      @extend %p12-regular;
-      color: var(--light-text-backgroung-primary-50);
+  }
+
+  &__card-owner,
+  &__next {
+    min-width: 0;
+    gap: 5px;
+    color: var(--light-text-backgroung-primary-50);
+    @include flex(rn, a-center);
+    @extend %text-xs-regular;
+
+    svg {
+      flex-shrink: 0;
     }
   }
   &__next {
-    border-top: 1px solid var(--light-text-backgroung-primary-10);
-    padding-top: 8px;
-    &_overdue {
-      color: var(--danger-delete) !important;
+    width: 100%;
+
+    span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   }
+  &__next_overdue {
+    color: var(--danger-delete);
+  }
+  &__next_empty {
+    color: var(--status-in-progress);
+  }
+
   &__empty {
+    margin: 0;
     padding: 16px;
     color: var(--light-text-backgroung-primary-50);
+
   }
   &__error {
     color: var(--danger-delete);
   }
+
   &__directory {
-    overflow: auto;
     min-height: 0;
+    overflow: auto;
     table {
       width: 100%;
       border-collapse: collapse;
     }
     th {
-      text-align: left;
       position: sticky;
       top: 0;
       background: var(--dark-text-background-primary);
+      text-align: left;
+      color: var(--light-text-backgroung-primary-50);
+      @extend %text-xs-medium;
     }
     th,
     td {
       padding: 12px;
       border-bottom: 1px solid var(--light-text-backgroung-primary-10);
     }
+    td button {
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--light-text-backgroung-primary);
+      text-align: left;
+    }
+    tr:hover td {
+      background: var(--light-text-backgroung-primary-5);
+    }
   }
+
+  &__panel-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 998;
+    background: var(--dark-text-background-primary-50);
+  }
+
+  &__directory-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1098;
+    background: var(--dark-text-background-primary-50);
+    backdrop-filter: blur(2px);
+  }
+
   &__panel {
     position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: min(720px, calc(100vw - 80px));
+    inset: 0 0 0 auto;
     z-index: 1000;
+    width: min(1120px, calc(100vw - 80px));
+    max-width: 100%;
+    height: 100dvh;
+    padding: 0;
     overflow-y: auto;
-    padding: 16px 24px 32px;
     background: var(--dark-text-background-primary);
-    border-left: 1px solid var(--light-text-backgroung-primary-25);
     box-shadow: -16px 0 48px var(--black-50);
+    @include flex(cn);
+    gap: 0;
+
     &_expanded {
       width: calc(100vw - 80px);
     }
+
+    &_directory {
+      inset: 50% auto auto 50%;
+      z-index: 1100;
+      width: min(880px, calc(100vw - 48px));
+      height: auto;
+      max-height: calc(100dvh - 48px);
+      border: 1px solid var(--light-text-backgroung-primary-25);
+      border-radius: 12px;
+      box-shadow: 0 24px 72px var(--black-50);
+      transform: translate(-50%, -50%);
+
+      > .crm__section:last-child {
+        padding-bottom: 32px;
+      }
+    }
   }
+
   &__panel-header {
-    @include flex(rw, between, a-center);
-    gap: 8px;
     position: sticky;
-    top: -16px;
-    z-index: 2;
+    top: 0;
+    z-index: 5;
+    min-height: 72px;
+    padding: 16px 32px;
+    gap: 8px;
+    border-bottom: 1px solid var(--light-text-backgroung-primary-10);
     background: var(--dark-text-background-primary);
-    padding: 12px 0;
+    @include flex(rn, a-center);
+
+    > span {
+      margin-right: auto;
+      color: var(--light-text-backgroung-primary-50);
+      @extend %text-s-regular;
+    }
+    button {
+      min-width: 40px;
+      min-height: 40px;
+      flex-shrink: 0;
+      padding: 8px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--light-text-backgroung-primary-50);
+      @include flex(center);
+      &:hover {
+        color: var(--light-text-backgroung-primary);
+        background: var(--light-text-backgroung-primary-10);
+      }
+    }
   }
-  &__form {
+
+  &__panel-title {
+    min-width: 0;
+    flex: 1;
+    margin: 0 auto 0 0;
+    overflow: hidden;
+    color: var(--light-text-backgroung-primary);
+    cursor: text;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    @extend %text-m-medium;
+  }
+
+  &__panel-title-form {
+    min-width: 0;
+    flex: 1;
+    margin-right: auto;
+    gap: 12px;
+    @include flex(rn, a-center);
+
+    input {
+      width: 100%;
+      min-width: 0;
+      min-height: 40px;
+      padding: 3px 6px;
+      border: none;
+      border-radius: 8px;
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+      @extend %text-m-medium;
+
+      &::placeholder {
+        color: var(--light-text-backgroung-primary-50);
+      }
+
+      &:focus-visible {
+        outline: none;
+        box-shadow: inset 0 0 0 1px var(--light-text-backgroung-primary-10);
+      }
+    }
+  }
+
+  &__panel-title-actions {
+    flex-shrink: 0;
+    @include flex(rn, a-center);
+    gap: 4px;
+  }
+
+  &__panel-title-save {
+    min-width: auto !important;
+    padding: 8px !important;
+    color: var(--light-text-backgroung-primary-50) !important;
+    white-space: nowrap;
+    @extend %text-s-regular;
+
+    &:hover:not(:disabled),
+    &:focus-visible {
+      color: var(--light-text-backgroung-primary) !important;
+      background: transparent !important;
+    }
+  }
+
+  &__panel-title-cancel {
+    min-width: 32px !important;
+    min-height: 32px !important;
+    padding: 4px !important;
+    border-radius: 4px !important;
+  }
+
+  &__panel > .crm__error,
+  &__panel > [role='alert'],
+  &__panel > [role='status'] {
+    margin: 20px 32px 0;
+  }
+
+  &__deal-loss-reason {
+    margin: 20px 32px 0;
+    color: var(--danger-delete);
+    @extend %text-s-regular;
+  }
+
+  &__deal-content {
+    min-width: 0;
+    padding: 24px 32px 40px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 24px;
+    align-items: start;
+  }
+
+  &__deal-main {
+    min-width: 0;
+    @include flex(cn);
+    gap: 0;
+  }
+
+  &__deal-meta {
+    min-width: 0;
+    padding: 0;
+    gap: 0;
+    @include flex(cn);
+
+    > label,
+    > .crm__deal-meta-field {
+      gap: 4px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+      color: var(--light-text-backgroung-primary-50);
+      @include flex(cn);
+      @extend %text-xs-medium;
+    }
+
+    input:not([type='checkbox']) {
+      min-height: 36px;
+      padding: 6px 0;
+      border: none;
+      border-radius: 0;
+      background: transparent;
+      color: var(--light-text-backgroung-primary);
+      @extend %text-s-regular;
+
+      &:focus-visible {
+        outline: none;
+        outline-offset: 0;
+        box-shadow: none;
+      }
+
+      &[type='number'] {
+        appearance: textfield;
+
+        &::-webkit-inner-spin-button,
+        &::-webkit-outer-spin-button {
+          margin: 0;
+          appearance: none;
+        }
+      }
+    }
+
+    :deep(.home-select__input_large) {
+      min-height: 36px;
+      padding: 6px 0;
+      border: none;
+      border-radius: 0;
+      justify-content: flex-start;
+      text-align: left;
+    }
+
+    :deep(.home-select),
+    :deep(.home-select__placeholder),
+    :deep(.base-dropdown),
+    :deep(.base-dropdown__placeholder) {
+      @extend %text-s-regular;
+    }
+
+    :deep(.home-select__placeholder),
+    :deep(.base-dropdown__placeholder) {
+      color: var(--light-text-backgroung-primary);
+    }
+
+    :deep(.base-dropdown) {
+      width: 100%;
+    }
+
+    :deep(.base-dropdown__input) {
+      width: 100%;
+      min-height: 36px;
+      color: var(--light-text-backgroung-primary);
+      justify-content: flex-start;
+      text-align: left;
+      @include flex(rn, a-center);
+    }
+
+    :deep(.base-dropdown__dropdown) {
+      top: 36px;
+      right: 0;
+      left: auto;
+      width: 100%;
+      min-width: max-content;
+      max-width: min(360px, calc(100vw - 32px));
+    }
+
+    > .crm__primary {
+      width: 100%;
+      margin-top: 12px;
+      justify-content: center;
+    }
+  }
+
+  &__deal-company-control {
+    width: 100%;
+    min-width: 0;
+    gap: 4px;
+    @include flex(rn, a-center);
+
+    :deep(.home-select) {
+      min-width: 0;
+      flex: 1;
+    }
+  }
+
+  &__deal-company-open {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    padding: 8px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    @include flex(center);
+
+    &:hover:not(:disabled) {
+      color: var(--light-text-backgroung-primary);
+      background: var(--light-text-backgroung-primary-5);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-50);
+      outline-offset: -2px;
+    }
+  }
+
+  &__deal-contact-summary {
+    min-width: 0;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+    font-style: normal;
+    gap: 6px;
+    @include flex(cn);
+
+    strong {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--light-text-backgroung-primary);
+      font-weight: 500;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      @extend %text-s-medium;
+    }
+
+    a {
+      min-width: 0;
+      width: fit-content;
+      max-width: 100%;
+      color: var(--light-text-backgroung-primary-50);
+      text-decoration: none;
+      gap: 8px;
+      @include flex(rn, a-center);
+      @extend %text-s-regular;
+
+      svg {
+        flex: 0 0 16px;
+      }
+
+      span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      &:hover,
+      &:focus-visible {
+        color: var(--light-text-backgroung-primary);
+      }
+
+      &:focus-visible {
+        border-radius: 4px;
+        outline: 2px solid var(--primary-50);
+        outline-offset: 2px;
+      }
+    }
+  }
+
+  &__deal-contact-empty {
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-xs-regular;
+  }
+
+  &__section-header {
+    gap: 12px;
+    @include flex(rn, between, a-center);
+
+    h3 {
+      margin: 0;
+    }
+  }
+
+  &__next-action {
+    margin: 0;
+    gap: 8px;
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--light-text-backgroung-primary-5);
+    color: var(--light-text-backgroung-primary-50);
+    @include flex(rn, a-center);
+
+    &_empty {
+      color: var(--status-in-progress);
+    }
+  }
+
+  &__inline-form {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) 150px auto;
+    gap: 12px;
+    align-items: end;
+    padding: 16px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+
+    label {
+      min-width: 0;
+      gap: 6px;
+      color: var(--light-text-backgroung-primary-50);
+      @include flex(cn);
+      @extend %text-xs-regular;
+    }
+
+    &-title {
+      grid-column: 1 / -1;
+    }
+
+    > .crm__primary {
+      min-height: 44px;
+      justify-content: center;
+    }
+
+    :deep(.home-select__input_large) {
+      min-height: 44px;
+      background: transparent;
+    }
+
+    input[type='date'] {
+      color-scheme: dark;
+
+      &::-webkit-calendar-picker-indicator {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        margin-left: 8px;
+        padding: 2px;
+        opacity: 0.85;
+        filter: brightness(0) invert(1);
+        cursor: pointer;
+        transition: opacity 0.16s ease;
+      }
+
+      &:hover::-webkit-calendar-picker-indicator,
+      &:focus-visible::-webkit-calendar-picker-indicator {
+        opacity: 1;
+      }
+    }
+  }
+
+  &__link-task {
+    margin-top: 20px;
+    margin-bottom: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--light-text-backgroung-primary-10);
     @include flex(cn);
     gap: 16px;
-    margin-top: 16px;
+
+    &-trigger {
+      width: fit-content;
+      min-height: 32px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--light-text-backgroung-primary-50);
+      cursor: pointer;
+      @include flex(rn, a-center);
+      gap: 4px;
+      @extend %text-xs-regular;
+
+      svg {
+        stroke: currentColor;
+      }
+
+      &:hover,
+      &:focus-visible {
+        color: var(--light-text-backgroung-primary);
+      }
+    }
+
+    &-editor {
+      @include flex(rn, a-center);
+      gap: 4px;
+    }
+
+    &-input {
+      position: relative;
+      z-index: 5;
+      min-width: 0;
+      flex: 1;
+
+      input {
+        width: 100%;
+        min-height: 36px;
+        padding: 8px 12px;
+        border: 1px solid var(--light-text-backgroung-primary-10);
+        border-radius: 8px;
+        background: transparent;
+        color: var(--light-text-backgroung-primary);
+        outline: none;
+        @extend %text-s-regular;
+
+        &::placeholder {
+          color: var(--light-text-backgroung-primary-50);
+        }
+
+        &:focus-visible {
+          border-color: var(--light-text-backgroung-primary-25);
+        }
+
+        &::-webkit-search-cancel-button {
+          display: none;
+        }
+      }
+    }
+
+    &-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      left: 0;
+      z-index: 10;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid var(--light-text-backgroung-primary-10);
+      border-radius: 8px;
+      background: var(--dark-text-background-primary);
+      box-shadow: 0 8px 24px var(--dark-text-background-primary-50);
+      @include flex(cn);
+    }
+
+    &-result {
+      width: 100%;
+      min-height: 36px;
+      padding: 8px 12px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--light-text-backgroung-primary-50);
+      text-align: left;
+      overflow-wrap: anywhere;
+      cursor: pointer;
+      @extend %text-s-regular;
+
+      &:hover,
+      &:focus-visible {
+        background: var(--light-text-backgroung-primary-5);
+        color: var(--light-text-backgroung-primary);
+      }
+    }
+
+    &-state {
+      min-height: 36px;
+      padding: 8px 12px;
+      color: var(--light-text-backgroung-primary-50);
+      @include flex(rn, a-center);
+      @extend %text-s-regular;
+    }
+
+    &-actions {
+      flex-shrink: 0;
+      @include flex(rn);
+      gap: 4px;
+    }
+  }
+
+  &__comments {
+    padding-top: 32px;
+    border-top: 1px solid var(--light-text-backgroung-primary-10);
+    @include flex(cn);
+    gap: 20px;
+  }
+
+  &__comments-header {
+    @include flex(rn, between, a-center);
+
+    > span {
+      color: var(--light-text-backgroung-primary-50);
+      @extend %text-xl-medium;
+    }
+  }
+
+  &__comments-tools {
+    flex-shrink: 0;
+    @include flex(rn, a-center);
+    gap: 8px;
+  }
+
+  &__comments-add {
+    min-height: 32px;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 8px;
+    background: var(--primary-10);
+    color: var(--primary);
+    @include flex(rn, a-center);
+    gap: 6px;
+    @extend %text-s-medium;
+
+    &:hover,
+    &:focus-visible {
+      background: var(--primary-25);
+      color: var(--light-text-backgroung-primary);
+    }
+  }
+
+  &__comments-sort {
+    min-height: 32px;
+    padding: 6px 12px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 16px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    @include flex(rn, a-center);
+    gap: 8px;
+    @extend %text-s-regular;
+
+    &:hover {
+      color: var(--light-text-backgroung-primary);
+      background: var(--light-text-backgroung-primary-5);
+    }
+  }
+
+  &__comments-form {
+    @include flex(rn, a-start);
+    gap: 24px;
+  }
+
+  &__comments-input {
+    min-width: 0;
+    flex: 1;
+    padding: 16px 16px 12px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+    @include flex(cn);
+    gap: 12px;
+    @extend %p14-medium;
+
+    > .crm__primary {
+      width: fit-content;
+      margin-left: auto;
+    }
+  }
+
+  &__comments-body {
+    min-height: 40px;
+    color: var(--light-text-backgroung-primary-50);
+    @include flex(cn);
+    gap: 12px;
+    @extend %p14-medium;
+
+    &_timeline {
+      gap: 8px;
+    }
+  }
+
+  &__comments-event {
+    position: relative;
+    min-width: 0;
+
+    &:not(:last-child)::before {
+      content: '';
+      position: absolute;
+      left: 7px;
+      top: 14px;
+      bottom: -22px;
+      width: 1px;
+      background: var(--light-text-backgroung-primary-10);
+      pointer-events: none;
+    }
+
+    &_comment {
+      padding-left: 28px;
+
+      &::after {
+        content: '';
+        position: absolute;
+        left: 4px;
+        top: 10px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--light-text-backgroung-primary-50);
+        box-shadow: 0 0 0 4px var(--dark-text-background-primary);
+      }
+    }
+  }
+
+  &__timeline-comment {
+    min-width: 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--light-text-backgroung-primary-5);
+    @include flex(rn);
+    gap: 8px;
+  }
+
+  &__timeline-avatar {
+    width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--light-text-backgroung-primary);
+    @include flex(center);
+    @extend %text-xs-regular;
+  }
+
+  &__timeline-comment-content {
+    min-width: 0;
+    flex: 1;
+    color: var(--light-text-backgroung-primary);
+    @include flex(cn);
+    gap: 4px;
+    @extend %p14-medium;
+
+    header {
+      min-width: 0;
+      color: var(--light-text-backgroung-primary-50);
+      @include flex(rw, a-center);
+      gap: 4px 8px;
+      @extend %text-s-regular;
+
+      time {
+        color: var(--light-text-backgroung-primary-50);
+      }
+    }
+  }
+
+  &__timeline-activity {
+    padding: 4px 0;
+    color: var(--light-text-backgroung-primary);
+    @include flex(rn, a-start);
+    gap: 12px;
+    @extend %text-s-regular;
+  }
+
+  &__timeline-activity-icon {
+    position: relative;
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--light-text-backgroung-primary-50);
+    background: var(--dark-text-background-primary);
+    box-shadow: 0 0 0 3px var(--dark-text-background-primary);
+  }
+
+  &__timeline-activity-content {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    @include flex(cn);
+    gap: 2px;
+
+    header {
+      @include flex(rw, a-center);
+      gap: 4px 12px;
+
+      strong {
+        @extend %text-s-medium;
+      }
+
+      time {
+        color: var(--light-text-backgroung-primary-50);
+        @extend %text-xs-regular;
+      }
+    }
+  }
+
+  &__form {
+    width: 100%;
+    max-width: 760px;
+    padding: 28px 32px 0;
+    gap: 24px;
+    @include flex(cn);
+  }
+  &__form > h2 {
+    margin-bottom: 0;
+  }
+  &__form > .crm__primary {
+    min-width: 160px;
+    align-self: flex-start;
+    justify-content: center;
+  }
+  &__form label,
+  &__meta-field {
+    gap: 6px;
+    color: var(--light-text-backgroung-primary-50);
+    @include flex(cn);
+    @extend %text-xs-regular;
+  }
+  &__required {
+    margin-left: 4px;
+    color: var(--accent);
+  }
+  &__field-hint {
+    color: var(--light-text-backgroung-primary-50);
+    line-height: 1.45;
+    @extend %text-xs-regular;
+  }
+  &__form-empty {
+    margin: -12px 0 0;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+  &__form input,
+  &__form textarea {
+    color: var(--light-text-backgroung-primary);
+    @extend %text-s-regular;
   }
   &__fields {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    gap: 16px;
   }
-  &__contact,
-  &__task {
-    @include flex(rn, between, a-center);
-    gap: 8px;
-    padding: 8px 0;
-    label {
-      @include flex(rn, a-center);
-      min-height: 44px;
+  &__field_full {
+    grid-column: 1 / -1;
+  }
+  &__actions {
+    flex-wrap: wrap;
+  }
+  &__actions button:not(.crm__primary),
+  &__form > button:not(.crm__primary),
+  &__section button:not(.crm__primary) {
+    min-height: 36px;
+    padding: 7px 10px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    &:hover {
+      color: var(--light-text-backgroung-primary);
+      background: var(--light-text-backgroung-primary-5);
     }
   }
+
+  &__form :deep(.home-select__input_large) {
+    min-height: 44px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary);
+    justify-content: flex-start;
+    text-align: left;
+  }
+  &__form :deep(.home-select__dropdown) {
+    background: var(--dark-text-background-primary);
+  }
+
+  fieldset {
+    margin: 0;
+    padding: 12px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+    max-height: 240px;
+    overflow: auto;
+  }
+  legend {
+    padding: 0 6px;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-xs-regular;
+  }
+
+  &__task {
+    gap: 8px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+    @include flex(rn, between, a-center);
+
+    &:last-child {
+      border-bottom: none;
+    }
+  }
+  &__contact label {
+    min-width: 0;
+    gap: 8px;
+    min-height: 44px;
+    @include flex(rn, a-center);
+  }
+  &__task > button:first-child {
+    flex: 1;
+    min-width: 0;
+    text-align: left;
+  }
   &__check {
-    flex-direction: row !important;
-    align-items: center;
+    flex-shrink: 0;
+    gap: 8px;
+    color: var(--light-text-backgroung-primary-50);
+    @include flex(rn, a-center);
+    @extend %text-xs-regular;
   }
+
   &__section {
-    margin-top: 24px;
-    padding-top: 24px;
+    margin: 0 32px;
+    padding: 24px 0 0;
     border-top: 1px solid var(--light-text-backgroung-primary-10);
+
+    &_inner {
+      margin: 0;
+      padding-top: 32px;
+    }
+
+    &_tasks {
+      margin: 0;
+      padding-top: 0;
+      border-top: none;
+    }
   }
-  &__activity {
-    margin: 16px 0;
-    padding: 12px 0;
-    overflow-wrap: anywhere;
+  &__section h3 {
+    margin-bottom: 12px;
   }
   &__dialog {
     width: min(480px, calc(100vw - 32px));
     margin: auto;
+    padding: 24px;
     color: var(--light-text-backgroung-primary);
     border: 1px solid var(--light-text-backgroung-primary-25);
     border-radius: 12px;
-    padding: 24px;
     background: var(--dark-text-background-primary);
     &::backdrop {
       background: var(--black-50);
     }
     form {
+      gap: 20px;
       @include flex(cn);
-      gap: 16px;
+    }
+    h2 {
+      margin: 0;
+    }
+    label {
+      gap: 6px;
+      color: var(--light-text-backgroung-primary-50);
+      @include flex(cn);
+      @extend %text-xs-regular;
+    }
+    input:not([type='checkbox']) {
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--light-text-backgroung-primary-10);
+      border-radius: 8px;
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+      outline: none;
+      transition: border-color 0.16s ease;
+      @extend %text-s-regular;
+
+      &::placeholder {
+        color: var(--light-text-backgroung-primary-50);
+      }
+
+      &:focus,
+      &:focus-visible {
+        border-color: var(--primary-50);
+        outline: none;
+        box-shadow: none;
+      }
+    }
+    :deep(.home-select__input_large) {
+      min-height: 44px;
+      padding: 10px 12px;
+      border-color: var(--light-text-backgroung-primary-10);
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+      transition: border-color 0.16s ease;
+    }
+    :deep(.home-select__input_large:focus-visible) {
+      border-color: var(--primary-50);
+      outline: none;
+      box-shadow: none;
+    }
+    :deep(.home-select__placeholder) {
+      color: var(--light-text-backgroung-primary);
+      @extend %text-s-regular;
+    }
+    .crm__actions {
+      justify-content: flex-end;
+      margin-top: 4px;
     }
   }
+
   @media (max-width: $screen-tablet) {
+    &__filters {
+      width: 100%;
+    }
     &__panel,
     &__panel_expanded {
       width: 100%;
-      padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+      padding: 0 0 calc(88px + env(safe-area-inset-bottom));
+    }
+    &__panel_directory {
+      inset: 50% auto auto 50%;
+      width: min(720px, calc(100vw - 32px));
+      height: auto;
+      max-height: calc(100dvh - 32px);
+      padding: 0;
+      transform: translate(-50%, -50%);
     }
     &__fields {
       grid-template-columns: minmax(0, 1fr);
     }
+    &__deal-content {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    &__deal-meta {
+      order: -1;
+      padding: 20px;
+      border-left: none;
+      border-radius: 8px;
+      background: var(--light-text-backgroung-primary-5);
+    }
+    &__inline-form {
+      grid-template-columns: minmax(0, 1fr);
+
+      &-title {
+        grid-column: auto;
+      }
+    }
   }
+
   @media (max-width: $screen-mobile-l) {
+    height: 100%;
     padding: 12px;
     gap: 12px;
-    height: 100%;
-    &__filters {
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      label {
-        min-width: 180px;
-      }
+    &__header {
+      align-items: center;
     }
-    input,
-    select,
-    textarea {
-      font-size: 16px;
+    &__primary {
+      min-height: 44px;
     }
-    &__quick {
-      flex-wrap: nowrap;
-      overflow-x: auto;
+    &__tabs {
       flex-shrink: 0;
-      button {
-        white-space: nowrap;
-        flex-shrink: 0;
-      }
+    }
+    &__comments-sort {
+      min-height: 44px;
+    }
+    &__comments-add {
+      min-height: 44px;
+    }
+    &__comments-event_comment {
+      padding-left: 20px;
     }
     &__column {
       flex-basis: calc(100vw - 48px);
+      width: calc(100vw - 48px);
+      min-width: calc(100vw - 48px);
+      max-width: calc(100vw - 48px);
+    }
+    &__column_collapsed {
+      flex-basis: 44px;
+      width: 44px;
+      min-width: 44px;
+    }
+    &__panel-header,
+    &__form,
+    &__deal-content {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    &__panel-header {
+      min-height: 64px;
+      padding-top: 12px;
+      padding-bottom: 12px;
+    }
+    &__panel_directory {
+      width: calc(100vw - 24px);
+      max-height: calc(100dvh - 24px);
+    }
+    &__deal-loss-reason {
+      margin-right: 16px;
+      margin-left: 16px;
+    }
+    &__deal-content {
+      padding-top: 20px;
+      padding-bottom: 32px;
+      gap: 24px;
+    }
+    &__comments {
+      padding-top: 24px;
+    }
+    &__section-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+    &__fields {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    &__field_full {
+      grid-column: auto;
+    }
+    &__form > .crm__primary {
+      width: 100%;
+      align-self: stretch;
+    }
+    &__section {
+      margin-left: 16px;
+      margin-right: 16px;
+    }
+    input:not([type='checkbox']),
+    select,
+    textarea {
+      font-size: 16px;
     }
   }
 }
