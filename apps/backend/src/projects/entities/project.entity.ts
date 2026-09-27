@@ -34,7 +34,13 @@ export class Projects {
   })
   status: PROJECT_STATUSES;
 
-  @Column({ type: 'integer', default: 0 })
+  @Column({
+    type: 'numeric',
+    precision: 12,
+    scale: 2,
+    default: 0,
+    transformer: { to: (value: number) => value, from: (value: string) => Number(value) },
+  })
   budget: number;
 
   @Column({ type: 'integer', default: 0 })

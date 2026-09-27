@@ -10,8 +10,13 @@ import {
   UseInterceptors,
   Res,
   BadRequestException,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { AuthGuard } from '../auth/guards/auth.guard';
+import { RequestWithCookies } from '../common/types/request';
+import { ROLES } from '../common/enums/roles.enum';
 import { FilesService } from './files.service';
 import { UnloadFileDto } from './dto/unload-file.dto';
 import { CreateFolderDto } from './dto/create-folder.dto';
@@ -59,6 +64,7 @@ const encodeForContentDisposition = (value: string) =>
   encodeURIComponent(value).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 
 @Controller('files')
+@UseGuards(AuthGuard)
 @ApiTags('Файлы')
 export class FilesController {
   constructor(private readonly filesService: FilesService) {}
@@ -87,16 +93,16 @@ export class FilesController {
   })
   @ApiOkResponse({ description: 'Файл успешно загружен' })
   @ApiResponse({ status: 400, description: 'Файл не передан или некорректный префикс' })
-  unloadFile(@UploadedFile() file: Express.Multer.File, @Body() unloadFileDto: UnloadFileDto) {
-    return this.filesService.unloadFile(file, unloadFileDto);
+  unloadFile(@UploadedFile() file: Express.Multer.File, @Body() unloadFileDto: UnloadFileDto, @Req() req: RequestWithCookies) {
+    return this.filesService.unloadFile(file, unloadFileDto, req.user.role === ROLES.admin);
   }
 
   @Post('folder')
   @ApiOperation({ summary: 'Создание папки в хранилище' })
   @ApiOkResponse({ description: 'Папка успешно создана' })
   @ApiResponse({ status: 400, description: 'Некорректные данные папки' })
-  createFolder(@Body() createFolderDto: CreateFolderDto) {
-    return this.filesService.createFolder(createFolderDto);
+  createFolder(@Body() createFolderDto: CreateFolderDto, @Req() req: RequestWithCookies) {
+    return this.filesService.createFolder(createFolderDto, req.user.role === ROLES.admin);
   }
 
   @Get('content')
@@ -104,9 +110,9 @@ export class FilesController {
   @ApiOkResponse({ description: 'Текстовое содержимое файла' })
   @ApiResponse({ status: 400, description: 'Не передан параметр key' })
   @ApiResponse({ status: 404, description: 'Файл не найден' })
-  async getFileContent(@Query('key') key: string, @Res() res: Response) {
+  async getFileContent(@Query('key') key: string, @Res() res: Response, @Req() req: RequestWithCookies) {
     const safeKey = requireKey(key);
-    const content = await this.filesService.getFileContent(safeKey);
+    const content = await this.filesService.getFileContent(safeKey, req.user.role === ROLES.admin);
     res.setHeader('Content-Type', 'text/plain; charset=utf-8').send(content);
   }
 
@@ -115,9 +121,9 @@ export class FilesController {
   @ApiOkResponse({ description: 'Бинарное содержимое файла' })
   @ApiResponse({ status: 400, description: 'Не передан параметр key' })
   @ApiResponse({ status: 404, description: 'Файл не найден' })
-  async getRawFile(@Query('key') key: string, @Res() res: Response) {
+  async getRawFile(@Query('key') key: string, @Res() res: Response, @Req() req: RequestWithCookies) {
     const safeKey = requireKey(key);
-    const file = await this.filesService.getRawFile(safeKey);
+    const file = await this.filesService.getRawFile(safeKey, req.user.role === ROLES.admin);
     const fileName = extractFileNameFromKey(safeKey);
 
     res.setHeader('Content-Type', file.contentType);
@@ -138,7 +144,11 @@ export class FilesController {
       res.setHeader('Last-Modified', file.lastModified.toUTCString());
     }
 
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Cache-Control', safeKey.startsWith('crm/') ? 'private, no-store' : 'public, max-age=31536000, immutable');
+    if (safeKey.startsWith('crm/')) {
+      res.setHeader('Content-Security-Policy', 'sandbox');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
     res.send(Buffer.from(file.body));
   }
 
@@ -146,8 +156,8 @@ export class FilesController {
   @ApiOperation({ summary: 'Сохранение содержимого файла в хранилище' })
   @ApiOkResponse({ description: 'Файл успешно сохранён' })
   @ApiResponse({ status: 400, description: 'Не передан параметр key' })
-  async putFileContent(@Query('key') key: string, @Body('content') content: string) {
-    await this.filesService.putFileContent(key, content);
+  async putFileContent(@Query('key') key: string, @Body('content') content: string, @Req() req: RequestWithCookies) {
+    await this.filesService.putFileContent(key, content, req.user.role === ROLES.admin);
     return { ok: true };
   }
 
@@ -155,8 +165,8 @@ export class FilesController {
   @ApiOperation({ summary: 'Удаление файла из хранилища' })
   @ApiOkResponse({ description: 'Файл успешно удалён' })
   @ApiResponse({ status: 400, description: 'Не передан параметр key' })
-  async deleteFile(@Query('key') key: string): Promise<{ ok: boolean }> {
-    await this.filesService.deleteFile(key);
+  async deleteFile(@Query('key') key: string, @Req() req: RequestWithCookies): Promise<{ ok: boolean }> {
+    await this.filesService.deleteFile(key, req.user.role === ROLES.admin);
     return { ok: true };
   }
 
@@ -164,8 +174,8 @@ export class FilesController {
   @ApiOperation({ summary: 'Удаление папки из хранилища' })
   @ApiOkResponse({ description: 'Папка успешно удалена' })
   @ApiResponse({ status: 400, description: 'Не передан префикс папки' })
-  async deleteFolder(@Query('prefix') prefix: string): Promise<{ ok: boolean }> {
-    await this.filesService.deleteFolder(prefix);
+  async deleteFolder(@Query('prefix') prefix: string, @Req() req: RequestWithCookies): Promise<{ ok: boolean }> {
+    await this.filesService.deleteFolder(prefix, req.user.role === ROLES.admin);
     return { ok: true };
   }
 
@@ -180,7 +190,7 @@ export class FilesController {
     status: 400,
     description: 'Неверные параметры запроса',
   })
-  async getFiles(@Query() query: GetFilesDto) {
-    return this.filesService.getFiles(query);
+  async getFiles(@Query() query: GetFilesDto, @Req() req: RequestWithCookies) {
+    return this.filesService.getFiles(query, req.user.role === ROLES.admin);
   }
 }

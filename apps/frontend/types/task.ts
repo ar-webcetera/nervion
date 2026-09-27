@@ -28,6 +28,8 @@ export interface Timelog {
 }
 
 export interface Task {
+  business_kind?: import('@tracker/contracts').TaskBusinessKind;
+  deal_id?: number | null;
   time: number;
   id: number;
   priority: number;

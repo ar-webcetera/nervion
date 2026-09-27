@@ -1,5 +1,6 @@
 import { WebsocketGateway } from '../websocket/websocket.gateway';
-import { Repository } from 'typeorm';
+import { JwtAuthService } from '../auth/jwt.service';
+import { DataSource, Repository } from 'typeorm';
 import { PROJECT_STATUSES } from '../common/enums/project-status.enum';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { Timelogs } from '../timelogs/entities/timelog.entity';
@@ -47,7 +48,7 @@ describe('ProjectsService', () => {
       {} as unknown as Repository<ProjectMembers>,
       {} as unknown as Repository<Timelogs>,
       { record: jest.fn() } as unknown as AuditLogsService,
-      Object.assign(new WebsocketGateway(), { sendProjectsChanged: jest.fn() }),
+      Object.assign(new WebsocketGateway({} as DataSource, {} as JwtAuthService), { sendProjectsChanged: jest.fn() }),
     );
   });
 

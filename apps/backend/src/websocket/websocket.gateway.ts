@@ -1,4 +1,8 @@
-import { ProjectRealtimeEvent } from '@tracker/contracts';
+import { ProjectRealtimeEvent, TaskBusinessKind } from '@tracker/contracts';
+import { DataSource } from 'typeorm';
+import { JwtAuthService } from '../auth/jwt.service';
+import { Users } from '../users/entities/users.entity';
+import { ROLES } from '../common/enums/roles.enum';
 import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 
 import { Server, Socket } from 'socket.io';
@@ -15,21 +19,65 @@ export class WebsocketGateway {
   server: Server;
   private clients = new Map<string, string>();
 
-  constructor() {}
+  constructor(
+    private readonly db: DataSource,
+    private readonly jwt: JwtAuthService,
+  ) {}
+
+  async sendCrmChanged() {
+    await this.sendAdminEvent('crm:changed');
+  }
+
+  private async sendAdminEvent(event: string, data?: { type: SOCKET_EVENT_TYPE; data: Tasks | Comments | { id: number } }) {
+    if (!this.server) return;
+    for (const client of await this.server.fetchSockets()) {
+      try {
+        const raw = client.handshake.headers.cookie
+          ?.split(';')
+          .map((part) => part.trim())
+          .find((part) => part.startsWith('authToken='))
+          ?.slice(10);
+        if (!raw) continue;
+        const payload = this.jwt.verifyToken(decodeURIComponent(raw));
+        const id = payload.id ?? payload.userId;
+        if (!id || !(await this.db.getRepository(Users).existsBy({ id, role: ROLES.admin }))) continue;
+        client.emit(event, data);
+      } catch {
+        /* Invalid, expired or revoked sessions never receive CRM events. */
+      }
+    }
+  }
 
   sendProjectsChanged() {
     this.server.emit(ProjectRealtimeEvent.CHANGED);
   }
 
   sendTaskAdded(task: Tasks) {
-    this.server.emit('event', { type: SOCKET_EVENT_TYPE.task_added, data: task });
+    if (task.business_kind === TaskBusinessKind.SALES) {
+      void this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.task_added, data: task });
+      void this.sendCrmChanged();
+      return;
+    }
+    const { deal_id: _dealId, ...publicTask } = task;
+    this.server.emit('event', { type: SOCKET_EVENT_TYPE.task_added, data: publicTask });
   }
 
   sendTaskUpdate(task: Tasks) {
-    this.server.emit('event', { type: SOCKET_EVENT_TYPE.task_update, data: task });
+    if (task.business_kind === TaskBusinessKind.SALES) {
+      void this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.task_update, data: task });
+      void this.sendCrmChanged();
+      return;
+    }
+    const { deal_id: _dealId, ...publicTask } = task;
+    this.server.emit('event', { type: SOCKET_EVENT_TYPE.task_update, data: publicTask });
   }
 
-  sendTaskDeleted(taskId: number) {
+  sendTaskDeleted(taskId: number, commercial = false) {
+    if (commercial) {
+      void this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.task_deleted, data: { id: taskId } });
+      void this.sendCrmChanged();
+      return;
+    }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.task_deleted, data: { id: taskId } });
   }
 
@@ -41,15 +89,27 @@ export class WebsocketGateway {
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.notification_updated, data: notification });
   }
 
-  sendCommentAdded(comment: Comments) {
+  async sendCommentAdded(comment: Comments) {
+    if (await this.isCommercialComment(comment)) {
+      await this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.comment_added, data: comment });
+      return;
+    }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.comment_added, data: comment });
   }
 
-  sendCommentDeleted(commentId: number) {
+  sendCommentDeleted(commentId: number, commercial = false) {
+    if (commercial) {
+      void this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.comment_deleted, data: { id: commentId } });
+      return;
+    }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.comment_deleted, data: { id: commentId } });
   }
 
-  sendCommentUpdated(comment: Comments) {
+  async sendCommentUpdated(comment: Comments) {
+    if (await this.isCommercialComment(comment)) {
+      await this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.comment_updated, data: comment });
+      return;
+    }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.comment_updated, data: comment });
   }
 
@@ -101,6 +161,12 @@ export class WebsocketGateway {
         break;
       }
     }
+  }
+
+  private async isCommercialComment(comment: Comments): Promise<boolean> {
+    const id = comment.task_id ?? comment.task?.id;
+    if (!id) return false;
+    return this.db.getRepository(Tasks).existsBy({ id, business_kind: TaskBusinessKind.SALES });
   }
 
   private getUserIdFromClient(client: Socket): string | null {

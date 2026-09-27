@@ -22,6 +22,7 @@ const props = defineProps<{
   mode?: 'image' | 'video' | 'file' | 'embed';
   selectorDisabled?: boolean;
   videoValue?: string;
+  filePrefix?: string;
 }>();
 
 const { getFileNameWithExtension, getFileExt } = useFileName();
@@ -80,6 +81,10 @@ const videoTypes = ['video/mp4', 'video/webm', 'video/ogg', 'video/avi', 'video/
 const maxSize = 1024 * 1024 * 1024;
 
 const AWS_ENDPOINT = config.public.AWS_ENDPOINT;
+const objectUrl = (key: string) =>
+  key.startsWith('crm/')
+    ? `${String(config.public.API_URL ?? '').replace(/\/$/, '')}/api/files/raw?key=${encodeURIComponent(key)}`
+    : (buildAwsObjectUrl(key, AWS_ENDPOINT) ?? key);
 
 const imageExts = ['jpeg', 'jpg', 'png', 'webp', 'svg'];
 const videoExts = ['mp4', 'webm', 'ogg', 'avi', 'mov'];
@@ -123,6 +128,7 @@ const currentWikiProjectId = computed<number | null>(() => {
 });
 
 const prefix = computed(() => {
+  if (props.filePrefix) return props.filePrefix;
   if (wikiStore.currentPage && currentWikiProjectId.value) {
     return `tracker-project-wiki/${currentWikiProjectId.value}/`;
   }
@@ -141,7 +147,7 @@ const formatSizeMb = (bytes?: number) => {
 
 const downloadFile = async (key: string) => {
   try {
-    const response = await fetch(buildAwsObjectUrl(key, AWS_ENDPOINT) ?? key);
+    const response = await fetch(objectUrl(key), { credentials: 'include' });
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -303,8 +309,8 @@ const setFile = () => {
             @keydown.enter.prevent="selectFile(file.Key)"
             @keydown.space.prevent="selectFile(file.Key)"
           >
-            <img v-if="mode === fileMode.image" :src="buildAwsObjectUrl(file.Key, AWS_ENDPOINT)" alt="Изображение" />
-            <video v-if="mode === fileMode.video" :src="buildAwsObjectUrl(file.Key, AWS_ENDPOINT)"></video>
+            <img v-if="mode === fileMode.image" :src="objectUrl(file.Key)" alt="Изображение" />
+            <video v-if="mode === fileMode.video" :src="objectUrl(file.Key)"></video>
             <div v-if="mode !== fileMode.file" class="file-manager__options">
               <div @click.stop="downloadFile(file.Key)">
                 <IconDownload />

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CrmModule } from './crm/crm.module';
 import { APP_FILTER } from '@nestjs/core';
 import { SentryModule, SentryGlobalFilter } from '@sentry/nestjs/setup';
 import { ConfigModule, ConfigService } from '@nestjs/config';
@@ -31,6 +32,7 @@ import { MailboxModule } from './mailbox/mailbox.module';
 
 @Module({
   imports: [
+    CrmModule,
     SentryModule.forRoot(),
     ConfigModule.forRoot({ isGlobal: true }),
     TypeOrmModule.forRootAsync({

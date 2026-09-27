@@ -1,4 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { TaskBusinessKind } from '@tracker/contracts';
+import { ROLES } from '../common/enums/roles.enum';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -110,7 +112,7 @@ export class CommentsService {
       domain,
     }).catch((err) => console.error('Ошибка фоновой обработки комментария', err));
 
-    this.websocketGateway.sendCommentAdded({ ...newComment, subComments: [] });
+    void this.websocketGateway.sendCommentAdded({ ...newComment, subComments: [] });
     return { ...newComment, subComments: [] };
   }
 
@@ -129,6 +131,7 @@ export class CommentsService {
     message: TiptapDoc;
     domain: string | undefined;
   }) {
+    if (task.business_kind === TaskBusinessKind.SALES) return;
     if (author && !task.participants.some((p) => p.id === author.id)) {
       task.participants.push(author);
       await this.tasksRepository.save(task);
@@ -186,11 +189,12 @@ export class CommentsService {
     );
   }
 
-  async findCommentsByFilter(dto: FindCommentsByFilterDto) {
+  async findCommentsByFilter(dto: FindCommentsByFilterDto, role: ROLES = ROLES.employee) {
     const { task_id, sort = SortOrder.ASC } = dto;
 
     const where: Record<string, any> = { parent: IsNull() };
     if (task_id) where.task = { id: task_id };
+    if (role !== ROLES.admin) where.task = { ...where.task, business_kind: TaskBusinessKind.PRODUCTION };
 
     const roots = await this.commentRepository.find({
       where,
@@ -229,7 +233,7 @@ export class CommentsService {
       .findOne({ where: { id } })
       .then((updatedComment) => {
         if (updatedComment) {
-          this.websocketGateway.sendCommentUpdated(updatedComment);
+          void this.websocketGateway.sendCommentUpdated(updatedComment);
         }
       })
       .catch((err) => {
@@ -238,8 +242,12 @@ export class CommentsService {
   }
 
   async remove(id: number) {
+    const comment = await this.commentRepository.findOne({ where: { id } });
+    const commercial = comment?.task_id
+      ? await this.tasksRepository.existsBy({ id: comment.task_id, business_kind: TaskBusinessKind.SALES })
+      : false;
     const resultDelete = await this.commentRepository.delete(id);
-    this.websocketGateway.sendCommentDeleted(id);
+    this.websocketGateway.sendCommentDeleted(id, commercial);
     return resultDelete;
   }
 }

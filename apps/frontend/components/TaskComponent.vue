@@ -45,7 +45,12 @@ resposibleId.value = props.task.responsible_id || null;
 status.value = props.task.status || null;
 projectId.value = props.task.project_id || null;
 
-const statusOptions = useStatusOptions();
+const allStatusOptions = useStatusOptions();
+const statusOptions = computed(() =>
+  props.task.business_kind === 'sales'
+    ? allStatusOptions.value.filter((option) => ['to_do', 'in_progress', 'closed'].includes(option.value))
+    : allStatusOptions.value,
+);
 const { deleteLinkLoader, unlinkTask } = useTaskLinks(ref(props.relatedTaskId || 0));
 
 const usersOptions = computed(() => {
@@ -170,7 +175,7 @@ onMounted(() => {
         </div>
         <div class="task__track">
           <BaseTimetrack
-            v-if="showTimetracking"
+            v-if="showTimetracking && task.business_kind !== 'sales'"
             :timelog="currentTimelog"
             :bindable="bindableTimelog"
             @bind-task="emit('bind-task', $event)"
@@ -210,19 +215,29 @@ onMounted(() => {
     </div>
 
     <BaseTimetrack
-      v-if="showTimetracking"
+      v-if="showTimetracking && task.business_kind !== 'sales'"
       :timelog="currentTimelog"
       :bindable="bindableTimelog"
       @bind-task="emit('bind-task', $event)"
     />
     <Teleport to="body">
       <BaseModal v-model="isUnlinkConfirmOpen" :dismissible="!deleteLinkLoader[task.id]">
-        <div class="task-unlink-confirm" role="dialog" aria-modal="true" :aria-labelledby="`unlink-title-${task.id}`" @keydown.esc="!deleteLinkLoader[task.id] && (isUnlinkConfirmOpen = false)">
+        <div
+          class="task-unlink-confirm"
+          role="dialog"
+          aria-modal="true"
+          :aria-labelledby="`unlink-title-${task.id}`"
+          @keydown.esc="!deleteLinkLoader[task.id] && (isUnlinkConfirmOpen = false)"
+        >
           <h2 :id="`unlink-title-${task.id}`">Отвязать задачу?</h2>
           <p>Убрать связь с «{{ task.title }}» (NRV-{{ task.id }})? Сама задача останется.</p>
           <div class="task-unlink-confirm__actions">
-            <button class="button_secondary" :disabled="deleteLinkLoader[task.id]" @click="isUnlinkConfirmOpen = false">Отмена</button>
-            <button class="button_primary" :disabled="deleteLinkLoader[task.id]" @click="confirmUnlink">{{ deleteLinkLoader[task.id] ? 'Отвязываем…' : 'Отвязать' }}</button>
+            <button class="button_secondary" :disabled="deleteLinkLoader[task.id]" @click="isUnlinkConfirmOpen = false">
+              Отмена
+            </button>
+            <button class="button_primary" :disabled="deleteLinkLoader[task.id]" @click="confirmUnlink">
+              {{ deleteLinkLoader[task.id] ? 'Отвязываем…' : 'Отвязать' }}
+            </button>
           </div>
         </div>
       </BaseModal>
@@ -237,9 +252,19 @@ onMounted(() => {
   width: min(400px, calc(100vw - 64px));
   padding: 0 24px 24px;
   color: var(--light-text-backgroung-primary);
-  h2 { @extend %text-xl-medium; margin: 0; }
-  p { @extend %text-s-regular; margin: 0; overflow-wrap: anywhere; }
-  &__actions { @include flex(rn, j-end); gap: 8px; }
+  h2 {
+    @extend %text-xl-medium;
+    margin: 0;
+  }
+  p {
+    @extend %text-s-regular;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  &__actions {
+    @include flex(rn, j-end);
+    gap: 8px;
+  }
 }
 
 .restart-timer-modal {

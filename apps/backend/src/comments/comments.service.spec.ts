@@ -29,6 +29,7 @@ describe('CommentsService', () => {
   };
 
   const mockTasksRepository = {
+    existsBy: jest.fn<Promise<boolean>, [object]>().mockResolvedValue(false),
     findOne: jest.fn<Promise<Tasks | null>, [object]>(),
     save: jest.fn<Promise<Tasks>, [Tasks]>(),
   };

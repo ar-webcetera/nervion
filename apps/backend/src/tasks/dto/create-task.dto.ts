@@ -1,10 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsNumber, IsObject, IsOptional, IsString, Length, Min, ValidateIf } from 'class-validator';
-import { TaskBillingType } from '@tracker/contracts';
+import { TaskBillingType, TaskBusinessKind } from '@tracker/contracts';
 import { TASK_STATUSES } from '../../common/enums/statuses.enum';
 import { MAX_TASK_NAME_LENGTH, TaskType } from '../../tasks/entities/task.entity';
 
 export class CreateTaskDto {
+  @IsOptional()
+  @IsEnum(TaskBusinessKind)
+  business_kind?: TaskBusinessKind;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  deal_id?: number | null;
   @IsString({ message: 'Название задачи должно быть строкой' })
   @Length(0, MAX_TASK_NAME_LENGTH, { message: 'Название должно быть меньше ' + MAX_TASK_NAME_LENGTH + ' символов' })
   @ApiProperty({

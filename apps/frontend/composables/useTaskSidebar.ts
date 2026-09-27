@@ -1,4 +1,5 @@
 import type { JSONContent } from '@tiptap/core';
+import { TaskBusinessKind } from '@tracker/contracts';
 import type { SelectOption } from '~/types/select';
 import type { User } from '~/types/user';
 import type { TASK_STATUSES } from '~/constants/task.constants';
@@ -30,14 +31,17 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
   const responsibleId = ref<number | null>(null);
   const projectUpdatePending = ref(false);
 
-  const prefix = computed(() => `tracker-tasks/${taskId.value}/`);
+  const prefix = computed(() => taskStore.currentTask?.business_kind === TaskBusinessKind.SALES
+    ? `crm/tasks/${taskId.value}/` : `tracker-tasks/${taskId.value}/`);
 
   const usersOptions = computed(() => {
     if (userStore.users.length) {
-      const users: SelectOption[] = userStore.users.map((user: User) => ({
-        label: user.last_name + ' ' + user.first_name,
-        value: user.id,
-      }));
+      const users: SelectOption[] = userStore.users
+        .filter((user) => taskStore.currentTask?.business_kind !== 'sales' || user.role === 'admin')
+        .map((user: User) => ({
+          label: user.last_name + ' ' + user.first_name,
+          value: user.id,
+        }));
 
       if (userStore.user) {
         const currentIndex = users.findIndex((user) => user.value === userStore.user?.id);

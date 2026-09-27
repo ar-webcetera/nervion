@@ -1,4 +1,7 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Req, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '../auth/guards/auth.guard';
+import { CommercialTaskGuard } from '../auth/guards/commercial-task.guard';
+import { RequestWithCookies } from '../common/types/request';
 import { CommentsService } from './comments.service';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
@@ -6,6 +9,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { FindCommentsByFilterDto } from './dto/find-comments-by-filter.dto';
 
 @Controller('comments')
+@UseGuards(AuthGuard, CommercialTaskGuard)
 @ApiTags('Комментарии')
 export class CommentsController {
   constructor(private readonly commentsService: CommentsService) {}
@@ -21,8 +25,8 @@ export class CommentsController {
   @ApiOperation({ summary: 'Получить список комментариев по фильтру' })
   @ApiResponse({ status: 200, description: 'Список комментариев' })
   @Get()
-  findByFilter(@Query() findCommentsByFilterDto: FindCommentsByFilterDto) {
-    return this.commentsService.findCommentsByFilter(findCommentsByFilterDto);
+  findByFilter(@Query() findCommentsByFilterDto: FindCommentsByFilterDto, @Req() req: RequestWithCookies) {
+    return this.commentsService.findCommentsByFilter(findCommentsByFilterDto, req.user.role);
   }
 
   @ApiOperation({ summary: 'Получить комментарий по идентификатору' })

@@ -35,5 +35,6 @@ import { FixedRevenue } from '../reportings/entities/fixed-revenue.entity';
   ],
   controllers: [TasksController],
   providers: [TasksService],
+  exports: [TasksService],
 })
 export class TasksModule {}

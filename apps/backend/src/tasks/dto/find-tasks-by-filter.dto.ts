@@ -3,6 +3,7 @@ import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { TASK_STATUSES } from '../../common/enums/statuses.enum';
 import { TaskType } from '../entities/task.entity';
+import { TaskBusinessKind } from '@tracker/contracts';
 
 const normalizeToNumberArray = (value: unknown): number[] | undefined => {
   if (value == null || value === '') {
@@ -20,6 +21,9 @@ const normalizeToNumberArray = (value: unknown): number[] | undefined => {
 };
 
 export class FindTasksByFilterDto {
+  @IsOptional()
+  @IsEnum(TaskBusinessKind)
+  business_kind?: TaskBusinessKind;
   @ApiProperty({
     description: 'ID проектов (массив чисел) или null для задач без проекта',
     example: [2, 3],

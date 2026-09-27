@@ -1,4 +1,5 @@
 export enum PAGE_NAMES {
+  CRM = 'crm-deals',
   'project-detail' = 'project-detail',
   home = 'home',
   projects = 'projects',

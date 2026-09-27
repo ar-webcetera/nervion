@@ -16,7 +16,7 @@ import { Users } from '../../users/entities/users.entity';
 import { Projects } from '../../projects/entities/project.entity';
 import { TASK_STATUSES } from '../../common/enums/statuses.enum';
 import { Timelogs } from '../../timelogs/entities/timelog.entity';
-import { TaskBillingType } from '@tracker/contracts';
+import { TaskBillingType, TaskBusinessKind } from '@tracker/contracts';
 
 export const MAX_TASK_NAME_LENGTH = 150;
 
@@ -29,6 +29,11 @@ export enum TaskType {
 @Check(`char_length(title) >= 3`)
 @Entity({ name: 'tasks' })
 export class Tasks {
+  @Column({ type: 'varchar', default: TaskBusinessKind.PRODUCTION })
+  business_kind: TaskBusinessKind;
+
+  @Column({ type: 'int', nullable: true, select: false })
+  deal_id: number | null;
   @PrimaryGeneratedColumn()
   id: number;
 

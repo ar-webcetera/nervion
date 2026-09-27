@@ -52,6 +52,7 @@ import {
 } from '~/utils/tiptap/markdown';
 
 const config = useRuntimeConfig();
+const taskStore = useTaskStore();
 const mentionProjectId = inject<ComputedRef<number | null> | null>('taskMentionProjectId', null);
 const mentionProjectStore = useProjectStore();
 
@@ -78,6 +79,10 @@ const props = defineProps<{
 }>();
 const { $toast } = useNuxtApp();
 const AWS_ENDPOINT = config.public.AWS_ENDPOINT;
+const objectUrl = (key: string) =>
+  key.startsWith('crm/')
+    ? `${String(config.public.API_URL ?? '').replace(/\/$/, '')}/api/files/raw?key=${encodeURIComponent(key)}`
+    : (buildAwsObjectUrl(key, AWS_ENDPOINT) ?? key);
 
 type FileManagerMode = 'image' | 'video' | 'file';
 type FileInsertSource = 'clipboard' | 'drop';
@@ -158,6 +163,7 @@ const currentWikiProjectId = computed<number | null>(() => {
 
 const prefix = computed(() => {
   if (props.filePrefix) return props.filePrefix;
+  if (taskStore.currentTask?.business_kind === 'sales') return `crm/tasks/${currentTaskId.value}/`;
   if (wikiStore.currentPage && currentWikiProjectId.value) {
     return `tracker-project-wiki/${currentWikiProjectId.value}/`;
   }
@@ -228,7 +234,7 @@ const insertVideoFile = async (currentEditor: Editor, file: File) => {
     .insertContentAt(to + 1, {
       type: 'video',
       attrs: {
-        src: buildAwsObjectUrl(response.Key, AWS_ENDPOINT) ?? response.Key,
+        src: objectUrl(response.Key),
         width: '100%',
         height: 'auto',
         controls: true,
@@ -238,7 +244,7 @@ const insertVideoFile = async (currentEditor: Editor, file: File) => {
 };
 
 const insertFileByKey = (currentEditor: Editor, key: string) => {
-  const href = buildAwsObjectUrl(key, AWS_ENDPOINT) ?? key;
+  const href = objectUrl(key);
   const raw = key.split('/').pop() || key;
   const dot = raw.lastIndexOf('.');
   const name = dot > -1 ? raw.slice(0, dot) : raw;
@@ -538,7 +544,7 @@ const insertVideo = async (file: string) => {
     .insertContentAt(to + 1, {
       type: 'video',
       attrs: {
-        src: buildAwsObjectUrl(file, AWS_ENDPOINT) ?? file,
+        src: objectUrl(file),
         width: '100%',
         controls: true,
       },
@@ -640,7 +646,7 @@ const insertFile = (key: string) => {
   if (!key) return $toast.error('Файл не выбран');
   if (!editor.value) return;
 
-  const href = buildAwsObjectUrl(key, AWS_ENDPOINT) ?? key;
+  const href = objectUrl(key);
   const raw = key.split('/').pop() || key;
   const dot = raw.lastIndexOf('.');
   const name = dot > -1 ? raw.slice(0, dot) : raw;
@@ -718,7 +724,13 @@ onBeforeUnmount(() => {
           >
             <span class="editor__send-btn-text">{{ hasPendingUploads ? 'Загрузка...' : 'Отправить' }}</span>
             <svg class="editor__send-btn-icon" width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path d="M3 9h12M10 4l5 5-5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              <path
+                d="M3 9h12M10 4l5 5-5 5"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
             </svg>
           </button>
           <button v-else-if="showMic" class="editor__mic-btn" title="Голосовое сообщение" @click="emit('mic')">
@@ -732,6 +744,7 @@ onBeforeUnmount(() => {
   <teleport to="#teleports">
     <BaseModal ref="fileManagerModal" class="file-manager-modal">
       <BaseFileManager
+        :file-prefix="prefix"
         :mode="fileManagerMode"
         @insert-code="insertCode"
         @insert-img="insertImage"
@@ -902,7 +915,9 @@ onBeforeUnmount(() => {
 
   .instruction-slide-enter-active,
   .instruction-slide-leave-active {
-    transition: opacity 0.15s ease, transform 0.15s ease;
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease;
   }
   .instruction-slide-enter-from,
   .instruction-slide-leave-to {
@@ -1026,7 +1041,6 @@ onBeforeUnmount(() => {
     }
   }
 }
-
 
 .emoji-pop-enter-active,
 .emoji-pop-leave-active {

@@ -1,4 +1,5 @@
-import { TASK_CODE_PREFIX } from '@tracker/contracts';
+import { TASK_CODE_PREFIX, TaskBusinessKind, CrmActivityKind } from '@tracker/contracts';
+import { CrmActivityEntity, CrmDealEntity } from '../crm/entities/crm.entity';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { AuditActionType, AuditEntityType, BillingReviewStatus, TaskBillingType, type JsonObject } from '@tracker/contracts';
 import { FindTasksByFilterDto } from './dto/find-tasks-by-filter.dto';
@@ -100,6 +101,8 @@ export class TasksService {
       filters;
 
     const qb = this.buildBaseQuery(currentUser, existTimelog);
+    if (findTasksByFilterDto.business_kind)
+      qb.andWhere('task.business_kind = :businessKind', { businessKind: findTasksByFilterDto.business_kind });
 
     this.applyProjectsFilter(qb, projects, negativeFilters);
     this.applyResponsiblesFilter(qb, responsibles, negativeFilters);
@@ -176,6 +179,7 @@ export class TasksService {
     if (currentUser.role === ROLES.admin) {
       return;
     }
+    qb.andWhere("task.business_kind = 'production'");
 
     qb.leftJoin(
       'project_members',
@@ -439,17 +443,29 @@ export class TasksService {
     ];
 
     const columns = await Promise.all(
-      columnDefs.map(async (def) => {
-        const { cards, total } = await this.fetchKanbanColumnPage(getKanbanByFilterDto, def.status, 0, KANBAN_PAGE, currentUser);
-        return {
-          id: def.id,
-          title: def.title,
-          status: def.status,
-          cards,
-          total,
-          collapsed: collapsedColumns.has(def.status),
-        };
-      }),
+      columnDefs
+        .filter(
+          (def) =>
+            getKanbanByFilterDto.business_kind !== TaskBusinessKind.SALES ||
+            [TASK_STATUSES.to_do, TASK_STATUSES.in_progress, TASK_STATUSES.closed].includes(def.status),
+        )
+        .map(async (def) => {
+          const { cards, total } = await this.fetchKanbanColumnPage(
+            getKanbanByFilterDto,
+            def.status,
+            0,
+            KANBAN_PAGE,
+            currentUser,
+          );
+          return {
+            id: def.id,
+            title: def.title,
+            status: def.status,
+            cards,
+            total,
+            collapsed: collapsedColumns.has(def.status),
+          };
+        }),
     );
 
     return columns;
@@ -504,7 +520,11 @@ export class TasksService {
       .leftJoinAndSelect('task.responsible', 'responsible')
       .leftJoinAndSelect('task.project', 'project')
       .leftJoinAndSelect('task.participants', 'participants')
-      .leftJoinAndSelect('task.related_tasks', 'related_tasks')
+      .leftJoinAndSelect(
+        'task.related_tasks',
+        'related_tasks',
+        currentUser.role === ROLES.admin ? '1=1' : "related_tasks.business_kind = 'production'",
+      )
       .leftJoinAndSelect('related_tasks.responsible', 'related_tasks_responsible')
       .leftJoin('project_members', 'pm', 'pm.project_id = project.id AND pm.user_id = :user_id', { user_id: currentUser.id })
       .where('task.id = :task_id', { task_id })
@@ -522,6 +542,12 @@ export class TasksService {
       throw new HttpException({ message: ['Проект задачи находится в архиве'] }, HttpStatus.NOT_FOUND);
     }
     const isAdmin = currentUser.role === ROLES.admin;
+    if (!isAdmin && task.business_kind === TaskBusinessKind.SALES)
+      throw new HttpException('Задача не найдена', HttpStatus.NOT_FOUND);
+    if (isAdmin) {
+      const crmLink = await this.tasksRepository.findOne({ where: { id: task_id }, select: ['id', 'deal_id'] });
+      task.deal_id = crmLink?.deal_id ?? null;
+    }
     if (!isAdmin && task.project) {
       const hasAccess = await this.projectsMembersRepository.exist({
         where: {
@@ -552,6 +578,7 @@ export class TasksService {
   }
 
   async createTask(createTaskDto: CreateTaskDto, currentUser?: AuthenticatedUser) {
+    await this.validateCommercial(createTaskDto, currentUser);
     this.assertBillingFieldsAccess(createTaskDto, currentUser);
     let project: Projects | null = null;
     if (createTaskDto.project_id) {
@@ -594,8 +621,11 @@ export class TasksService {
     });
     const maxPriority = last?.priority ?? 0;
 
-    const status = createTaskDto.status ?? TASK_STATUSES.open;
+    const status =
+      createTaskDto.status ?? (createTaskDto.business_kind === TaskBusinessKind.SALES ? TASK_STATUSES.to_do : TASK_STATUSES.open);
     const data: DeepPartial<Tasks> = {
+      business_kind: createTaskDto.business_kind ?? TaskBusinessKind.PRODUCTION,
+      deal_id: createTaskDto.deal_id ?? null,
       title: createTaskDto.title,
       status,
       priority: Number(maxPriority) + 1,
@@ -632,7 +662,7 @@ export class TasksService {
       afterPayload: this.serializeTaskForAudit(createdTaskForLog ?? createdTask),
     });
 
-    if (responsible) {
+    if (responsible && createdTask.business_kind !== TaskBusinessKind.SALES) {
       this.notifyResponsibleAssigned({
         taskId: createdTask.id,
         taskTitle: createdTask.title ?? createTaskDto.title,
@@ -642,6 +672,7 @@ export class TasksService {
     }
 
     this.websocketGateway.sendTaskAdded(createdTask);
+    await this.recordCrmTask(createdTask.id, currentUser, `Создана задача «${createdTask.title}»`);
 
     return createdTask;
   }
@@ -685,6 +716,7 @@ export class TasksService {
 
     const data: DeepPartial<Tasks> = {
       title: this.buildDuplicateTitle(source.title),
+      business_kind: source.business_kind,
       status: source.status,
       priority: Number(maxPriority) + 1,
       taskType: source.taskType,
@@ -749,7 +781,10 @@ export class TasksService {
         throw new HttpException({ message: [`Задача с id=${taskId} не найдена`] }, HttpStatus.NOT_FOUND);
       }
 
+      await this.validateCommercial(updateTaskDto, currentUser, existingTask);
       const data: DeepPartial<Tasks> = {};
+      if (updateTaskDto.deal_id !== undefined) data.deal_id = updateTaskDto.deal_id;
+      if (updateTaskDto.business_kind !== undefined) data.business_kind = updateTaskDto.business_kind;
       if (Number.isFinite(updateTaskDto.responsible_id)) {
         if (updateTaskDto.responsible_id) {
           const responsible = await this.usersRepository.findOne({
@@ -858,7 +893,11 @@ export class TasksService {
         typeof updateTaskDto.responsible_id === 'number' && Number.isFinite(updateTaskDto.responsible_id)
           ? updateTaskDto.responsible_id
           : null;
-      if (assignedResponsibleId && assignedResponsibleId !== previousResponsibleId) {
+      if (
+        assignedResponsibleId &&
+        assignedResponsibleId !== previousResponsibleId &&
+        existingTask.business_kind !== TaskBusinessKind.SALES
+      ) {
         this.notifyResponsibleAssigned({
           taskId: Number(taskId),
           taskTitle: findTask?.title ?? existingTask.title,
@@ -889,6 +928,11 @@ export class TasksService {
         afterPayload,
       });
 
+      await this.recordCrmTask(
+        Number(taskId),
+        currentUser,
+        `Обновлена задача «${existingTask.title}»${updateTaskDto.status ? `: ${updateTaskDto.status === TASK_STATUSES.closed ? 'Закрыта' : updateTaskDto.status === TASK_STATUSES.in_progress ? 'Выполняется' : 'К выполнению'}` : ''}`,
+      );
       return findTask ?? updatedTask;
     } catch (e) {
       console.log(e);
@@ -907,6 +951,8 @@ export class TasksService {
         throw new HttpException({ message: [`Задача с id=${task_id} не найдена`] }, HttpStatus.NOT_FOUND);
       }
 
+      if (existingTask.business_kind === TaskBusinessKind.SALES) await this.commentRepository.delete({ task_id });
+      await this.recordCrmTask(task_id, currentUser, `Удалена задача «${existingTask.title}»`);
       await this.tasksRepository.delete(task_id);
       await this.auditLogsService.record({
         actionType: AuditActionType.TASK_DELETED,
@@ -919,7 +965,8 @@ export class TasksService {
         summary: `Удалена задача "${existingTask.title}"`,
         beforePayload: this.serializeTaskForAudit(existingTask),
       });
-      this.websocketGateway.sendTaskDeleted(task_id);
+      if (existingTask.business_kind === TaskBusinessKind.SALES) this.websocketGateway.sendTaskDeleted(task_id, true);
+      else this.websocketGateway.sendTaskDeleted(task_id);
     } catch (e) {
       console.log(e);
       throw e;
@@ -983,12 +1030,12 @@ export class TasksService {
     };
   }
 
-  async createAndLinkTask(baseTaskId: string, createDto: CreateAndLinkDto) {
+  async createAndLinkTask(baseTaskId: string, createDto: CreateAndLinkDto, currentUser?: AuthenticatedUser) {
     const baseTask = await this.tasksRepository.findOne({ where: { id: Number(baseTaskId) } });
     if (!baseTask) {
       throw new HttpException({ message: [`Задача с id=${baseTaskId} не найдена`] }, HttpStatus.NOT_FOUND);
     }
-    const newTask = await this.createTask(createDto);
+    const newTask = await this.createTask({ ...createDto, business_kind: baseTask.business_kind } as CreateTaskDto, currentUser);
     await this.linkTasks(baseTaskId, newTask.id.toString());
     return newTask;
   }
@@ -1193,6 +1240,8 @@ export class TasksService {
       .where('task.recurrence_days IS NOT NULL');
 
     this.applyProjectAccessScope(recurringQb, currentUser);
+    if (filtersDto.business_kind)
+      recurringQb.andWhere('task.business_kind = :businessKind', { businessKind: filtersDto.business_kind });
     this.applyActiveProjectScope(recurringQb);
     this.applyProjectsFilter(recurringQb, projects, negativeFilters);
     this.applyResponsiblesFilter(recurringQb, responsibles, negativeFilters);
@@ -1219,6 +1268,8 @@ export class TasksService {
       });
 
     this.applyProjectAccessScope(plannedQb, currentUser);
+    if (filtersDto.business_kind)
+      plannedQb.andWhere('task.business_kind = :businessKind', { businessKind: filtersDto.business_kind });
     this.applyActiveProjectScope(plannedQb);
     this.applyProjectsFilter(plannedQb, projects, negativeFilters);
     this.applyResponsiblesFilter(plannedQb, responsibles, negativeFilters);
@@ -1248,6 +1299,8 @@ export class TasksService {
         .leftJoinAndSelect('task.project', 'project')
         .where('task.id IN (:...ids)', { ids: completionTaskIds });
       this.applyProjectAccessScope(completionTasksQb, currentUser);
+      if (filtersDto.business_kind)
+        completionTasksQb.andWhere('task.business_kind = :businessKind', { businessKind: filtersDto.business_kind });
       this.applyActiveProjectScope(completionTasksQb);
       this.applyProjectsFilter(completionTasksQb, projects, negativeFilters);
       this.applyResponsiblesFilter(completionTasksQb, responsibles, negativeFilters);
@@ -1399,7 +1452,38 @@ export class TasksService {
     }
   }
 
+  private async validateCommercial(dto: Partial<UpdateTaskDto>, user?: AuthenticatedUser, existing?: Tasks) {
+    if (dto.business_kind === null) throw new HttpException('Укажите тип задачи', HttpStatus.BAD_REQUEST);
+    const sales = (dto.business_kind ?? existing?.business_kind) === TaskBusinessKind.SALES;
+    if ((sales || dto.deal_id != null) && user?.role !== ROLES.admin)
+      throw new HttpException('Задача не найдена', HttpStatus.NOT_FOUND);
+    if (existing && dto.business_kind && dto.business_kind !== existing.business_kind)
+      throw new HttpException('Тип существующей задачи менять нельзя', HttpStatus.BAD_REQUEST);
+    if (dto.deal_id && !(await this.dataSource.getRepository(CrmDealEntity).existsBy({ id: dto.deal_id })))
+      throw new HttpException('Сделка не найдена', HttpStatus.BAD_REQUEST);
+    if (!sales) return;
+    if (dto.status && ![TASK_STATUSES.to_do, TASK_STATUSES.in_progress, TASK_STATUSES.closed].includes(dto.status))
+      throw new HttpException('Недопустимый статус коммерческой задачи', HttpStatus.BAD_REQUEST);
+    if (dto.billing_type || dto.fixed_price || dto.recurrence_days?.length)
+      throw new HttpException('Для коммерческой задачи недоступны оплата и повторения', HttpStatus.BAD_REQUEST);
+    if (dto.responsible_id && !(await this.usersRepository.existsBy({ id: dto.responsible_id, role: ROLES.admin })))
+      throw new HttpException('Выберите администратора', HttpStatus.BAD_REQUEST);
+  }
+
+  private async recordCrmTask(id: number, user: AuthenticatedUser | undefined, summary: string) {
+    const task = await this.tasksRepository.findOne({ where: { id }, select: ['id', 'deal_id'] });
+    if (!task?.deal_id) return;
+    await this.dataSource.getRepository(CrmActivityEntity).save({
+      deal_id: task.deal_id,
+      kind: CrmActivityKind.CHANGE,
+      summary,
+      author_name: user ? `${user.first_name} ${user.last_name}`.trim() : 'Система',
+    });
+    void this.websocketGateway.sendCrmChanged();
+  }
+
   private async upsertFixedRevenue(task: Tasks): Promise<void> {
+    if (task.business_kind === TaskBusinessKind.SALES) return;
     if (task.billing_type !== TaskBillingType.FIXED) return;
     const occurredAt = format(task.closed_date ?? new Date(), 'yyyy-MM-dd');
     const existing = await this.fixedRevenueRepository.findOne({

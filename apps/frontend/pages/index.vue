@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { FilterChip } from '~/types/filter';
+import { TaskBusinessKind } from '@tracker/contracts';
 import { FilterType } from '~/types/filter';
 import BaseSelect from '~/components/BaseSelect.vue';
 import TaskComponent from '~/components/TaskComponent.vue';
@@ -115,6 +116,15 @@ const loadTasksPageData = async () => {
     myTodayTasksCount: taskStore.myTodayTasksCount,
   };
 };
+
+watch(
+  () => taskStore.businessKind,
+  () => {
+    if (viewType.value === ViewType.LIST) void fetchTasks();
+    if (viewType.value === ViewType.KANBAN) void fetchKanban();
+    if (viewType.value === ViewType.WEEKLY) void fetchWeekly();
+  },
+);
 
 await useAsyncData(
   'tasks-page-data',
@@ -279,11 +289,14 @@ const onDragEnd = async () => {
   draggedIndex.value = targetIndex.value = null;
 };
 
-watch(() => projectStore.revision, () => {
-  if (viewType.value === ViewType.LIST) void fetchTasks();
-  if (viewType.value === ViewType.KANBAN) void fetchKanban();
-  if (viewType.value === ViewType.WEEKLY) void fetchWeekly();
-});
+watch(
+  () => projectStore.revision,
+  () => {
+    if (viewType.value === ViewType.LIST) void fetchTasks();
+    if (viewType.value === ViewType.KANBAN) void fetchKanban();
+    if (viewType.value === ViewType.WEEKLY) void fetchWeekly();
+  },
+);
 
 const setViewType = (type: ViewType) => {
   taskStore.saveViewType(type);
@@ -754,6 +767,14 @@ useHead({
       </div>
 
       <div class="toggle-view-type">
+        <label v-if="userStore.user?.role === 'admin'"
+          >Направление
+          <select v-model="taskStore.businessKind" aria-label="Направление задач">
+            <option value="">Все</option>
+            <option :value="TaskBusinessKind.SALES">Продажи</option>
+            <option :value="TaskBusinessKind.PRODUCTION">Производство</option>
+          </select>
+        </label>
         <span
           class="toggle-view-type__button"
           :class="{ 'toggle-view-type__button_active': viewType === ViewType.KANBAN }"

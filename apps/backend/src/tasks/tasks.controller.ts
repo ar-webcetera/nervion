@@ -28,6 +28,7 @@ import { CreateTaskResponseDto } from './dto/create-task-response.dto';
 import { UpdateTaskResponseDto } from './dto/update-task-response.dto';
 import { FindTasksByFilterResponse } from './dto/find-tasks-by-filter-response.dto';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { CommercialTaskGuard } from '../auth/guards/commercial-task.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { UpdatePriorityTaskDto } from './dto/update-priority-task.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -46,6 +47,7 @@ import { CompleteTaskDto } from './dto/complete-task.dto';
 import { RequestWithCookies } from '../common/types/request';
 
 @Controller('tasks')
+@UseGuards(AuthGuard, CommercialTaskGuard)
 @ApiTags('Задачи')
 export class TasksController {
   private readonly logger = new Logger(TasksController.name);
@@ -408,7 +410,11 @@ export class TasksController {
     },
   })
   @ApiResponse({ status: 404, description: 'Базовая задача :taskId не найдена' })
-  async createAndLinkTask(@Param('taskId') taskId: string, @Body() createAndLinkDto: CreateAndLinkDto) {
-    return this.tasksService.createAndLinkTask(taskId, createAndLinkDto);
+  async createAndLinkTask(
+    @Param('taskId') taskId: string,
+    @Body() createAndLinkDto: CreateAndLinkDto,
+    @Req() req: RequestWithCookies,
+  ) {
+    return this.tasksService.createAndLinkTask(taskId, createAndLinkDto, req.user);
   }
 }

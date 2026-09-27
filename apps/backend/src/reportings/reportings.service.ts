@@ -17,6 +17,7 @@ import {
   RevenueDashboard,
   RevenueSourceType,
   TaskBillingType,
+  TaskBusinessKind,
 } from '@tracker/contracts';
 import { FixedRevenue } from './entities/fixed-revenue.entity';
 import { MonthlyRevenueTarget } from './entities/monthly-revenue-target.entity';
@@ -466,7 +467,9 @@ export class ReportingsService {
   async syncProjectTasksToTable(projectId: number) {
     const workbook = XLSX.utils.book_new();
 
-    const tasks = await this.tasksRepository.find({ where: { project_id: projectId } });
+    const tasks = await this.tasksRepository.find({
+      where: { project_id: projectId, business_kind: TaskBusinessKind.PRODUCTION },
+    });
 
     const rows = tasks.map((task) => ({
       'Название задачи': task.title ?? '',

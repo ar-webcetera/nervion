@@ -133,6 +133,7 @@ export const useTaskStore = defineStore('task', () => {
     negativeFilters: {},
   });
   const endModal = ref<HTMLElement | null>(null);
+  const businessKind = ref<import('@tracker/contracts').TaskBusinessKind | ''>('');
 
   const getTrackingDateFromTimelogs = (taskId: number) => {
     return timelogStore.currentTimelogs.find((timelog) => timelog.task_id === taskId)?.tracking_date ?? null;
@@ -283,7 +284,7 @@ export const useTaskStore = defineStore('task', () => {
       method: 'GET',
       credentials: 'include',
       headers,
-      params,
+      params: { ...params, business_kind: businessKind.value || undefined },
     });
     tasks.value =
       response?.map((task) => ({
@@ -315,7 +316,11 @@ export const useTaskStore = defineStore('task', () => {
       method: 'GET',
       credentials: 'include',
       headers,
-      params: { ...params, timezone: params.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone },
+      params: {
+        ...params,
+        business_kind: businessKind.value || undefined,
+        timezone: params.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
     });
 
     kanban.value = response || [];
@@ -333,6 +338,7 @@ export const useTaskStore = defineStore('task', () => {
       headers,
       params: {
         ...params,
+        business_kind: businessKind.value || undefined,
         status,
         offset,
         limit,
@@ -480,6 +486,7 @@ export const useTaskStore = defineStore('task', () => {
       headers,
       params: {
         ...(weekStart ? { week_start: weekStart } : {}),
+        business_kind: businessKind.value || undefined,
         ...(useSavedFilters ? { useSavedFilters: true } : {}),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
@@ -616,7 +623,11 @@ export const useTaskStore = defineStore('task', () => {
       method: 'POST',
       credentials: 'include',
       headers,
-      body: { ...params, timezone: params.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone },
+      body: {
+        ...params,
+        business_kind: businessKind.value || undefined,
+        timezone: params.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
       responseType: 'blob',
     });
 
@@ -631,6 +642,7 @@ export const useTaskStore = defineStore('task', () => {
   };
 
   return {
+    businessKind,
     tasks,
     fetchTasks,
     sendTimelog,

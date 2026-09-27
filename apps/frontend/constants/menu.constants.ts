@@ -13,6 +13,7 @@ export interface MenuItemMeta {
 export const MENU_ITEMS: MenuItemMeta[] = [
   { key: 'home', label: 'Задачи', page: PAGE_NAMES.home, always: true },
   { key: 'projects', label: 'Проекты', page: PAGE_NAMES.projects },
+  { key: 'crm', label: 'CRM', page: PAGE_NAMES.CRM, adminOnly: true },
   { key: 'wiki', label: 'Вики', page: PAGE_NAMES.wiki },
   { key: 'chat', label: 'Чаты', page: PAGE_NAMES.CHAT },
   { key: 'mail', label: 'Почта', page: PAGE_NAMES.MAIL, employeePlus: true },

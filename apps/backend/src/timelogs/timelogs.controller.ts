@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, Use
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthGuard } from '../auth/guards/auth.guard';
+import { CommercialTaskGuard } from '../auth/guards/commercial-task.guard';
 import { CreateTimelogDto } from './dto/create-timelog.dto';
 import { GetTimelogByFilterDto } from './dto/get-timelog-by-filter.dto';
 import { GetTimelogSummaryDto } from './dto/get-timelog-summary.dto';
@@ -14,6 +15,7 @@ interface RequestWithUser extends Request {
 }
 
 @Controller('timelogs')
+@UseGuards(AuthGuard, CommercialTaskGuard)
 @ApiTags('Таймлоги')
 export class TimelogsController {
   constructor(private readonly timelogsService: TimelogsService) {}

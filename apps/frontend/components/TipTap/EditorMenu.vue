@@ -193,7 +193,7 @@ const applyLink = () => {
     >
       <IconTableAdd />
     </button>
-    <button class="editor-menu__item" @click="emit('add-file')">
+    <button type="button" class="editor-menu__item" aria-label="Прикрепить файл" title="Прикрепить файл" @click="emit('add-file')">
       <IconAddFile />
     </button>
     <button

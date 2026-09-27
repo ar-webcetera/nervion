@@ -146,7 +146,12 @@ const toggleRecurrenceDay = (day: number) => {
   updateRecurrenceDays(updated.length ? updated : null);
 };
 
-const statusOptions = useStatusOptions();
+const allStatusOptions = useStatusOptions();
+const statusOptions = computed(() =>
+  taskStore.currentTask?.business_kind === 'sales'
+    ? allStatusOptions.value.filter((option) => ['to_do', 'in_progress', 'closed'].includes(option.value))
+    : allStatusOptions.value,
+);
 const {
   createLinkTaskLoader,
   isOpenLinkInput,
@@ -366,9 +371,16 @@ const submitComment = async () => {
         <span>Задача</span>
       </div>
       <div class="task-sidebar__header">
+        <button v-if="route.path.startsWith('/crm') && route.query.deal" @click="emit('close')">Назад к сделке</button>
+        <NuxtLink
+          v-else-if="taskStore.currentTask?.deal_id"
+          :to="`/crm/deals?deal=${taskStore.currentTask.deal_id}`"
+          @click="taskStore.currentTaskId = null"
+          >Открыть связанную сделку</NuxtLink
+        >
         <div class="task-sidebar__title">
           <BaseTimetrack
-            v-if="currentTaskId"
+            v-if="currentTaskId && taskStore.currentTask?.business_kind !== 'sales'"
             :key="currentTimelog?.id"
             :timelog="currentTimelog"
             task
@@ -566,7 +578,10 @@ const submitComment = async () => {
               />
             </div>
           </div>
-          <div v-if="isAdmin" class="task-sidebar__field task-sidebar__field_billing">
+          <div
+            v-if="isAdmin && taskStore.currentTask?.business_kind !== 'sales'"
+            class="task-sidebar__field task-sidebar__field_billing"
+          >
             <div class="task-sidebar__label">Формат оплаты</div>
             <div v-if="taskStore.currentTask" class="task-sidebar__value task-sidebar__billing">
               <BaseSelect
@@ -627,7 +642,7 @@ const submitComment = async () => {
               </div>
             </div>
           </template>
-          <div class="task-sidebar__field task-sidebar__field_date">
+          <div v-if="taskStore.currentTask?.business_kind !== 'sales'" class="task-sidebar__field task-sidebar__field_date">
             <div class="task-sidebar__label">
               Затраченное время
               <span class="task-sidebar__edit" @click="taskModals.openFixTimelogModal">
@@ -651,7 +666,7 @@ const submitComment = async () => {
             </div>
             <div v-else class="task-sidebar__value">—</div>
           </div>
-          <div class="task-sidebar__field task-sidebar__field_recurrence">
+          <div v-if="taskStore.currentTask?.business_kind !== 'sales'" class="task-sidebar__field task-sidebar__field_recurrence">
             <div class="task-sidebar__label">
               Повторение
               <span v-if="taskStore.currentTask?.recurrence_days?.length" class="task-sidebar__recurrence-badge">

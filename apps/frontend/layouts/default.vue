@@ -18,7 +18,7 @@ const closeSidebar = () => {
 };
 
 const isHidden = computed(() => {
-  return route.name !== 'home' && route.name !== 'chat' && route.name !== 'mail';
+  return route.name !== 'home' && route.name !== 'chat' && route.name !== 'mail' && !route.path.startsWith('/crm');
 });
 
 const chatId = computed(() => route.query?.chatId);

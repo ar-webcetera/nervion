@@ -5,6 +5,7 @@ import { AuthController } from './auth.controller';
 import { JwtAuthService } from './jwt.service';
 import { JwtModule } from '@nestjs/jwt';
 import { AuthGuard } from './guards/auth.guard';
+import { CommercialTaskGuard } from './guards/commercial-task.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { ApiTokensModule } from '../api-tokens/api-tokens.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
@@ -32,7 +33,7 @@ import { YandexOauthService } from './yandex-oauth.service';
     AuditLogsModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtAuthService, JwtSecretService, YandexOauthService, AuthGuard, RolesGuard],
-  exports: [AuthService, JwtAuthService, JwtModule, AuthGuard, RolesGuard],
+  providers: [AuthService, JwtAuthService, JwtSecretService, YandexOauthService, AuthGuard, RolesGuard, CommercialTaskGuard],
+  exports: [AuthService, JwtAuthService, JwtModule, AuthGuard, RolesGuard, CommercialTaskGuard],
 })
 export class AuthModule {}

@@ -145,6 +145,24 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
           </NuxtLink>
 
           <NuxtLink
+            v-if="userStore.user?.role === ROLES.admin && isMenuVisible('crm')"
+            to="/crm/deals"
+            class="base-menu-left__item"
+            :class="{ 'base-menu-left__item_active': route.path.startsWith('/crm') }"
+            data-tooltip="CRM"
+            aria-label="CRM"
+            ><svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.5"
+              aria-hidden="true"
+            >
+              <path d="M3 4h18l-7 8v7l-4 2v-9z" /></svg
+          ></NuxtLink>
+          <NuxtLink
             v-if="isMenuVisible('wiki')"
             :data-tooltip="'Вики'"
             :to="{ name: PAGE_NAMES.wiki }"
