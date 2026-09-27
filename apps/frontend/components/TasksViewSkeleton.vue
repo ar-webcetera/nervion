@@ -327,6 +327,31 @@ const weeklyColumns = [2, 3, 1, 2, 3, 1, 2];
   }
 
   @media (max-width: $screen-mobile-l) {
+    &__weekly-nav {
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) 44px;
+      height: auto;
+      gap: 8px;
+    }
+
+    &__nav-button {
+      width: 44px;
+      height: 44px;
+    }
+
+    &__line {
+      &_week {
+        width: 100%;
+      }
+
+      &_today {
+        grid-column: 1 / -1;
+        width: 100%;
+        height: 44px;
+        margin-left: 0;
+      }
+    }
+
     &__list-row:nth-child(n + 6) {
       display: none;
     }

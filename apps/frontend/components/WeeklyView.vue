@@ -378,7 +378,9 @@ onMounted(() => {
     background: transparent;
     color: var(--light-text-backgroung-primary-50);
     cursor: pointer;
-    transition: all 0.15s;
+    transition:
+      border-color 0.15s,
+      color 0.15s;
 
     &:hover {
       border-color: var(--primary);
@@ -577,6 +579,31 @@ onMounted(() => {
     @extend %text-s-regular;
     color: var(--light-text-backgroung-primary-25);
     padding: 4px 0;
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    &__nav {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 44px minmax(0, 1fr) 44px;
+      gap: 8px;
+    }
+
+    &__nav-btn {
+      width: 44px;
+      height: 44px;
+    }
+
+    &__week-label {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    &__today-btn {
+      grid-column: 1 / -1;
+      min-height: 44px;
+      margin-left: 0;
+    }
   }
 }
 </style>
