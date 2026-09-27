@@ -8,7 +8,7 @@ import IconPen from './Icons/IconPen.vue';
 import AvatarCropperModal from './AvatarCropperModal.vue';
 import IconDeleteSimple from './Icons/IconDeleteSimple.vue';
 import IconCopy from './Icons/IconCopy.vue';
-import IconLongBack from './Icons/IconLongBack.vue';
+import { X } from '@lucide/vue';
 
 const { getUserInfo, openUserEditModal, userEditModal, closeUserEditModal, handleLogout } = useProfile();
 const { formatMessageDate } = useDateFormatter();
@@ -96,9 +96,11 @@ const unlinkYandex = async () => {
 
 <template>
   <div v-if="userInfo" class="base-profile-popup">
-    <div class="base-profile-popup__back-mobile" @click.stop="emit('close')">
-      <IconLongBack />
+    <div class="base-profile-popup__mobile-header">
       <span>Профиль</span>
+      <button type="button" aria-label="Закрыть профиль" title="Закрыть" @click.stop="emit('close')">
+        <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+      </button>
     </div>
     <div class="base-profile-popup__header">
       <div class="base-profile-popup__avatar" title="Изменить фото" @click="avatarCropper?.open()">
@@ -274,18 +276,43 @@ const unlinkYandex = async () => {
     border: none;
   }
 
-  &__back-mobile {
+  &__mobile-header {
     display: none;
-
-    @media (max-width: $screen-mobile-l) {
-      @include flex(rn, a-center);
-      gap: 12px;
-      padding: 28px 16px;
-      border-bottom: 1px solid var(--light-text-backgroung-primary-10);
-    }
 
     span {
       @extend %text-l-medium;
+    }
+
+    button {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+      @include flex(center);
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--light-text-backgroung-primary-50);
+      cursor: pointer;
+      transition:
+        background 0.15s,
+        color 0.15s;
+
+      &:hover {
+        background: var(--light-text-backgroung-primary-5);
+        color: var(--light-text-backgroung-primary);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: -2px;
+      }
+    }
+
+    @media (max-width: $screen-mobile-l) {
+      @include flex(rn, a-center, between);
+      min-height: 68px;
+      padding: 12px;
+      border-bottom: 1px solid var(--light-text-backgroung-primary-10);
     }
   }
 
