@@ -395,7 +395,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
     flex-direction: row;
     max-width: unset;
     height: 80px;
-    padding: 16px 10.5px 10px;
+    padding: 16px var(--mobile-page-gutter) 10px;
   }
 
   &__bottom {

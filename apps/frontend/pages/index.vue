@@ -13,6 +13,7 @@ import { useProjectStore } from '~/stores/projectStore';
 import type { Task } from '~/types/task';
 import type { JSONContent } from '@tiptap/core';
 import IconButtonLoader from '~/components/Icons/IconButtonLoader.vue';
+import { CalendarDays, LayoutDashboard, List } from '@lucide/vue';
 import { TASK_STATUS_LABELS, MAX_TASK_NAME_LENGTH } from '~/constants/task.constants';
 import { format } from 'date-fns';
 const projectStore = useProjectStore();
@@ -802,58 +803,36 @@ useHead({
       </div>
 
       <div class="toggle-view-type">
-        <span
+        <button
+          type="button"
           class="toggle-view-type__button"
           :class="{ 'toggle-view-type__button_active': viewType === ViewType.KANBAN }"
           @click="setViewType(ViewType.KANBAN)"
         >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M12.5 10.8337L12.5 3.33366M12.5 10.8337L16.167 10.8337C16.6337 10.8337 16.8668 10.8337 17.0451 10.7428C17.2019 10.6629 17.3293 10.5355 17.4092 10.3787C17.5 10.2005 17.5 9.96696 17.5 9.50024L17.5 3.33366L12.5 3.33366M12.5 10.8337L12.5 15.3336C12.5 15.8003 12.5 16.0338 12.4092 16.2121C12.3293 16.3689 12.2019 16.4963 12.0451 16.5762C11.8668 16.667 11.6337 16.667 11.167 16.667L8.83366 16.667C8.36695 16.667 8.1331 16.667 7.95484 16.5762C7.79804 16.4963 7.67104 16.3689 7.59115 16.2121C7.50032 16.0338 7.5 15.8003 7.5 15.3336L7.5 13.3337M12.5 3.33366L7.5 3.33366M7.5 3.33366L2.5 3.33358L2.5 12.0002C2.5 12.467 2.50032 12.7005 2.59115 12.8787C2.67104 13.0355 2.79755 13.1629 2.95436 13.2428C3.13262 13.3337 3.36662 13.3337 3.83333 13.3337L7.5 13.3337M7.5 3.33366L7.5 13.3337"
-              stroke="white"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-
+          <LayoutDashboard :size="20" :stroke-width="1.75" aria-hidden="true" />
           Канбан
-        </span>
-        <span
-          class="toggle-view-type__button"
-          :class="{ 'toggle-view-type__button_active': viewType === ViewType.LIST }"
-          @click="setViewType(ViewType.LIST)"
-        >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M7.49984 14.1668H15.8332M7.49984 10.0002H15.8332M7.49984 5.8335H15.8332M4.16813 14.1668V14.1685L4.1665 14.1685V14.1668H4.16813ZM4.16813 10.0002V10.0018L4.1665 10.0018V10.0002H4.16813ZM4.16813 5.8335V5.83516L4.1665 5.83512V5.8335H4.16813Z"
-              stroke="white"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-
-          Список
-        </span>
-        <span
+        </button>
+        <button
+          type="button"
           class="toggle-view-type__button"
           :class="{ 'toggle-view-type__button_active': viewType === ViewType.WEEKLY }"
           @click="setViewType(ViewType.WEEKLY)"
         >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="2.5" y="4.5" width="15" height="13" rx="1.5" stroke="white" stroke-linecap="round" />
-            <path d="M2.5 8H17.5" stroke="white" stroke-linecap="round" />
-            <path d="M7 2.5V5.5" stroke="white" stroke-linecap="round" />
-            <path d="M13 2.5V5.5" stroke="white" stroke-linecap="round" />
-            <path d="M6 12H7" stroke="white" stroke-linecap="round" />
-            <path d="M9.5 12H10.5" stroke="white" stroke-linecap="round" />
-            <path d="M13 12H14" stroke="white" stroke-linecap="round" />
-          </svg>
-
+          <CalendarDays :size="20" :stroke-width="1.75" aria-hidden="true" />
           Неделя
           <span v-if="taskStore.myTodayTasksCount > 0" class="toggle-view-type__badge">
             {{ taskStore.myTodayTasksCount }}
           </span>
-        </span>
+        </button>
+        <button
+          type="button"
+          class="toggle-view-type__button"
+          :class="{ 'toggle-view-type__button_active': viewType === ViewType.LIST }"
+          @click="setViewType(ViewType.LIST)"
+        >
+          <List :size="20" :stroke-width="1.75" aria-hidden="true" />
+          Список
+        </button>
       </div>
     </div>
 
@@ -1025,6 +1004,11 @@ useHead({
   min-width: 0;
   flex: 1;
   @include flex(cn);
+
+  @media (max-width: $screen-mobile-l) {
+    padding-right: var(--mobile-page-gutter);
+    padding-left: var(--mobile-page-gutter);
+  }
 
   &__task-header-right {
     display: flex;
@@ -1292,23 +1276,32 @@ useHead({
     cursor: pointer;
     @include flex(a-center);
     gap: 4px;
+    padding: 0 0 4px;
+    border: none;
+    border-bottom: 1px solid transparent;
+    border-radius: 0;
+    background: transparent;
     color: var(--light-text-backgroung-primary-50);
+    font: inherit;
 
     svg {
-      stroke-opacity: 0.5;
+      flex-shrink: 0;
     }
 
-    border-bottom: 1px solid transparent;
-    padding-bottom: 4px;
     @extend %text-s-medium;
+
+    &:hover {
+      color: var(--light-text-backgroung-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 3px;
+    }
 
     &_active {
       color: var(--light-text-backgroung-primary);
       border-bottom: 1px solid var(--primary);
-
-      svg {
-        stroke-opacity: 1;
-      }
     }
   }
 

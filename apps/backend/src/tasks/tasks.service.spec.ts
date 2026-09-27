@@ -817,6 +817,24 @@ describe('TasksService', () => {
       ]);
     });
 
+    it('должен сортировать задачи дня по убыванию приоритета', async () => {
+      const user = { id: 1, role: ROLES.admin } as Users;
+      const recurringQb = createQueryBuilderMock();
+      const plannedQb = createQueryBuilderMock();
+      const completionsQb = createQueryBuilderMock();
+      plannedQb.getMany.mockResolvedValue([
+        { id: 41, title: 'Низкий приоритет', priority: 2, planned_date: new Date('2026-04-30'), recurrence_days: null } as Tasks,
+        { id: 42, title: 'Высокий приоритет', priority: 8, planned_date: new Date('2026-04-30'), recurrence_days: null } as Tasks,
+      ]);
+
+      mockTasksRepository.createQueryBuilder.mockReturnValueOnce(recurringQb).mockReturnValueOnce(plannedQb);
+      mockCompletionRepository.createQueryBuilder.mockReturnValue(completionsQb);
+
+      const result = await service.getWeeklyTasks('2026-04-27', user);
+
+      expect(result.columns.find((column) => column.date === '2026-04-30')?.cards.map((card) => card.id)).toEqual([42, 41]);
+    });
+
     it('фильтр «Мои сегодня» должен объединять planned_date и повторение на выбранный день', async () => {
       const user = { id: 7, role: ROLES.admin } as Users;
       const recurringQb = createQueryBuilderMock();

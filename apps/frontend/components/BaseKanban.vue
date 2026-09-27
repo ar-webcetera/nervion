@@ -5,6 +5,7 @@ import { TASK_STATUSES } from '~/constants/task.constants';
 import { TaskType } from '~/enums/task.enums';
 
 const { resolveAwsUrl } = useResolveUrl();
+const { isDragging: isBoardDragging, onPointerDown, onPointerMove, onPointerEnd } = useHorizontalDragScroll();
 
 const props = defineProps({
   columns: {
@@ -343,7 +344,14 @@ const dragend = () => {
 </script>
 
 <template>
-  <div class="kanban">
+  <div
+    class="kanban"
+    :class="{ kanban_dragging: isBoardDragging }"
+    @pointerdown="onPointerDown"
+    @pointermove="onPointerMove"
+    @pointerup="onPointerEnd"
+    @pointercancel="onPointerEnd"
+  >
     <div
       v-for="(column, colIndex) in columns"
       :key="column.id"
@@ -453,12 +461,7 @@ const dragend = () => {
               <TaskCode :id="card.id" />
             </template>
             <template #title>
-              <span v-if="card.taskType === TaskType.TASK" class="kanban__card-status kanban__card-status_task">
-                <IconsIconTypeTask />
-              </span>
-              <span v-if="card.taskType === TaskType.USER_STORY" class="kanban__card-status kanban__card-status_story">
-                <IconsIconTypeUserStory />
-              </span>
+              <TaskTypeBadge v-if="card.taskType" :task-type="card.taskType" />
               {{ card.title }}
             </template>
             <template v-if="card.description" #description>{{ card.description }}</template>
@@ -494,9 +497,19 @@ const dragend = () => {
   @include flex(rn, stretch);
   width: 100%;
   overflow-x: auto;
+  cursor: grab;
   border-radius: 8px;
   box-sizing: border-box;
   height: 100%;
+
+  &_dragging {
+    cursor: grabbing;
+    user-select: none;
+
+    * {
+      cursor: grabbing !important;
+    }
+  }
 
   &__column {
     position: relative;
@@ -856,24 +869,6 @@ const dragend = () => {
     white-space: nowrap;
     @extend %text-xs-regular;
     color: var(--light-text-backgroung-primary-50);
-  }
-
-  &__card-status {
-    @include flex(center);
-    width: 18px;
-    height: 18px;
-    border-radius: 4px;
-    padding: 1px;
-
-    &_task {
-      border: 1px solid var(--primary);
-      background: var(--primary-50);
-    }
-
-    &_story {
-      border: 1px solid var(--accent);
-      background: var(--accent-50);
-    }
   }
 
   &_cover {

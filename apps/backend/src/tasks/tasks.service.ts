@@ -1356,7 +1356,9 @@ export class TasksService {
       return {
         date: dateStr,
         dayOfWeek,
-        cards: [...recurringCards, ...plannedCards, ...orphanedCards],
+        cards: [...recurringCards, ...plannedCards, ...orphanedCards].sort(
+          (left, right) => Number(right.priority || 0) - Number(left.priority || 0),
+        ),
       };
     });
 

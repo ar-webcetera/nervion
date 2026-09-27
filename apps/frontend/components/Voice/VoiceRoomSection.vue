@@ -54,9 +54,9 @@ const handleClick = async (projectId: number) => {
     </div>
 
     <ul class="vrs__list">
-      <li v-if="orderedRooms.length === 0 || (activeCount === 0 && !isExpanded)" class="vrs__empty" role="status">
+      <li v-if="orderedRooms.length === 0" class="vrs__empty" role="status">
         <MicOff :size="20" :stroke-width="1.75" aria-hidden="true" />
-        <span>{{ orderedRooms.length ? 'Активных комнат пока нет' : 'Голосовых комнат пока нет' }}</span>
+        <span>Голосовых комнат пока нет</span>
       </li>
       <li
         v-for="room in orderedRooms"

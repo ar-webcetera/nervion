@@ -19,6 +19,9 @@ import type { SelectOption } from '~/types/select';
 import type { FilterChip, FilterDefinition } from '~/types/filter';
 import { FilterType } from '~/types/filter';
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   CalendarDays,
   ChevronLeft,
   ChevronRight,
@@ -39,6 +42,7 @@ import IconSortDesc from '~/components/Icons/IconSortDesc.vue';
 import { TYPE_SORT_LABELS, TypeSort } from '~/constants/sort.constants';
 import { hasTiptapContent } from '~/utils/tiptap/content';
 import { debounce } from '~/utils/debounce';
+import { raisePageError } from '~/utils/error';
 import { MAX_TASK_NAME_LENGTH } from '~/constants/task.constants';
 import { format } from 'date-fns';
 
@@ -60,6 +64,12 @@ const sourceFilter = ref('');
 const quick = ref(CrmQuickFilter.ALL);
 const collapsed = ref<number[]>([]);
 const dragging = ref<number | null>(null);
+const {
+  isDragging: isBoardDragging,
+  onPointerDown: onBoardPointerDown,
+  onPointerMove: onBoardPointerMove,
+  onPointerEnd: onBoardPointerEnd,
+} = useHorizontalDragScroll();
 const today = () => new Intl.DateTimeFormat('sv-SE').format(new Date());
 const query = computed(() => ({
   search: search.value || undefined,
@@ -85,6 +95,12 @@ const {
     ? $fetch<CrmColumn[]>('/api/crm/board', { ...request, query: query.value })
     : Promise.resolve([]),
 );
+const crmLoadError = computed(() => optionsError.value ?? boardError.value);
+const showCrmLoadError = (cause: unknown) => {
+  if (cause) raisePageError(500, 'Не удалось загрузить CRM');
+};
+showCrmLoadError(crmLoadError.value);
+watch(crmLoadError, showCrmLoadError);
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 watch(query, () => {
   clearTimeout(debounceTimer);
@@ -144,6 +160,104 @@ const contacts = computed(() =>
       (!companyFilter.value || c.company_id === Number(companyFilter.value)),
   ),
 );
+type DirectorySortDirection = 'asc' | 'desc';
+type CompanySortKey = 'name' | 'website' | 'responsible' | 'deals' | 'amount';
+type ContactSortKey = 'name' | 'company' | 'position' | 'communication';
+
+const companyColumns: ReadonlyArray<{ key: CompanySortKey; label: string }> = [
+  { key: 'name', label: 'Компания' },
+  { key: 'website', label: 'Сайт' },
+  { key: 'responsible', label: 'Ответственный' },
+  { key: 'deals', label: 'Открытые сделки' },
+  { key: 'amount', label: 'Сумма в работе' },
+];
+const contactColumns: ReadonlyArray<{ key: ContactSortKey; label: string }> = [
+  { key: 'name', label: 'Контакт' },
+  { key: 'company', label: 'Компания' },
+  { key: 'position', label: 'Должность' },
+  { key: 'communication', label: 'Телефон / Email' },
+];
+const companySortKey = ref<CompanySortKey>('name');
+const companySortDirection = ref<DirectorySortDirection>('asc');
+const contactSortKey = ref<ContactSortKey>('name');
+const contactSortDirection = ref<DirectorySortDirection>('asc');
+const directoryCollator = new Intl.Collator('ru', { numeric: true, sensitivity: 'base' });
+
+const compareDirectoryValues = (left: string | number, right: string | number) => {
+  if (typeof left === 'number' && typeof right === 'number') return left - right;
+  return directoryCollator.compare(String(left), String(right));
+};
+const getCompanySortValue = (company: CrmCompany, key: CompanySortKey): string | number => {
+  if (key === 'responsible') return ownerName(company.responsible_id);
+  if (key === 'deals') return stats(company.id).count;
+  if (key === 'amount') return Number(stats(company.id).amount);
+  return company[key];
+};
+const getContactSortValue = (contact: CrmContact, key: ContactSortKey): string => {
+  if (key === 'name') return contactFullName(contact);
+  if (key === 'company') return companyName(contact.company_id);
+  if (key === 'communication') return `${contact.phone} ${contact.email}`.trim();
+  return contact.position;
+};
+const sortedCompanies = computed(() =>
+  companies.value
+    .map((company, originalIndex) => ({ company, originalIndex }))
+    .sort((left, right) => {
+      const comparison = compareDirectoryValues(
+        getCompanySortValue(left.company, companySortKey.value),
+        getCompanySortValue(right.company, companySortKey.value),
+      );
+      if (comparison === 0) return left.originalIndex - right.originalIndex;
+      return companySortDirection.value === 'asc' ? comparison : -comparison;
+    })
+    .map(({ company }) => company),
+);
+const sortedContacts = computed(() =>
+  contacts.value
+    .map((contact, originalIndex) => ({ contact, originalIndex }))
+    .sort((left, right) => {
+      const comparison = compareDirectoryValues(
+        getContactSortValue(left.contact, contactSortKey.value),
+        getContactSortValue(right.contact, contactSortKey.value),
+      );
+      if (comparison === 0) return left.originalIndex - right.originalIndex;
+      return contactSortDirection.value === 'asc' ? comparison : -comparison;
+    })
+    .map(({ contact }) => contact),
+);
+const toggleCompanySort = (key: CompanySortKey) => {
+  if (companySortKey.value === key) {
+    companySortDirection.value = companySortDirection.value === 'asc' ? 'desc' : 'asc';
+    return;
+  }
+  companySortKey.value = key;
+  companySortDirection.value = 'asc';
+};
+const toggleContactSort = (key: ContactSortKey) => {
+  if (contactSortKey.value === key) {
+    contactSortDirection.value = contactSortDirection.value === 'asc' ? 'desc' : 'asc';
+    return;
+  }
+  contactSortKey.value = key;
+  contactSortDirection.value = 'asc';
+};
+const getDirectoryAriaSort = <T extends string>(
+  key: T,
+  activeKey: T,
+  direction: DirectorySortDirection,
+): 'ascending' | 'descending' | 'none' => {
+  if (key !== activeKey) return 'none';
+  return direction === 'asc' ? 'ascending' : 'descending';
+};
+const getDirectorySortLabel = <T extends string>(
+  key: T,
+  label: string,
+  activeKey: T,
+  direction: DirectorySortDirection,
+) => {
+  const nextDirection = key === activeKey && direction === 'asc' ? 'desc' : 'asc';
+  return `Сортировать столбец «${label}» по ${nextDirection === 'asc' ? 'возрастанию' : 'убыванию'}`;
+};
 const companyContacts = computed(() =>
   companyForm.value.id ? (options.value?.contacts ?? []).filter((contact) => contact.company_id === companyForm.value.id) : [],
 );
@@ -436,12 +550,10 @@ const optionalContactOptions = computed<SelectOption[]>(() => [
   { value: null, label: 'Контактное лицо не выбрано' },
   ...contactOptions.value,
 ]);
-const dealContactOptions = computed<SelectOption[]>(
-  () => [
-    { value: null, label: 'Контактное лицо не выбрано' },
-    ...(options.value?.contacts.map((contact) => ({ value: contact.id, label: contactFullName(contact) })) ?? []),
-  ],
-);
+const dealContactOptions = computed<SelectOption[]>(() => [
+  { value: null, label: 'Контактное лицо не выбрано' },
+  ...(options.value?.contacts.map((contact) => ({ value: contact.id, label: contactFullName(contact) })) ?? []),
+]);
 const selectedContactId = computed<number | null>({
   get: () => draft.primary_contact_id ?? draft.contact_ids[0] ?? null,
   set: (value) => {
@@ -450,9 +562,7 @@ const selectedContactId = computed<number | null>({
     draft.primary_contact_id = id;
   },
 });
-const selectedContact = computed(() =>
-  options.value?.contacts.find((contact) => contact.id === selectedContactId.value),
-);
+const selectedContact = computed(() => options.value?.contacts.find((contact) => contact.id === selectedContactId.value));
 const selectedContactTelegramHref = computed(() => {
   const telegram = selectedContact.value?.telegram?.trim();
   if (!telegram) return '';
@@ -919,11 +1029,17 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
         </button>
       </div>
     </div>
-    <div v-if="optionsError || boardError" role="alert" class="crm__error">
-      Не удалось загрузить CRM. <button @click="refreshAll">Повторить</button>
-    </div>
     <p v-if="error" role="alert" class="crm__error">{{ error }}</p>
-    <div v-if="section === CrmSection.DEALS" class="crm__board" aria-label="Воронка сделок">
+    <div
+      v-if="section === CrmSection.DEALS"
+      class="crm__board"
+      :class="{ crm__board_dragging: isBoardDragging }"
+      aria-label="Воронка сделок"
+      @pointerdown="onBoardPointerDown"
+      @pointermove="onBoardPointerMove"
+      @pointerup="onBoardPointerEnd"
+      @pointercancel="onBoardPointerEnd"
+    >
       <section
         v-for="column in board"
         :key="column.stage.id"
@@ -1007,48 +1123,89 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       </section>
     </div>
     <div v-else class="crm__directory">
-      <table v-if="section === CrmSection.COMPANIES">
-        <thead>
-          <tr>
-            <th>Компания</th>
-            <th>Сайт</th>
-            <th>Ответственный</th>
-            <th>Открытые сделки</th>
-            <th>Сумма в работе</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in companies" :key="c.id">
-            <td>
-              <button @click="openDirectory(CrmPanel.COMPANY, c.id)">{{ c.name }}</button>
-            </td>
-            <td>{{ c.website || 'Не указан' }}</td>
-            <td>{{ ownerName(c.responsible_id) }}</td>
-            <td>{{ stats(c.id).count }}</td>
-            <td>{{ money(stats(c.id).amount) }}</td>
-          </tr>
-        </tbody>
-      </table>
-      <table v-else>
-        <thead>
-          <tr>
-            <th>Контакт</th>
-            <th>Компания</th>
-            <th>Должность</th>
-            <th>Телефон / Email</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="c in contacts" :key="c.id">
-            <td>
-              <button @click="openDirectory(CrmPanel.CONTACT, c.id)">{{ contactFullName(c) }}</button>
-            </td>
-            <td>{{ companyName(c.company_id) }}</td>
-            <td>{{ c.position }}</td>
-            <td>{{ c.phone }}<br />{{ c.email }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <span class="crm__directory-count">
+        {{ section === CrmSection.COMPANIES ? sortedCompanies.length : sortedContacts.length }} записей
+      </span>
+      <div v-if="section === CrmSection.COMPANIES && sortedCompanies.length" class="crm__table-wrap">
+        <table class="crm__table">
+          <thead>
+            <tr>
+              <th
+                v-for="column of companyColumns"
+                :key="column.key"
+                :aria-sort="getDirectoryAriaSort(column.key, companySortKey, companySortDirection)"
+              >
+                <button
+                  type="button"
+                  class="crm__sort-button"
+                  :class="{ 'crm__sort-button_active': companySortKey === column.key }"
+                  :aria-label="getDirectorySortLabel(column.key, column.label, companySortKey, companySortDirection)"
+                  @click="toggleCompanySort(column.key)"
+                >
+                  <span>{{ column.label }}</span>
+                  <ArrowUpDown v-if="companySortKey !== column.key" :size="16" aria-hidden="true" />
+                  <ArrowUp v-else-if="companySortDirection === 'asc'" :size="16" aria-hidden="true" />
+                  <ArrowDown v-else :size="16" aria-hidden="true" />
+                </button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="company in sortedCompanies" :key="company.id">
+              <td>
+                <button class="crm__directory-link" @click="openDirectory(CrmPanel.COMPANY, company.id)">
+                  {{ company.name }}
+                </button>
+              </td>
+              <td>{{ company.website || 'Не указан' }}</td>
+              <td>{{ ownerName(company.responsible_id) }}</td>
+              <td>{{ stats(company.id).count }}</td>
+              <td>{{ money(stats(company.id).amount) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-else-if="section === CrmSection.CONTACTS && sortedContacts.length" class="crm__table-wrap">
+        <table class="crm__table">
+          <thead>
+            <tr>
+              <th
+                v-for="column of contactColumns"
+                :key="column.key"
+                :aria-sort="getDirectoryAriaSort(column.key, contactSortKey, contactSortDirection)"
+              >
+                <button
+                  type="button"
+                  class="crm__sort-button"
+                  :class="{ 'crm__sort-button_active': contactSortKey === column.key }"
+                  :aria-label="getDirectorySortLabel(column.key, column.label, contactSortKey, contactSortDirection)"
+                  @click="toggleContactSort(column.key)"
+                >
+                  <span>{{ column.label }}</span>
+                  <ArrowUpDown v-if="contactSortKey !== column.key" :size="16" aria-hidden="true" />
+                  <ArrowUp v-else-if="contactSortDirection === 'asc'" :size="16" aria-hidden="true" />
+                  <ArrowDown v-else :size="16" aria-hidden="true" />
+                </button>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="contact in sortedContacts" :key="contact.id">
+              <td>
+                <button class="crm__directory-link" @click="openDirectory(CrmPanel.CONTACT, contact.id)">
+                  {{ contactFullName(contact) }}
+                </button>
+              </td>
+              <td>{{ companyName(contact.company_id) }}</td>
+              <td>{{ contact.position || 'Не указана' }}</td>
+              <td class="crm__communication">
+                <span>{{ contact.phone || 'Телефон не указан' }}</span>
+                <span>{{ contact.email || 'Email не указан' }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <p v-if="!(section === CrmSection.COMPANIES ? companies.length : contacts.length)" class="crm__empty">
         Ничего не найдено. Измените поиск или добавьте запись.
       </p>
@@ -1137,333 +1294,328 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
         Не удалось открыть сделку. <button @click="refreshDeal()">Повторить</button>
       </p>
       <template v-else-if="!dealPending && deal">
-          <p v-if="deal.loss_reason" class="crm__deal-loss-reason">Причина проигрыша: {{ deal.loss_reason }}</p>
-          <div class="crm__deal-content">
-            <div class="crm__deal-main">
-              <section class="crm__section crm__section_tasks" aria-labelledby="crm-tasks-title">
-                <div class="crm__section-header">
-                  <h3 id="crm-tasks-title">Привязанные задачи</h3>
-                  <label class="crm__check"><input v-model="showCompleted" type="checkbox" />Показать завершённые</label>
-                </div>
-                <div v-for="t in tasks" :key="t.id" class="crm__task">
-                  <button @click="openTask(t.id)">
-                    {{ t.title }}
-                    <small
-                      >{{ t.planned_date || 'Без даты' }} ·
-                      {{ t.status === 'closed' ? 'Закрыта' : t.status === 'in_progress' ? 'Выполняется' : 'К выполнению' }}</small
+        <p v-if="deal.loss_reason" class="crm__deal-loss-reason">Причина проигрыша: {{ deal.loss_reason }}</p>
+        <div class="crm__deal-content">
+          <div class="crm__deal-main">
+            <section class="crm__section crm__section_tasks" aria-labelledby="crm-tasks-title">
+              <div class="crm__section-header">
+                <h3 id="crm-tasks-title">Привязанные задачи</h3>
+                <label class="crm__check"><input v-model="showCompleted" type="checkbox" />Показать завершённые</label>
+              </div>
+              <div v-for="t in tasks" :key="t.id" class="crm__task">
+                <button @click="openTask(t.id)">
+                  {{ t.title }}
+                  <small
+                    >{{ t.planned_date || 'Без даты' }} ·
+                    {{ t.status === 'closed' ? 'Закрыта' : t.status === 'in_progress' ? 'Выполняется' : 'К выполнению' }}</small
+                  >
+                </button>
+                <button v-if="t.status !== 'closed'" :disabled="busy" @click="completeTask(t.id)">Завершить</button>
+              </div>
+              <div class="crm__link-task">
+                <button
+                  v-if="!isTaskLinkOpen"
+                  type="button"
+                  class="crm__link-task-trigger"
+                  aria-controls="crm-task-link-form"
+                  :aria-expanded="isTaskLinkOpen"
+                  @click="openTaskLink"
+                >
+                  <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
+                  <span>Привязать существующую задачу</span>
+                </button>
+                <div v-else id="crm-task-link-form" class="crm__link-task-editor">
+                  <div class="crm__link-task-input">
+                    <input
+                      ref="taskLinkInput"
+                      v-model="taskSearch"
+                      :maxlength="MAX_TASK_NAME_LENGTH"
+                      type="search"
+                      role="combobox"
+                      autocomplete="off"
+                      placeholder="Найдите существующую задачу"
+                      aria-label="Поиск существующей задачи"
+                      aria-autocomplete="list"
+                      aria-controls="crm-task-link-results"
+                      :aria-expanded="Boolean(taskSearchPending || taskSearch.trim())"
+                      @input="handleTaskSearchInput"
+                      @keydown.escape="cancelTaskLink"
+                    />
+                    <div
+                      v-if="taskSearchPending || taskSearch.trim()"
+                      id="crm-task-link-results"
+                      class="crm__link-task-dropdown"
+                      role="listbox"
+                      aria-label="Результаты поиска задач"
                     >
-                  </button>
-                  <button v-if="t.status !== 'closed'" :disabled="busy" @click="completeTask(t.id)">Завершить</button>
+                      <span v-if="taskSearchPending" class="crm__link-task-state" role="status">Поиск…</span>
+                      <template v-else>
+                        <button
+                          v-for="task in taskResults"
+                          :key="task.id"
+                          type="button"
+                          class="crm__link-task-result"
+                          role="option"
+                          :disabled="busy"
+                          @click="linkTask(task.id)"
+                        >
+                          {{ task.title }}
+                        </button>
+                        <span v-if="!taskResults.length" class="crm__link-task-state" role="status">
+                          Подходящих задач не найдено
+                        </span>
+                      </template>
+                    </div>
+                  </div>
+                  <div class="crm__link-task-actions">
+                    <button type="button" class="button button_secondary" :disabled="busy" @click="cancelTaskLink">
+                      Отменить
+                    </button>
+                  </div>
                 </div>
-                <div class="crm__link-task">
+              </div>
+            </section>
+
+            <section class="crm__comments">
+              <div class="crm__comments-header">
+                <span>Действия</span>
+                <div class="crm__comments-tools">
                   <button
-                    v-if="!isTaskLinkOpen"
+                    class="crm__comments-add"
                     type="button"
-                    class="crm__link-task-trigger"
-                    aria-controls="crm-task-link-form"
-                    :aria-expanded="isTaskLinkOpen"
-                    @click="openTaskLink"
+                    :aria-expanded="isTaskFormOpen"
+                    @click="isTaskFormOpen ? closeTaskForm() : openTaskForm()"
                   >
                     <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
-                    <span>Привязать существующую задачу</span>
+                    {{ isTaskFormOpen ? 'Отменить' : 'Добавить' }}
                   </button>
-                  <div v-else id="crm-task-link-form" class="crm__link-task-editor">
-                    <div class="crm__link-task-input">
-                      <input
-                        ref="taskLinkInput"
-                        v-model="taskSearch"
-                        :maxlength="MAX_TASK_NAME_LENGTH"
-                        type="search"
-                        role="combobox"
-                        autocomplete="off"
-                        placeholder="Найдите существующую задачу"
-                        aria-label="Поиск существующей задачи"
-                        aria-autocomplete="list"
-                        aria-controls="crm-task-link-results"
-                        :aria-expanded="Boolean(taskSearchPending || taskSearch.trim())"
-                        @input="handleTaskSearchInput"
-                        @keydown.escape="cancelTaskLink"
-                      />
-                      <div
-                        v-if="taskSearchPending || taskSearch.trim()"
-                        id="crm-task-link-results"
-                        class="crm__link-task-dropdown"
-                        role="listbox"
-                        aria-label="Результаты поиска задач"
-                      >
-                        <span v-if="taskSearchPending" class="crm__link-task-state" role="status">Поиск…</span>
-                        <template v-else>
-                          <button
-                            v-for="task in taskResults"
-                            :key="task.id"
-                            type="button"
-                            class="crm__link-task-result"
-                            role="option"
-                            :disabled="busy"
-                            @click="linkTask(task.id)"
-                          >
-                            {{ task.title }}
-                          </button>
-                          <span v-if="!taskResults.length" class="crm__link-task-state" role="status">
-                            Подходящих задач не найдено
-                          </span>
-                        </template>
-                      </div>
-                    </div>
-                    <div class="crm__link-task-actions">
-                      <button type="button" class="button button_secondary" :disabled="busy" @click="cancelTaskLink">
-                        Отменить
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section class="crm__comments">
-                <div class="crm__comments-header">
-                  <span>Действия</span>
-                  <div class="crm__comments-tools">
-                    <button
-                      class="crm__comments-add"
-                      type="button"
-                      :aria-expanded="isTaskFormOpen"
-                      @click="isTaskFormOpen ? closeTaskForm() : openTaskForm()"
-                    >
-                      <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
-                      {{ isTaskFormOpen ? 'Отменить' : 'Добавить' }}
-                    </button>
-                    <button class="crm__comments-sort" type="button" @click="toggleTimelineSort">
-                      <span>{{ TYPE_SORT_LABELS[timelineSort] }}</span>
-                      <IconSortAsc v-if="timelineSort === TypeSort.ASC" aria-hidden="true" />
-                      <IconSortDesc v-else aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-                <p class="crm__next-action" :class="{ 'crm__next-action_empty': !deal.next_task }">
-                  <CalendarDays :size="18" :stroke-width="1.75" aria-hidden="true" />
-                  <span v-if="deal.next_task"
-                    >Следующее действие: {{ deal.next_task.title }} · {{ deal.next_task.planned_date || 'без даты' }}</span
-                  >
-                  <span v-else>Следующий шаг не запланирован</span>
-                </p>
-                <form v-if="isTaskFormOpen" class="crm__inline-form" @submit.prevent="createTask" @keydown.esc.stop="closeTaskForm">
-                  <label class="crm__inline-form-title">
-                    <span>Название задачи</span>
-                    <input
-                      ref="taskTitleInput"
-                      v-model="taskTitle"
-                      required
-                      minlength="3"
-                      maxlength="150"
-                      placeholder="Что нужно сделать"
-                    />
-                  </label>
-                  <label>
-                    <span>Ответственный</span>
-                    <BaseSelect
-                      v-model="taskOwner"
-                      :options="responsibleOptions"
-                      placeholder="Выберите ответственного"
-                      large
-                      arrow
-                    />
-                  </label>
-                  <label>
-                    <span>Дата</span>
-                    <input v-model="taskDate" type="date" required />
-                  </label>
-                  <button class="crm__primary" :disabled="busy">
-                    <Plus :size="18" :stroke-width="1.75" aria-hidden="true" />Создать
-                  </button>
-                </form>
-                <div v-if="timelineSort === TypeSort.DESC" class="crm__comments-form">
-                  <div class="crm__comments-input">
-                    <EditorTiptap
-                      :key="`comment-${deal.id}-top`"
-                      ref="commentEditor"
-                      v-model="comment"
-                      placeholder="Напишите комментарий..."
-                      :value="comment"
-                      :is-editable="true"
-                      :file-prefix="`crm/deals/${deal.id}/`"
-                      :mention-users="crmMentionUsers"
-                      @enter="sendComment"
-                    />
-                    <button class="crm__primary" :disabled="busy || !hasTiptapContent(comment)" @click="sendComment">
-                      Отправить
-                    </button>
-                  </div>
-                </div>
-                <div v-if="timeline.length" class="crm__comments-body crm__comments-body_timeline">
-                  <div
-                    v-for="activity in timeline"
-                    :key="activity.id"
-                    class="crm__comments-event"
-                    :class="{ 'crm__comments-event_comment': activity.kind === CrmActivityKind.COMMENT }"
-                  >
-                    <article v-if="activity.kind === CrmActivityKind.COMMENT" class="crm__timeline-comment">
-                      <span class="crm__timeline-avatar" aria-hidden="true">{{ authorInitials(activity.author_name) }}</span>
-                      <div class="crm__timeline-comment-content">
-                        <header>
-                          <span>{{ activity.author_name }}</span>
-                          <time :datetime="activity.created_at">{{ formatCommentDate(activity.created_at) }}</time>
-                        </header>
-                        <EditorTiptap
-                          v-if="activity.message"
-                          :value="activity.message"
-                          :model-value="activity.message"
-                          :is-editable="false"
-                        />
-                      </div>
-                    </article>
-                    <article v-else class="crm__timeline-activity">
-                      <History class="crm__timeline-activity-icon" :size="16" aria-hidden="true" />
-                      <div class="crm__timeline-activity-content">
-                        <header>
-                          <strong>{{ activity.author_name }}</strong>
-                          <time :datetime="activity.created_at" :title="formatActivityDate(activity.created_at)">
-                            {{ formatActivityDate(activity.created_at) }}
-                          </time>
-                        </header>
-                        <div>{{ activity.summary }}</div>
-                      </div>
-                    </article>
-                  </div>
-                </div>
-                <div v-else class="crm__comments-body">Комментариев и действий пока нет</div>
-                <div v-if="timelineSort === TypeSort.ASC" class="crm__comments-form">
-                  <div class="crm__comments-input">
-                    <EditorTiptap
-                      :key="`comment-${deal.id}-bottom`"
-                      ref="commentEditor"
-                      v-model="comment"
-                      placeholder="Напишите комментарий..."
-                      :value="comment"
-                      :is-editable="true"
-                      :file-prefix="`crm/deals/${deal.id}/`"
-                      :mention-users="crmMentionUsers"
-                      @enter="sendComment"
-                    />
-                    <button class="crm__primary" :disabled="busy || !hasTiptapContent(comment)" @click="sendComment">
-                      Отправить
-                    </button>
-                  </div>
-                </div>
-              </section>
-            </div>
-
-            <div id="crm-deal-fields" class="crm__deal-meta" :aria-busy="busy">
-              <label
-                >Этап<BaseDropdown
-                  :model-value="deal.stage_id"
-                  :options="stageOptions"
-                  placeholder="Этап"
-                  :disabled="busy"
-                  @update:model-value="selectStage"
-              /></label>
-              <label
-                >Сумма, ₽<input
-                  :value="draft.amount ?? ''"
-                  type="number"
-                  min="0"
-                  max="9999999999.99"
-                  step="0.01"
-                  placeholder="Не указана"
-                  :disabled="busy"
-                  @change="updateDealAmount"
-              /></label>
-              <label
-                >Ответственный<BaseDropdown
-                  :model-value="draft.responsible_id"
-                  :options="dealResponsibleOptions"
-                  placeholder="Не назначен"
-                  :disabled="busy"
-                  @update:model-value="updateDealResponsible"
-              /></label>
-              <div class="crm__deal-meta-field">
-                <span>Компания</span>
-                <div class="crm__deal-company-control">
-                  <BaseSelect
-                    :model-value="draft.company_id"
-                    :options="optionalCompanyOptions"
-                    placeholder="Без компании"
-                    large
-                    arrow
-                    searchable
-                    search-placeholder="Поиск компании"
-                    action-label="Добавить компанию"
-                    :disabled="busy"
-                    @update:model-value="updateDealCompany"
-                    @action="openDirectory(CrmPanel.COMPANY, 0, true)"
-                  />
-                  <button
-                    v-if="draft.company_id"
-                    class="crm__deal-company-open"
-                    type="button"
-                    aria-label="Открыть компанию"
-                    title="Открыть компанию"
-                    :disabled="busy"
-                    @click="openDirectory(CrmPanel.COMPANY, draft.company_id, true)"
-                  >
-                    <ExternalLink :size="16" :stroke-width="1.75" aria-hidden="true" />
+                  <button class="crm__comments-sort" type="button" @click="toggleTimelineSort">
+                    <span>{{ TYPE_SORT_LABELS[timelineSort] }}</span>
+                    <IconSortAsc v-if="timelineSort === TypeSort.ASC" aria-hidden="true" />
+                    <IconSortDesc v-else aria-hidden="true" />
                   </button>
                 </div>
               </div>
-              <label
-                >Контактное лицо<BaseSelect
-                  :model-value="selectedContactId"
-                  :options="dealContactOptions"
-                  placeholder="Контактное лицо не выбрано"
+              <p class="crm__next-action" :class="{ 'crm__next-action_empty': !deal.next_task }">
+                <CalendarDays :size="18" :stroke-width="1.75" aria-hidden="true" />
+                <span v-if="deal.next_task"
+                  >Следующее действие: {{ deal.next_task.title }} · {{ deal.next_task.planned_date || 'без даты' }}</span
+                >
+                <span v-else>Следующий шаг не запланирован</span>
+              </p>
+              <form v-if="isTaskFormOpen" class="crm__inline-form" @submit.prevent="createTask" @keydown.esc.stop="closeTaskForm">
+                <label class="crm__inline-form-title">
+                  <span>Название задачи</span>
+                  <input
+                    ref="taskTitleInput"
+                    v-model="taskTitle"
+                    required
+                    minlength="3"
+                    maxlength="150"
+                    placeholder="Что нужно сделать"
+                  />
+                </label>
+                <label>
+                  <span>Ответственный</span>
+                  <BaseSelect
+                    v-model="taskOwner"
+                    :options="responsibleOptions"
+                    placeholder="Выберите ответственного"
+                    large
+                    arrow
+                  />
+                </label>
+                <label>
+                  <span>Дата</span>
+                  <input v-model="taskDate" type="date" required />
+                </label>
+                <button class="crm__primary" :disabled="busy">
+                  <Plus :size="18" :stroke-width="1.75" aria-hidden="true" />Создать
+                </button>
+              </form>
+              <div v-if="timelineSort === TypeSort.DESC" class="crm__comments-form">
+                <div class="crm__comments-input">
+                  <EditorTiptap
+                    :key="`comment-${deal.id}-top`"
+                    ref="commentEditor"
+                    v-model="comment"
+                    placeholder="Напишите комментарий..."
+                    :value="comment"
+                    :is-editable="true"
+                    :file-prefix="`crm/deals/${deal.id}/`"
+                    :mention-users="crmMentionUsers"
+                    @enter="sendComment"
+                  />
+                  <button class="crm__primary" :disabled="busy || !hasTiptapContent(comment)" @click="sendComment">
+                    Отправить
+                  </button>
+                </div>
+              </div>
+              <div v-if="timeline.length" class="crm__comments-body crm__comments-body_timeline">
+                <div
+                  v-for="activity in timeline"
+                  :key="activity.id"
+                  class="crm__comments-event"
+                  :class="{ 'crm__comments-event_comment': activity.kind === CrmActivityKind.COMMENT }"
+                >
+                  <article v-if="activity.kind === CrmActivityKind.COMMENT" class="crm__timeline-comment">
+                    <span class="crm__timeline-avatar" aria-hidden="true">{{ authorInitials(activity.author_name) }}</span>
+                    <div class="crm__timeline-comment-content">
+                      <header>
+                        <span>{{ activity.author_name }}</span>
+                        <time :datetime="activity.created_at">{{ formatCommentDate(activity.created_at) }}</time>
+                      </header>
+                      <EditorTiptap
+                        v-if="activity.message"
+                        :value="activity.message"
+                        :model-value="activity.message"
+                        :is-editable="false"
+                      />
+                    </div>
+                  </article>
+                  <article v-else class="crm__timeline-activity">
+                    <History class="crm__timeline-activity-icon" :size="16" aria-hidden="true" />
+                    <div class="crm__timeline-activity-content">
+                      <header>
+                        <strong>{{ activity.author_name }}</strong>
+                        <time :datetime="activity.created_at" :title="formatActivityDate(activity.created_at)">
+                          {{ formatActivityDate(activity.created_at) }}
+                        </time>
+                      </header>
+                      <div>{{ activity.summary }}</div>
+                    </div>
+                  </article>
+                </div>
+              </div>
+              <div v-else class="crm__comments-body">Комментариев и действий пока нет</div>
+              <div v-if="timelineSort === TypeSort.ASC" class="crm__comments-form">
+                <div class="crm__comments-input">
+                  <EditorTiptap
+                    :key="`comment-${deal.id}-bottom`"
+                    ref="commentEditor"
+                    v-model="comment"
+                    placeholder="Напишите комментарий..."
+                    :value="comment"
+                    :is-editable="true"
+                    :file-prefix="`crm/deals/${deal.id}/`"
+                    :mention-users="crmMentionUsers"
+                    @enter="sendComment"
+                  />
+                  <button class="crm__primary" :disabled="busy || !hasTiptapContent(comment)" @click="sendComment">
+                    Отправить
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div id="crm-deal-fields" class="crm__deal-meta" :aria-busy="busy">
+            <label
+              >Этап<BaseDropdown
+                :model-value="deal.stage_id"
+                :options="stageOptions"
+                placeholder="Этап"
+                :disabled="busy"
+                @update:model-value="selectStage"
+            /></label>
+            <label
+              >Сумма, ₽<input
+                :value="draft.amount ?? ''"
+                type="number"
+                min="0"
+                max="9999999999.99"
+                step="0.01"
+                placeholder="Не указана"
+                :disabled="busy"
+                @change="updateDealAmount"
+            /></label>
+            <label
+              >Ответственный<BaseDropdown
+                :model-value="draft.responsible_id"
+                :options="dealResponsibleOptions"
+                placeholder="Не назначен"
+                :disabled="busy"
+                @update:model-value="updateDealResponsible"
+            /></label>
+            <div class="crm__deal-meta-field">
+              <span>Компания</span>
+              <div class="crm__deal-company-control">
+                <BaseSelect
+                  :model-value="draft.company_id"
+                  :options="optionalCompanyOptions"
+                  placeholder="Без компании"
                   large
                   arrow
                   searchable
-                  search-placeholder="Поиск контакта"
-                  action-label="Добавить контакт"
+                  search-placeholder="Поиск компании"
+                  action-label="Добавить компанию"
                   :disabled="busy"
-                  @update:model-value="updateDealContact"
-                  @action="openDirectory(CrmPanel.CONTACT, 0, true)"
-              /></label>
-              <address v-if="selectedContact" class="crm__deal-contact-summary">
-                <strong>{{ contactFullName(selectedContact) }}</strong>
-                <a v-if="selectedContact.phone" :href="`tel:${selectedContact.phone}`">
-                  <Phone :size="16" :stroke-width="1.75" aria-hidden="true" />
-                  <span>{{ selectedContact.phone }}</span>
-                </a>
-                <a v-if="selectedContact.email" :href="`mailto:${selectedContact.email}`">
-                  <Mail :size="16" :stroke-width="1.75" aria-hidden="true" />
-                  <span>{{ selectedContact.email }}</span>
-                </a>
-                <a
-                  v-if="selectedContact.telegram"
-                  :href="selectedContactTelegramHref"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  @update:model-value="updateDealCompany"
+                  @action="openDirectory(CrmPanel.COMPANY, 0, true)"
+                />
+                <button
+                  v-if="draft.company_id"
+                  class="crm__deal-company-open"
+                  type="button"
+                  aria-label="Открыть компанию"
+                  title="Открыть компанию"
+                  :disabled="busy"
+                  @click="openDirectory(CrmPanel.COMPANY, draft.company_id, true)"
                 >
-                  <Send :size="16" :stroke-width="1.75" aria-hidden="true" />
-                  <span>{{ selectedContact.telegram }}</span>
-                </a>
-                <span v-if="!hasSelectedContactChannels" class="crm__deal-contact-empty">Контактные данные не указаны</span>
-              </address>
-              <label
-                >Источник заявки<BaseSelect
-                  :model-value="draft.source"
-                  :options="optionalSourceOptions"
-                  placeholder="Источник не определён"
-                  large
-                  arrow
-                  :disabled="busy"
-                  @update:model-value="updateDealSource"
-              /></label>
-              <label
-                >Проект<BaseDropdown
-                  :model-value="draft.project_id"
-                  :options="dealProjectOptions"
-                  placeholder="Без проекта"
-                  :disabled="busy"
-                  @update:model-value="updateDealProject"
-              /></label>
+                  <ExternalLink :size="16" :stroke-width="1.75" aria-hidden="true" />
+                </button>
+              </div>
             </div>
+            <label
+              >Контактное лицо<BaseSelect
+                :model-value="selectedContactId"
+                :options="dealContactOptions"
+                placeholder="Контактное лицо не выбрано"
+                large
+                arrow
+                searchable
+                search-placeholder="Поиск контакта"
+                action-label="Добавить контакт"
+                :disabled="busy"
+                @update:model-value="updateDealContact"
+                @action="openDirectory(CrmPanel.CONTACT, 0, true)"
+            /></label>
+            <address v-if="selectedContact" class="crm__deal-contact-summary">
+              <strong>{{ contactFullName(selectedContact) }}</strong>
+              <a v-if="selectedContact.phone" :href="`tel:${selectedContact.phone}`">
+                <Phone :size="16" :stroke-width="1.75" aria-hidden="true" />
+                <span>{{ selectedContact.phone }}</span>
+              </a>
+              <a v-if="selectedContact.email" :href="`mailto:${selectedContact.email}`">
+                <Mail :size="16" :stroke-width="1.75" aria-hidden="true" />
+                <span>{{ selectedContact.email }}</span>
+              </a>
+              <a v-if="selectedContact.telegram" :href="selectedContactTelegramHref" target="_blank" rel="noopener noreferrer">
+                <Send :size="16" :stroke-width="1.75" aria-hidden="true" />
+                <span>{{ selectedContact.telegram }}</span>
+              </a>
+              <span v-if="!hasSelectedContactChannels" class="crm__deal-contact-empty">Контактные данные не указаны</span>
+            </address>
+            <label
+              >Источник заявки<BaseSelect
+                :model-value="draft.source"
+                :options="optionalSourceOptions"
+                placeholder="Источник не определён"
+                large
+                arrow
+                :disabled="busy"
+                @update:model-value="updateDealSource"
+            /></label>
+            <label
+              >Проект<BaseDropdown
+                :model-value="draft.project_id"
+                :options="dealProjectOptions"
+                placeholder="Без проекта"
+                :disabled="busy"
+                @update:model-value="updateDealProject"
+            /></label>
           </div>
+        </div>
       </template>
     </aside>
 
@@ -1484,12 +1636,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       @keydown.esc="closeDirectory"
     >
       <header class="crm__panel-header">
-        <button
-          v-if="returnToDeal"
-          aria-label="Назад к сделке"
-          title="Назад к сделке"
-          @click="closeDirectory"
-        >
+        <button v-if="returnToDeal" aria-label="Назад к сделке" title="Назад к сделке" @click="closeDirectory">
           <ChevronLeft :size="20" :stroke-width="1.75" aria-hidden="true" />
         </button>
         <span>{{ returnToDeal ? 'Назад к сделке' : directoryTitle }}</span>
@@ -1899,9 +2046,19 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     width: 100%;
     padding: 4px 2px 8px;
     overflow-x: auto;
+    cursor: grab;
     scroll-padding-inline: 2px;
     @include flex(rn, stretch);
     gap: 0;
+
+    &_dragging {
+      cursor: grabbing;
+      user-select: none;
+
+      * {
+        cursor: grabbing !important;
+      }
+    }
   }
 
   &__column {
@@ -2112,41 +2269,133 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     margin: 0;
     padding: 16px;
     color: var(--light-text-backgroung-primary-50);
-
   }
   &__error {
     color: var(--danger-delete);
   }
 
   &__directory {
+    width: 100%;
+    min-height: 0;
+    overflow: hidden;
+    @include flex(cn);
+    gap: 12px;
+  }
+
+  &__directory-count {
+    flex-shrink: 0;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+
+  &__table-wrap {
+    width: 100%;
     min-height: 0;
     overflow: auto;
-    table {
-      width: 100%;
-      border-collapse: collapse;
+    max-height: 60vh;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+  }
+
+  &__table {
+    width: 100%;
+    border-collapse: collapse;
+    @extend %text-s-regular;
+
+    th,
+    td {
+      padding: 8px 12px;
+      text-align: left;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--light-text-backgroung-primary-5);
     }
+
     th {
       position: sticky;
       top: 0;
-      background: var(--dark-text-background-primary);
-      text-align: left;
-      color: var(--light-text-backgroung-primary-50);
-      @extend %text-xs-medium;
-    }
-    th,
-    td {
-      padding: 12px;
-      border-bottom: 1px solid var(--light-text-backgroung-primary-10);
-    }
-    td button {
+      z-index: 1;
       padding: 0;
-      border: none;
-      background: transparent;
-      color: var(--light-text-backgroung-primary);
-      text-align: left;
+      background: var(--dark-text-background-primary);
+      @extend %text-s-medium;
     }
-    tr:hover td {
+
+    tbody tr {
+      transition: background 0.15s;
+
+      &:hover {
+        background: var(--light-text-backgroung-primary-5);
+      }
+
+      &:last-child td {
+        border-bottom: none;
+      }
+    }
+
+    td:nth-last-child(-n + 2) {
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  &__sort-button {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+    white-space: nowrap;
+    @include flex(rn, a-center, j-start);
+    gap: 6px;
+    @extend %text-s-medium;
+
+    &:hover {
+      color: var(--light-text-backgroung-primary);
       background: var(--light-text-backgroung-primary-5);
+    }
+
+    &:focus-visible {
+      color: var(--light-text-backgroung-primary);
+      box-shadow: inset 0 0 0 2px var(--primary);
+      outline: none;
+    }
+
+    svg {
+      flex-shrink: 0;
+      opacity: 0.55;
+    }
+
+    &_active {
+      color: var(--light-text-backgroung-primary);
+
+      svg {
+        color: var(--primary);
+        opacity: 1;
+      }
+    }
+  }
+
+  &__directory-link {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--light-text-backgroung-primary);
+    cursor: pointer;
+    text-align: left;
+    @extend %text-s-regular;
+
+    &:hover {
+      color: var(--primary-75);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+  }
+
+  &__communication {
+    span {
+      display: block;
     }
   }
 
@@ -3020,9 +3269,20 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     @include flex(rn, a-center);
   }
   &__task > button:first-child {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
     flex: 1;
     min-width: 0;
+    gap: 2px;
     text-align: left;
+    white-space: normal;
+
+    small {
+      width: 100%;
+      text-align: left;
+    }
   }
   &__check {
     flex-shrink: 0;
@@ -3161,7 +3421,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
 
   @media (max-width: $screen-mobile-l) {
     height: 100%;
-    padding: 12px;
+    padding: 12px var(--mobile-page-gutter);
     gap: 12px;
     &__header {
       align-items: center;

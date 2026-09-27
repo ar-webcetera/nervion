@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { createError, definePageMeta, showError } from '#imports';
+import { definePageMeta } from '#imports';
 import ChatSidebar from '~/components/Chat/ChatSidebar.vue';
 import ChatView from '~/components/Chat/ChatView.vue';
+import { getErrorStatusCode, raisePageError } from '~/utils/error';
 const chatStore = useChatStore();
 const fileStore = useFilesStore();
 const { fetchChatList, fetchChatMessages } = chatStore;
@@ -14,27 +15,6 @@ const getSingleQueryValue = (value: string | null | Array<string | null> | undef
   return Array.isArray(value) ? value.find((item) => typeof item === 'string') ?? null : value;
 };
 const chatId = computed(() => getSingleQueryValue(route.query?.chatId));
-
-interface HttpErrorShape {
-  statusCode?: number;
-  status?: number;
-  response?: {
-    status?: number;
-  };
-}
-
-const getErrorStatusCode = (error: HttpErrorShape): number | null => {
-  return error.statusCode ?? error.status ?? error.response?.status ?? null;
-};
-
-const raisePageError = (statusCode: number, statusMessage: string) => {
-  const pageError = createError({ statusCode, statusMessage });
-  if (import.meta.client) {
-    showError(pageError);
-    return;
-  }
-  throw pageError;
-};
 
 const loadChatPageData = async () => {
   try {
@@ -49,7 +29,7 @@ const loadChatPageData = async () => {
     pendingMessageList.value = true;
     await fetchChatList();
   } catch (error) {
-    const statusCode = getErrorStatusCode(error as HttpErrorShape) ?? 500;
+    const statusCode = getErrorStatusCode(error) ?? 500;
     if (statusCode === 404 && chatId.value) {
       raisePageError(404, 'Чат не найден');
       return;

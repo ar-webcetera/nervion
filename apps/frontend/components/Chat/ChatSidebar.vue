@@ -8,6 +8,7 @@ import { ROLES } from '~/types/user';
 import { gitHubEmojis } from '@tiptap/extension-emoji';
 import VoiceRoomSection from '~/components/Voice/VoiceRoomSection.vue';
 import { MessageCircleOff } from '@lucide/vue';
+import { getErrorStatusCode, raisePageError } from '~/utils/error';
 
 interface User {
   id: number;
@@ -15,14 +16,6 @@ interface User {
   last_name: string;
   email: string;
   photo_url?: string;
-}
-
-interface HttpErrorShape {
-  statusCode?: number;
-  status?: number;
-  response?: {
-    status?: number;
-  };
 }
 
 const chatStore = useChatStore();
@@ -79,10 +72,6 @@ const router = useRouter();
 const { formatMessageDate } = useDateFormatter();
 
 const emojiByName = new Map(gitHubEmojis.map(({ name, emoji }) => [name.toLowerCase(), emoji]));
-
-const getErrorStatusCode = (error: HttpErrorShape): number | null => {
-  return error.statusCode ?? error.status ?? error.response?.status ?? null;
-};
 
 const renderLastMessage = (message?: string | null): string => {
   if (!message) return 'Начните общение';
@@ -276,26 +265,14 @@ const openChat = async (chat: ChatListItem) => {
       }
     }
   } catch (e) {
-    const statusCode = getErrorStatusCode(e as HttpErrorShape);
+    const statusCode = getErrorStatusCode(e);
     if (statusCode === 404) {
       if (!import.meta.server) {
         $toast.error(getErrorMessage(e));
       }
       return;
     }
-    if (!import.meta.server) {
-      showError(
-        createError({
-          statusCode: statusCode ?? 500,
-          statusMessage: 'Не удалось загрузить сообщения чата',
-        }),
-      );
-    } else {
-      throw createError({
-        statusCode: statusCode ?? 500,
-        statusMessage: 'Не удалось загрузить сообщения чата',
-      });
-    }
+    raisePageError(statusCode ?? 500, 'Не удалось загрузить сообщения чата');
   }
 };
 
@@ -534,7 +511,7 @@ const vImgReveal = {
   gap: 16px;
 
   @media (max-width: $screen-mobile-l) {
-    padding: 16px 16px 20px;
+    padding: 16px var(--mobile-page-gutter) 20px;
     gap: 0;
   }
 

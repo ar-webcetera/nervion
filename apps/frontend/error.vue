@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { NuxtError } from 'nuxt/app';
-const route = useRoute();
 const statusCode = ref(500);
 
 const header = ref('Упс! Произошла ошибка');
@@ -9,8 +8,6 @@ const description = ref('Не удалось загрузить контент. 
 
 const buttonText = ref('На главную');
 
-const rawCode = route;
-
 const props = defineProps({
   error: {
     type: Object as PropType<NuxtError>,
@@ -18,11 +15,13 @@ const props = defineProps({
   },
 });
 
+statusCode.value = props.error.statusCode || 500;
+
 if (props.error.statusCode === 401) {
   statusCode.value = 401;
   header.value = 'Не можем вас пустить';
   description.value = 'К сожалению, у вас нет доступа к данной странице';
-} else if (props.error.statusCode === 403 || Number(rawCode) === 403) {
+} else if (props.error.statusCode === 403) {
   statusCode.value = 403;
   header.value = 'Не можем вас пустить';
   description.value = 'К сожалению, у вас нет доступа к данной странице';
@@ -36,6 +35,7 @@ if (props.error.statusCode === 401) {
 <template>
   <div class="error__wrapper">
     <div class="error">
+      <span class="error__code">Ошибка {{ statusCode }}</span>
       <h1 class="error__header">
         {{ header }}
       </h1>
@@ -79,6 +79,12 @@ if (props.error.statusCode === 401) {
     line-height: 1.2;
     margin: 0;
     color: var(--white-100);
+  }
+
+  &__code {
+    color: var(--light-text-backgroung-primary-50);
+    font-variant-numeric: tabular-nums;
+    @extend %text-s-medium;
   }
 
   &__description {

@@ -495,6 +495,9 @@ export const useTaskStore = defineStore('task', () => {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       },
     });
+    for (const column of response.columns) {
+      column.cards.sort((left, right) => Number(right.priority || 0) - Number(left.priority || 0));
+    }
     weeklyTasks.value = response;
     currentViewingWeekStart.value = response.week_start;
     return response;

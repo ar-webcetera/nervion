@@ -2173,6 +2173,11 @@ watch(
       padding: 10px 16px;
       overflow-x: auto;
     }
+
+    @media (max-width: $screen-mobile-l) {
+      padding-right: var(--mobile-page-gutter);
+      padding-left: var(--mobile-page-gutter);
+    }
   }
 
   &__folder-nav {
@@ -2446,6 +2451,11 @@ watch(
     @include flex(cn);
     gap: 8px;
     padding: 16px 16px 12px;
+
+    @media (max-width: $screen-mobile-l) {
+      padding-right: var(--mobile-page-gutter);
+      padding-left: var(--mobile-page-gutter);
+    }
   }
 
   &__compose-mobile {
@@ -2560,7 +2570,9 @@ watch(
     padding: 16px;
 
     @media (max-width: $screen-mobile-l) {
+      padding-right: var(--mobile-page-gutter);
       padding-bottom: calc(16px + var(--mobile-nav-h));
+      padding-left: var(--mobile-page-gutter);
     }
   }
 
@@ -2697,6 +2709,11 @@ watch(
     background: var(--light-text-backgroung-primary-5);
     @include flex(rn, between, a-center);
     gap: 12px;
+
+    @media (max-width: $screen-mobile-l) {
+      padding-right: var(--mobile-page-gutter);
+      padding-left: var(--mobile-page-gutter);
+    }
   }
 
   &__selection-count {
@@ -2785,6 +2802,11 @@ watch(
     background: transparent;
     text-align: left;
     cursor: pointer;
+
+    @media (max-width: $screen-mobile-l) {
+      padding-right: var(--mobile-page-gutter);
+      padding-left: var(--mobile-page-gutter);
+    }
 
     :deep(.thread-actions__trigger) {
       position: absolute;
