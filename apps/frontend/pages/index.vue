@@ -807,19 +807,21 @@ useHead({
           type="button"
           class="toggle-view-type__button"
           :class="{ 'toggle-view-type__button_active': viewType === ViewType.KANBAN }"
+          aria-label="Канбан"
           @click="setViewType(ViewType.KANBAN)"
         >
           <LayoutDashboard :size="20" :stroke-width="1.75" aria-hidden="true" />
-          Канбан
+          <span class="toggle-view-type__label">Канбан</span>
         </button>
         <button
           type="button"
           class="toggle-view-type__button"
           :class="{ 'toggle-view-type__button_active': viewType === ViewType.WEEKLY }"
+          aria-label="Неделя"
           @click="setViewType(ViewType.WEEKLY)"
         >
           <CalendarDays :size="20" :stroke-width="1.75" aria-hidden="true" />
-          Неделя
+          <span class="toggle-view-type__label">Неделя</span>
           <span v-if="taskStore.myTodayTasksCount > 0" class="toggle-view-type__badge">
             {{ taskStore.myTodayTasksCount }}
           </span>
@@ -828,10 +830,11 @@ useHead({
           type="button"
           class="toggle-view-type__button"
           :class="{ 'toggle-view-type__button_active': viewType === ViewType.LIST }"
+          aria-label="Список"
           @click="setViewType(ViewType.LIST)"
         >
           <List :size="20" :stroke-width="1.75" aria-hidden="true" />
-          Список
+          <span class="toggle-view-type__label">Список</span>
         </button>
       </div>
     </div>
@@ -1268,10 +1271,6 @@ useHead({
   display: flex;
   gap: 12px;
 
-  @media (max-width: $screen-mobile-l) {
-    margin-top: 16px;
-  }
-
   &__button {
     cursor: pointer;
     @include flex(a-center);
@@ -1316,6 +1315,22 @@ useHead({
     line-height: 1;
     @include flex(center);
     @extend %text-xs-medium;
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    margin-top: 16px;
+    gap: 8px;
+
+    &__button {
+      min-width: 44px;
+      min-height: 44px;
+      justify-content: center;
+      padding: 0 8px 4px;
+    }
+
+    &__label {
+      display: none;
+    }
   }
 }
 </style>
