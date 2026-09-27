@@ -7,26 +7,24 @@
   --light-text-backgroung-primary-10: rgba(254, 254, 254, 0.1);
   --light-text-backgroung-primary-25: rgba(254, 254, 254, 0.25);
   --light-text-backgroung-primary: #fefefe;
-  --dark-text-background-primary-5: #16141d;
-  --dark-text-background-primary: #16141d;
-  --app-backdrop: #1b1922;
-  --app-glow: rgba(111, 87, 243, 0.18);
-  --black-50: #0d0d1580;
-  --primary-100: #6b66d9;
-  --primary-dark: #4d48c3;
+  --dark-text-background-primary-5: #171719;
+  --dark-text-background-primary: #171719;
+  --app-backdrop: #1c1c1f;
+  --black-50: rgba(10, 10, 13, 0.6);
+  --primary-100: #6f63c2;
+  --primary-dark: #50469f;
   --green: #12ce8b;
   --green-25: rgba(18, 206, 139, 0.25);
   --green-10: rgba(18, 206, 139, 0.1);
   --secondary: #f75138;
-  --primary: #6f57f3;
-  --primary-75: #6f57f3;
-  --primary-50: rgba(111, 87, 243, 0.5);
-  --primary-25: rgba(111, 87, 243, 0.25);
+  --primary: #6f60ca;
+  --primary-75: #6f60ca;
+  --primary-50: rgba(111, 96, 202, 0.5);
+  --primary-25: rgba(111, 96, 202, 0.25);
   --accent: #fb5916;
   --divider: #888;
-  --dark-text-background-primary: #16141d;
-  --dark-text-background-primary-50: rgba(22, 20, 29, 0.5);
-  --primary-hover: #513acf;
+  --dark-text-background-primary-50: rgba(23, 23, 25, 0.5);
+  --primary-hover: #6253b7;
   --status-in-progress: #f59e0b;
   --light-text-backgroung-primary-50: rgba(254, 254, 254, 0.5);
   --light-text-backgroung-primary-10: rgba(254, 254, 254, 0.1);
@@ -35,9 +33,9 @@
   --danger-delete-10: rgba(251, 22, 22, 0.1);
   --danger-delete-50: rgba(251, 22, 22, 0.5);
 
-  --primary-5: rgba(111, 87, 243, 0.05);
-  --primary-10: rgba(111, 87, 243, 0.1);
-  --primary-15: rgba(111, 87, 243, 0.15);
+  --primary-5: rgba(111, 96, 202, 0.05);
+  --primary-10: rgba(111, 96, 202, 0.1);
+  --primary-15: rgba(111, 96, 202, 0.15);
   --accent-10: rgba(251, 89, 22, 0.1);
   --accent-15: rgba(251, 89, 22, 0.15);
   --accent-50: rgba(251, 89, 22, 0.5);
@@ -52,7 +50,16 @@
 
   --light-text-backgroung-primary-30: rgba(254, 254, 254, 0.3);
 
-  --dark-text-background-secondary: #201d2a;
+  --dark-text-background-secondary: #232327;
+
+  --crm-stage-unprocessed: #8e9199;
+  --crm-stage-qualification: #6f9fc6;
+  --crm-stage-discussion: #5da194;
+  --crm-stage-proposal: #8275c5;
+  --crm-stage-negotiation: #c29a55;
+  --crm-stage-contract: #c97a52;
+  --crm-stage-won: #5c9b72;
+  --crm-stage-lost: #b86161;
 
   --status-blue: #38aef7;
   --status-violet: #8b5cf6;

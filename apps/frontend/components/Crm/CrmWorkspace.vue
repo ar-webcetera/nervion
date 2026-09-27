@@ -98,18 +98,18 @@ const money = (amount: string | number | null) =>
     ? 'Не указана'
     : new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 2 }).format(Number(amount));
 const stageColor = (stage: CrmColumn['stage']) => {
-  if (stage.kind === CrmStageKind.WON) return 'var(--status-emerald)';
-  if (stage.kind === CrmStageKind.LOST) return 'var(--danger-delete)';
+  if (stage.kind === CrmStageKind.WON) return 'var(--crm-stage-won)';
+  if (stage.kind === CrmStageKind.LOST) return 'var(--crm-stage-lost)';
 
   return (
     {
-      1: 'var(--light-text-backgroung-primary-50)',
-      2: 'var(--status-blue)',
-      3: 'var(--status-blue)',
-      4: 'var(--primary)',
-      5: 'var(--status-in-progress)',
-      6: 'var(--status-in-progress)',
-    }[stage.position] ?? 'var(--primary)'
+      1: 'var(--crm-stage-unprocessed)',
+      2: 'var(--crm-stage-qualification)',
+      3: 'var(--crm-stage-discussion)',
+      4: 'var(--crm-stage-proposal)',
+      5: 'var(--crm-stage-negotiation)',
+      6: 'var(--crm-stage-contract)',
+    }[stage.position] ?? 'var(--crm-stage-unprocessed)'
   );
 };
 const setStageCollapsed = async (stageId: number, value: boolean) => {
@@ -151,6 +151,7 @@ const panelId = computed(() => Number(route.query.deal || 0));
 const {
   data: deal,
   error: dealError,
+  pending: dealPending,
   refresh: refreshDeal,
 } = await useAsyncData(
   'crm-deal',
@@ -1072,7 +1073,10 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       :inert="directoryPanel ? true : undefined"
       @keydown.esc="closePanel"
     >
-      <header class="crm__panel-header">
+      <div v-if="dealPending" class="loader__wrapper">
+        <div class="loader" role="status" aria-label="Загрузка сделки"></div>
+      </div>
+      <header v-else class="crm__panel-header">
         <form v-if="isEditingDealTitle" class="crm__panel-title-form" @submit.prevent="saveDealTitle">
           <input
             v-model="draft.title"
@@ -1111,7 +1115,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
           title="Дважды нажмите, чтобы изменить"
           @dblclick="startDealTitleEdit"
         >
-          {{ deal?.title || 'Загрузка сделки…' }}
+          {{ deal?.title }}
         </h2>
         <button
           :aria-label="expanded ? 'Свернуть панель' : 'Расширить панель'"
@@ -1128,9 +1132,11 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
           <X :size="20" :stroke-width="1.75" aria-hidden="true" />
         </button>
       </header>
-      <p v-if="error" class="crm__error" role="alert">{{ error }}</p>
-      <p v-if="dealError" role="alert">Не удалось открыть сделку. <button @click="refreshDeal()">Повторить</button></p>
-      <template v-else-if="deal">
+      <p v-if="!dealPending && error" class="crm__error" role="alert">{{ error }}</p>
+      <p v-if="!dealPending && dealError" role="alert">
+        Не удалось открыть сделку. <button @click="refreshDeal()">Повторить</button>
+      </p>
+      <template v-else-if="!dealPending && deal">
           <p v-if="deal.loss_reason" class="crm__deal-loss-reason">Причина проигрыша: {{ deal.loss_reason }}</p>
           <div class="crm__deal-content">
             <div class="crm__deal-main">
@@ -1459,7 +1465,6 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
             </div>
           </div>
       </template>
-      <p v-else role="status">Загрузка сделки…</p>
     </aside>
 
     <div
@@ -2300,6 +2305,12 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
   &__panel > [role='alert'],
   &__panel > [role='status'] {
     margin: 20px 32px 0;
+  }
+
+  .loader__wrapper {
+    width: 100%;
+    height: 100%;
+    @include flex(center);
   }
 
   &__deal-loss-reason {

@@ -18,14 +18,6 @@ body {
     overflow: hidden;
   }
 }
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: radial-gradient(120% 60% at 50% -10%, var(--app-glow), transparent 60%);
-}
 
 .divider {
   height: 1px;
