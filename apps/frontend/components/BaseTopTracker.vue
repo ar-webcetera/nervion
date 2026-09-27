@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Timer, TimerOff } from '@lucide/vue';
+import { Plus, Timer, TimerOff, X } from '@lucide/vue';
 import TaskComponent from '~/components/TaskComponent.vue';
 import BaseModal from '~/components/BaseModal.vue';
 import BaseTimetrack from '~/components/BaseTimetrack.vue';
@@ -7,7 +7,6 @@ import { PAGE_NAMES } from '~/constants/pages.constants';
 import { TIMELOG_STATUSES, type Timelog, type Task } from '~/types/task';
 import { UNBOUND_TIMELOG_TITLE } from '@tracker/contracts';
 import { computed, ref } from 'vue';
-import IconLongBack from './Icons/IconLongBack.vue';
 import { getErrorMessage } from '~/utils/error';
 
 const taskStore = useTaskStore();
@@ -236,21 +235,21 @@ onBeforeUnmount(() => {
     </button>
     <div v-if="isOpen" class="tracker-modal">
       <div class="tracker-modal__header">
-        <p @click="toggle"><IconLongBack />Тайм-трекер</p>
+        <h2>Тайм-трекер</h2>
         <div class="tracker-modal__header-actions">
-          <button type="button" class="tracker-modal__new" @click="openNewTimerModal">+ Новый таймер</button>
-          <svg
-            class="cursor-pointer"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
+          <button type="button" class="tracker-modal__new" @click="openNewTimerModal">
+            <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
+            <span>Новый таймер</span>
+          </button>
+          <button
+            type="button"
+            class="tracker-modal__close"
+            aria-label="Закрыть тайм-трекер"
+            title="Закрыть"
             @click="toggle"
           >
-            <path d="M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-            <path d="M6 6L18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+            <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+          </button>
         </div>
       </div>
       <div v-if="unboundTimelogs.length || taskStore.tasksWithTimelogs.length" class="tracking-bar">
@@ -434,8 +433,10 @@ onBeforeUnmount(() => {
 }
 
 .empty-message {
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
-  height: 100%;
+  height: auto;
   max-width: 280px;
   margin: auto;
   @include flex(cn, center);
@@ -457,6 +458,10 @@ onBeforeUnmount(() => {
   p {
     margin: 0;
     @extend %text-xs-regular;
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    padding: 24px 16px max(24px, env(safe-area-inset-bottom));
   }
 }
 
@@ -497,7 +502,7 @@ onBeforeUnmount(() => {
     right: 0;
     bottom: 0;
     width: 100%;
-    height: 100%;
+    height: 100dvh;
     min-width: unset;
     max-height: unset;
     z-index: 1000;
@@ -506,6 +511,7 @@ onBeforeUnmount(() => {
   }
 
   &__header {
+    flex: 0 0 auto;
     width: 100%;
     padding: 16px 24px;
     @include flex(rn, a-center, between);
@@ -513,53 +519,85 @@ onBeforeUnmount(() => {
     @extend %text-l-medium;
     color: var(--light-text-backgroung-primary);
 
+    h2 {
+      min-width: 0;
+      margin: 0;
+      @extend %text-l-medium;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     @media (max-width: $screen-mobile-l) {
-      padding: 28px 16px;
-    }
-
-    & > svg {
-      width: 18px;
-      height: 18px;
-
-      @media (max-width: $screen-mobile-l) {
-        display: none;
-      }
-    }
-
-    p {
-      cursor: pointer;
-
-      @media (max-width: $screen-mobile-l) {
-        @include flex(rn, center);
-        gap: 12px;
-      }
-
-      svg {
-        display: none;
-
-        @media (max-width: $screen-mobile-l) {
-          display: block;
-        }
-      }
+      min-height: 72px;
+      padding: max(14px, env(safe-area-inset-top)) 12px 14px 16px;
     }
   }
 
   &__header-actions {
     @include flex(rn, a-center);
-    gap: 12px;
+    flex: 0 0 auto;
+    gap: 4px;
   }
 
   &__new {
-    padding: 6px 10px;
+    min-height: 36px;
+    padding: 7px 10px;
     border-radius: 6px;
     border: 1px solid var(--light-text-backgroung-primary-10);
     background: transparent;
     color: var(--light-text-backgroung-primary);
     cursor: pointer;
     @extend %text-xs-regular;
+    @include flex(rn, a-center);
+    gap: 6px;
 
     &:hover {
       background: var(--light-text-backgroung-primary-5);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
+    }
+
+    @media (max-width: $screen-mobile-l) {
+      min-height: 44px;
+    }
+
+    @media (max-width: 359px) {
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      justify-content: center;
+
+      span {
+        display: none;
+      }
+    }
+  }
+
+  &__close {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+    @include flex(center);
+
+    &:hover,
+    &:focus-visible {
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
     }
   }
 }
@@ -618,6 +656,22 @@ onBeforeUnmount(() => {
     @include flex(rn, a-center);
     gap: 8px;
     flex-shrink: 0;
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+
+    &__title {
+      width: 100%;
+    }
+
+    &__right {
+      justify-content: flex-end;
+      width: 100%;
+    }
   }
 }
 
@@ -770,6 +824,8 @@ onBeforeUnmount(() => {
 }
 
 .tracking-bar {
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 16px 24px;
   width: 100%;
   @include flex(cn);
@@ -808,8 +864,16 @@ onBeforeUnmount(() => {
   }
 
   @media (max-width: $screen-mobile-l) {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding: 12px 16px max(16px, env(safe-area-inset-bottom));
+    margin-top: 0;
+
+    :deep(.task__name-wrapper) {
+      align-items: flex-start;
+    }
+
+    :deep(.task__track) {
+      flex: 0 0 auto;
+    }
   }
 }
 </style>

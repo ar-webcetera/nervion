@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { Bell, BellOff } from '@lucide/vue';
-import IconClose from '~/components/Icons/IconClose.vue';
+import { Bell, BellOff, X } from '@lucide/vue';
 import IconConfirm from '~/components/Icons/IconConfirm.vue';
 import type { Notification } from '~/types/notification';
 import { format } from 'date-fns';
-import IconLongBack from './Icons/IconLongBack.vue';
 
 const { $toast } = useNuxtApp();
 
@@ -103,11 +101,17 @@ onMounted(() => {
     </button>
 
     <div v-if="isOpenNotificationMenu" class="notification__menu">
-      <div v-if="isOpenNotificationMenu" class="notification__menu-header" @click.stop="isOpenNotificationMenu = false">
-        <p><IconLongBack />Уведомления</p>
-        <span>
-          <IconClose />
-        </span>
+      <div class="notification__menu-header">
+        <h2>Уведомления</h2>
+        <button
+          type="button"
+          class="notification__menu-close"
+          aria-label="Закрыть уведомления"
+          title="Закрыть"
+          @click.stop="isOpenNotificationMenu = false"
+        >
+          <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+        </button>
       </div>
       <div class="notification__items-wrapper">
         <div v-if="notifications.length" class="notification__items">
@@ -341,37 +345,39 @@ onMounted(() => {
     padding: 16px 24px 8px 24px;
     border-bottom: 1px solid var(--light-text-backgroung-primary-10);
 
-    @media (max-width: $screen-mobile-l) {
-      padding: 28px 16px;
-    }
-
-    p {
+    h2 {
+      margin: 0;
       @extend %text-l-medium;
       color: var(--light-text-backgroung-primary);
-
-      svg {
-        display: none;
-
-        @media (max-width: $screen-mobile-l) {
-          display: block;
-        }
-      }
-
-      @media (max-width: $screen-mobile-l) {
-        @include flex(rn, center);
-        gap: 12px;
-      }
     }
 
-    span {
-      svg {
-        width: 18px;
-        height: 18px;
-      }
+    @media (max-width: $screen-mobile-l) {
+      min-height: 72px;
+      padding: max(14px, env(safe-area-inset-top)) 12px 14px 16px;
+    }
+  }
 
-      @media (max-width: $screen-mobile-l) {
-        display: none;
-      }
+  &__menu-close {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+    @include flex(center);
+
+    &:hover,
+    &:focus-visible {
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
     }
   }
 
@@ -395,7 +401,7 @@ onMounted(() => {
       right: 0;
       bottom: 0;
       width: 100%;
-      height: 100%;
+      height: 100dvh;
       min-width: unset;
       border-radius: 0;
       border: none;
