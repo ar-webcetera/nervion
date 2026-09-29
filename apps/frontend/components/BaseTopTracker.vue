@@ -26,6 +26,16 @@ const toggle = () => {
   isOpen.value = !isOpen.value;
 };
 
+const open = () => {
+  isOpen.value = true;
+};
+
+const close = () => {
+  isOpen.value = false;
+};
+
+defineExpose({ open, close });
+
 const fetchTasks = async () => {
   try {
     return await taskStore.fetchTasksWithTimelogs();

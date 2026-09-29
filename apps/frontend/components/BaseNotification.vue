@@ -54,6 +54,16 @@ const goToLink = (notificationId: number, link: string) => {
   emit('go-to-link', currentTaskId, link);
 };
 
+const open = () => {
+  isOpenNotificationMenu.value = true;
+};
+
+const close = () => {
+  isOpenNotificationMenu.value = false;
+};
+
+defineExpose({ open, close });
+
 const originalTitle = ref('');
 const updateBadge = (hasUnread: boolean) => {
   if (hasUnread) {
