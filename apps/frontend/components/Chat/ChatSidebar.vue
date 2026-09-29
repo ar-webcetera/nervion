@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { ChatType, type ChatListItem } from '~/stores/chatStore';
-import IconPlus from '~/components/Icons/IconPlus.vue';
 import IconClose from '~/components/Icons/IconClose.vue';
 import IconTrash from '~/components/Icons/IconTrash.vue';
 import BaseModal from '~/components/BaseModal.vue';
 import { ROLES } from '~/types/user';
 import { gitHubEmojis } from '@tiptap/extension-emoji';
 import VoiceRoomSection from '~/components/Voice/VoiceRoomSection.vue';
-import { MessageCircleOff } from '@lucide/vue';
+import { MessageCircleOff, MessageSquarePlus, UsersRound } from '@lucide/vue';
 import { getErrorStatusCode, raisePageError } from '~/utils/error';
 
 interface User {
@@ -293,28 +292,18 @@ const vImgReveal = {
     <div class="chat-list__header">
       <span>Чаты</span>
       <div class="chat-list__actions">
-        <button class="chat-list__new-btn" title="Создать новый чат" @click="openSelectUser">
-          <IconPlus />
+        <button class="chat-list__new-btn" type="button" aria-label="Создать новый чат" title="Создать новый чат" @click="openSelectUser">
+          <MessageSquarePlus :size="20" :stroke-width="1.75" aria-hidden="true" />
         </button>
         <button
           v-if="isAdmin"
           class="chat-list__new-btn chat-list__new-btn_group"
+          type="button"
+          aria-label="Создать групповой чат"
           title="Создать групповой чат"
           @click="openCreateGroup"
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-            <circle cx="9" cy="7" r="4" />
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-          </svg>
+          <UsersRound :size="20" :stroke-width="1.75" aria-hidden="true" />
         </button>
       </div>
     </div>
@@ -559,35 +548,37 @@ const vImgReveal = {
   }
 
   &__new-btn {
-    border: none;
+    width: 38px;
+    height: 38px;
+    padding: 8px;
+    flex: 0 0 38px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: var(--primary);
+    color: var(--light-text-backgroung-primary);
     cursor: pointer;
-    color: var(--primary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 6px;
+    @include flex(center);
     transition: background-color 0.2s ease;
-
-    @media (max-width: $screen-mobile-l) {
-      width: 46px;
-      height: 46px;
-    }
 
     @media (hover: hover) and (pointer: fine) {
       &:hover {
-        background-color: var(--light-text-backgroung-primary-5);
+        background: var(--primary-hover);
       }
     }
 
-    &_group {
-      color: var(--text-secondary);
+    &:focus-visible {
+      outline: 2px solid var(--primary-50);
+      outline-offset: 2px;
+    }
 
-      svg {
-        width: 18px;
-        height: 18px;
-      }
+    svg {
+      flex: 0 0 20px;
+    }
+
+    @media (max-width: $screen-mobile-l) {
+      width: 44px;
+      height: 44px;
+      flex-basis: 44px;
     }
   }
 

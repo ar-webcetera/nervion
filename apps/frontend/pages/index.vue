@@ -322,7 +322,7 @@ const openTaskSidebar = (taskId: number) => {
 
 const isCreateTaskSidebarOpen = ref(false);
 const filterPanelRef = ref<{ clearSearch: () => void } | null>(null);
-const mobileFilterPanelRef = ref<{ clearSearch: () => void; focusSearch: () => void } | null>(null);
+const mobileFilterPanelRef = ref<{ clearSearch: () => void } | null>(null);
 const isMobileSearchOpen = ref(false);
 const isDesktopFilterPanelVisible = ref(false);
 let desktopFilterMediaQuery: MediaQueryList | null = null;
@@ -349,10 +349,8 @@ const closeCreateTaskSidebar = () => {
   isCreateTaskSidebarOpen.value = false;
 };
 
-const openMobileSearch = async () => {
+const openMobileSearch = () => {
   isMobileSearchOpen.value = true;
-  await nextTick();
-  mobileFilterPanelRef.value?.focusSearch();
 };
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -987,6 +985,10 @@ useHead({
 
   svg {
     stroke: var(--light-text-backgroung-primary);
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    min-height: 44px;
   }
 }
 
