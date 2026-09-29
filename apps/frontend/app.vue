@@ -703,7 +703,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <NuxtLoadingIndicator color="var(--primary)" />
+  <BaseRouteLoader />
   <NuxtLayout>
     <NuxtPage />
   </NuxtLayout>

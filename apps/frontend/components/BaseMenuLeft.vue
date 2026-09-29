@@ -414,9 +414,11 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
         />
         <span v-else-if="userStore.user" @click.stop="openPopup()">{{ useShortName(userStore.user) }}</span>
       </div>
-      <div v-if="isPopupOpen" v-click-outside="closePopup">
-        <BaseProfilePopup @close="closePopup" />
-      </div>
+      <Transition name="profile-popup">
+        <div v-if="isPopupOpen" v-click-outside="closePopup" class="base-menu-left__profile-popup-layer">
+          <BaseProfilePopup @close="closePopup" />
+        </div>
+      </Transition>
     </div>
     <div v-if="!hideChrome && !isHiddenMenu" class="base-menu-left__mobile-menu">
       <NuxtLink
@@ -1105,12 +1107,31 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
   }
 }
 
-.mobile-menu-sheet-enter-active,
+.mobile-menu-sheet-enter-active {
+  transition: opacity 0.22s ease;
+
+  .mobile-more-menu__sheet {
+    transition:
+      transform 0.26s cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 0.22s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+
+    .mobile-more-menu__sheet {
+      transition: none;
+    }
+  }
+}
+
 .mobile-menu-sheet-leave-active {
   transition: opacity 0.16s ease;
 
   .mobile-more-menu__sheet {
-    transition: transform 0.2s ease;
+    transition:
+      transform 0.18s ease,
+      opacity 0.16s ease;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -1128,6 +1149,59 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
 
   .mobile-more-menu__sheet {
     transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+.profile-popup-enter-active {
+  transition: opacity 0.2s ease;
+
+  :deep(.base-profile-popup) {
+    transition:
+      transform 0.24s cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 0.2s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+
+    :deep(.base-profile-popup) {
+      transition: none;
+    }
+  }
+}
+
+.profile-popup-leave-active {
+  transition: opacity 0.14s ease;
+
+  :deep(.base-profile-popup) {
+    transition:
+      transform 0.16s ease,
+      opacity 0.14s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+
+    :deep(.base-profile-popup) {
+      transition: none;
+    }
+  }
+}
+
+.profile-popup-enter-from,
+.profile-popup-leave-to {
+  opacity: 0;
+
+  :deep(.base-profile-popup) {
+    transform: translateY(8px) scale(0.98);
+    opacity: 0;
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    :deep(.base-profile-popup) {
+      transform: translateX(100%);
+    }
   }
 }
 
