@@ -1396,6 +1396,7 @@ input {
 
   @media (max-width: $screen-mobile-l) {
     gap: 0;
+    padding: 0;
   }
 
   &__name {
@@ -2075,8 +2076,8 @@ input {
 
     @media (max-width: $screen-mobile-l) {
       @include flex(rn, a-center, between);
-      min-height: 68px;
-      padding: 12px 16px;
+      min-height: 72px;
+      padding: max(14px, env(safe-area-inset-top)) 12px 14px 16px;
       border-bottom: 1px solid var(--light-text-backgroung-primary-10);
     }
   }

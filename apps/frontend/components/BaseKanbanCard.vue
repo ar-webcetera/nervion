@@ -46,8 +46,8 @@ withDefaults(
   width: 100%;
   min-width: 0;
   flex-shrink: 0;
-  padding: 8px 8px 12px;
-  gap: 4px;
+  padding: 8px 8px 16px;
+  gap: 0;
   border: none;
   border-radius: 8px;
   background: var(--light-text-backgroung-primary-5);
@@ -94,6 +94,7 @@ withDefaults(
   &__description {
     width: 100%;
     min-width: 0;
+    margin-top: 4px;
     overflow: hidden;
     overflow-wrap: anywhere;
     color: color-mix(in srgb, var(--light-text-backgroung-primary) 70%, transparent);
@@ -106,7 +107,7 @@ withDefaults(
   &__footer {
     width: 100%;
     min-width: 0;
-    margin-top: 4px;
+    margin-top: 8px;
     gap: 8px;
     @include flex(rw, a-center);
   }

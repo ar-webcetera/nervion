@@ -2258,8 +2258,7 @@ watch(
     @extend %p12-medium;
 
     @media (max-width: $screen-tablet) {
-      padding: 0 4px 0 8px;
-      white-space: nowrap;
+      display: none;
     }
   }
 
@@ -2290,8 +2289,7 @@ watch(
     padding: 4px 0 8px;
 
     @media (max-width: $screen-tablet) {
-      flex-direction: row;
-      padding: 0;
+      display: none;
     }
   }
 
@@ -2341,8 +2339,12 @@ watch(
     flex: 0 0 26px;
     opacity: 0;
 
-    @media (hover: none), (max-width: $screen-tablet) {
+    @media (hover: none) {
       opacity: 1;
+    }
+
+    @media (max-width: $screen-tablet) {
+      display: none;
     }
   }
 
