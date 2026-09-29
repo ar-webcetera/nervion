@@ -15,6 +15,7 @@ interface Props {
   businessKindOptions?: SelectOption[];
   filterDefinitions?: FilterDefinition[];
   searchPlaceholder?: string;
+  searchValue?: string;
   showExport?: boolean;
   isExporting?: boolean;
 }
@@ -24,8 +25,18 @@ const props = defineProps<Props>();
 const emit = defineEmits(['search', 'add-filter', 'remove-filter', 'toggle-filter-mode', 'export']);
 
 const dropdownRef = ref<InstanceType<typeof AddFilterDropdown> | null>(null);
-const searchInput = ref('');
+const searchInput = ref(props.searchValue ?? '');
+const searchInputElement = ref<HTMLInputElement | null>(null);
 const isDropdownOpen = ref(false);
+
+watch(
+  () => props.searchValue,
+  (value) => {
+    if (typeof value === 'string' && value !== searchInput.value) {
+      searchInput.value = value;
+    }
+  },
+);
 
 const selectedFilters = computed(() => {
   if (!props.filters) return [];
@@ -59,7 +70,11 @@ const clearSearch = () => {
   searchInput.value = '';
 };
 
-defineExpose({ clearSearch });
+const focusSearch = () => {
+  searchInputElement.value?.focus();
+};
+
+defineExpose({ clearSearch, focusSearch });
 </script>
 
 <template>
@@ -97,6 +112,7 @@ defineExpose({ clearSearch });
     </div>
     <div class="task-filter-panel__right">
       <input
+        ref="searchInputElement"
         v-model="searchInput"
         type="text"
         :placeholder="searchPlaceholder || 'Поиск по названию, коду или номеру задачи'"

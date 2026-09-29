@@ -13,7 +13,7 @@ import { useProjectStore } from '~/stores/projectStore';
 import type { Task } from '~/types/task';
 import type { JSONContent } from '@tiptap/core';
 import IconButtonLoader from '~/components/Icons/IconButtonLoader.vue';
-import { CalendarDays, LayoutDashboard, List } from '@lucide/vue';
+import { CalendarDays, LayoutDashboard, List, Search, X } from '@lucide/vue';
 import { TASK_STATUS_LABELS, MAX_TASK_NAME_LENGTH } from '~/constants/task.constants';
 import { format } from 'date-fns';
 const projectStore = useProjectStore();
@@ -322,6 +322,8 @@ const openTaskSidebar = (taskId: number) => {
 
 const isCreateTaskSidebarOpen = ref(false);
 const filterPanelRef = ref<{ clearSearch: () => void } | null>(null);
+const mobileFilterPanelRef = ref<{ clearSearch: () => void; focusSearch: () => void } | null>(null);
+const isMobileSearchOpen = ref(false);
 
 const openCreateTaskSidebar = () => {
   isCreateTaskSidebarOpen.value = true;
@@ -329,6 +331,12 @@ const openCreateTaskSidebar = () => {
 
 const closeCreateTaskSidebar = () => {
   isCreateTaskSidebarOpen.value = false;
+};
+
+const openMobileSearch = async () => {
+  isMobileSearchOpen.value = true;
+  await nextTick();
+  mobileFilterPanelRef.value?.focusSearch();
 };
 
 let searchTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -651,6 +659,7 @@ const resetFiltersLocal = () => {
   taskStore.filter.negativeFilters = {};
   taskStore.filter.title = undefined;
   filterPanelRef.value?.clearSearch();
+  mobileFilterPanelRef.value?.clearSearch();
 };
 
 const toggleTodayFilter = async () => {
@@ -670,6 +679,11 @@ const toggleTodayFilter = async () => {
   taskStore.filter.planned_date = [today, today];
   await taskStore.saveFilterState();
   refreshCurrentView();
+};
+
+const toggleTodayFilterFromMobile = async () => {
+  await toggleTodayFilter();
+  isMobileSearchOpen.value = false;
 };
 
 const swapPriorityTask = async (taskIds: number[]) => {
@@ -765,12 +779,14 @@ useHead({
     <div :class="['home__tasks-filters', { 'home__tasks-filters_mb-16': !filterChips.length }]">
       <TaskFilterPanel
         ref="filterPanelRef"
+        class="home__desktop-filter-panel"
         :filters="filterChips"
         :status-options="statusOptions"
         :project-options="projectOptions"
         :user-options="usersOptions"
         :task-type-options="taskTypeOptions"
         :business-kind-options="userStore.user?.role === 'admin' ? businessKindOptions : []"
+        :search-value="taskStore.filter.title || ''"
         :is-exporting="isExporting"
         @add-filter="addFilter"
         @search="handleSearch"
@@ -783,24 +799,6 @@ useHead({
         <input type="checkbox" :checked="isTodayFilterActive" @change="toggleTodayFilter" />
         <span>Мои сегодня</span>
       </label>
-
-      <div v-if="filterChips && filterChips.length" class="home__filter-chips home__filter-chips_mob">
-        <div v-for="chip in filterChips" :key="chip.id" class="home__filter-chip">
-          <button
-            v-if="chip.canNegate !== false"
-            class="home__filter-chip-toggle"
-            :class="{ 'home__filter-chip-toggle_negative': chip.isNegative }"
-            @click="toggleFilterMode(chip.id)"
-          >
-            <IconsIconEquality v-if="!chip.isNegative" />
-            <IconsIconEqualityNot v-else />
-          </button>
-          <span class="home__filter-chip-label">{{ chip.label }}</span>
-          <button class="home__filter-chip-remove" @click="removeFilter(chip.id)">
-            <IconsIconCloseFilter />
-          </button>
-        </div>
-      </div>
 
       <div class="toggle-view-type">
         <button
@@ -837,6 +835,19 @@ useHead({
           <span class="toggle-view-type__label">Список</span>
         </button>
       </div>
+
+      <button
+        type="button"
+        class="home__mobile-search-button"
+        :class="{ 'home__mobile-search-button_active': filterChips.length > 0 }"
+        aria-label="Открыть поиск и фильтры"
+        aria-haspopup="dialog"
+        :aria-expanded="isMobileSearchOpen"
+        @click="openMobileSearch"
+      >
+        <Search :size="20" :stroke-width="1.75" aria-hidden="true" />
+        <span v-if="filterChips.length" class="home__mobile-search-count">{{ filterChips.length }}</span>
+      </button>
     </div>
 
     <div v-if="filterChips && filterChips.length" class="home__filter-chips">
@@ -902,6 +913,44 @@ useHead({
     </div>
 
     <CreateTaskSidebar v-if="isCreateTaskSidebarOpen" @close="closeCreateTaskSidebar" />
+
+    <BaseModal v-model="isMobileSearchOpen" class="home__mobile-search-modal">
+      <section class="mobile-task-search" aria-labelledby="mobile-task-search-title">
+        <header class="mobile-task-search__header">
+          <h2 id="mobile-task-search-title" class="mobile-task-search__title">Поиск и фильтры</h2>
+          <button
+            type="button"
+            class="mobile-task-search__close"
+            aria-label="Закрыть поиск и фильтры"
+            @click="isMobileSearchOpen = false"
+          >
+            <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+          </button>
+        </header>
+        <TaskFilterPanel
+          ref="mobileFilterPanelRef"
+          :filters="filterChips"
+          :status-options="statusOptions"
+          :project-options="projectOptions"
+          :user-options="usersOptions"
+          :task-type-options="taskTypeOptions"
+          :business-kind-options="userStore.user?.role === 'admin' ? businessKindOptions : []"
+          :search-value="taskStore.filter.title || ''"
+          :show-export="false"
+          @add-filter="addFilter"
+          @search="handleSearch"
+          @remove-filter="removeFilter"
+          @toggle-filter-mode="toggleFilterMode"
+        />
+        <label
+          class="home__today-filter mobile-task-search__today"
+          :class="{ 'home__today-filter_active': isTodayFilterActive }"
+        >
+          <input type="checkbox" :checked="isTodayFilterActive" @change="toggleTodayFilterFromMobile" />
+          <span>Мои сегодня</span>
+        </label>
+      </section>
+    </BaseModal>
   </div>
 </template>
 
@@ -1073,10 +1122,16 @@ useHead({
     }
 
     @media (max-width: $screen-mobile-l) {
-      flex-wrap: wrap;
-      flex-direction: column;
-      align-items: start;
-      gap: 0;
+      width: 100%;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 8px;
+    }
+  }
+
+  &__desktop-filter-panel {
+    @media (max-width: $screen-mobile-l) {
+      display: none;
     }
   }
 
@@ -1115,8 +1170,57 @@ useHead({
     }
 
     @media (max-width: $screen-mobile-l) {
-      margin-top: 8px;
+      display: none;
     }
+  }
+
+  &__mobile-search-button {
+    display: none;
+
+    @media (max-width: $screen-mobile-l) {
+      position: relative;
+      @include flex(center);
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      margin-left: auto;
+      flex: 0 0 44px;
+      border: 0;
+      border-bottom: 1px solid transparent;
+      border-radius: 0;
+      background: transparent;
+      color: var(--light-text-backgroung-primary-50);
+
+      &:hover,
+      &_active {
+        color: var(--light-text-backgroung-primary);
+      }
+
+      &_active {
+        border-bottom-color: var(--primary);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+      }
+    }
+  }
+
+  &__mobile-search-count {
+    position: absolute;
+    top: 4px;
+    right: 1px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--primary);
+    color: var(--light-text-backgroung-primary);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    @include flex(center);
+    @extend %text-xs-medium;
   }
 
   &__task-filters {
@@ -1142,17 +1246,7 @@ useHead({
     margin-bottom: 16px;
 
     @media (max-width: $screen-mobile-l) {
-      display: none;
-    }
-
-    &_mob {
-      display: none;
-
-      @media (max-width: $screen-mobile-l) {
-        display: flex;
-        margin-bottom: 0;
-        margin-top: 8px;
-      }
+      margin-bottom: 8px;
     }
   }
 
@@ -1318,7 +1412,8 @@ useHead({
   }
 
   @media (max-width: $screen-mobile-l) {
-    margin-top: 16px;
+    margin-top: 0;
+    margin-left: 0;
     gap: 8px;
 
     &__button {
@@ -1331,6 +1426,71 @@ useHead({
     &__label {
       display: none;
     }
+  }
+}
+
+.mobile-task-search {
+  @include flex(cn);
+  gap: 16px;
+  padding: 0 20px;
+
+  &__header {
+    @include flex(rn between a-center);
+    gap: 16px;
+  }
+
+  &__title {
+    margin: 0;
+    color: var(--light-text-backgroung-primary);
+    @extend %display-xs-medium;
+  }
+
+  &__close {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    flex: 0 0 44px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    @include flex(center);
+
+    &:hover {
+      color: var(--light-text-backgroung-primary);
+      background: var(--light-text-backgroung-primary-5);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+  }
+
+  &__today {
+    display: flex;
+    align-self: flex-start;
+  }
+}
+
+.home__mobile-search-modal {
+  :deep(.base-modal__header) {
+    display: none;
+  }
+
+  :deep(.base-modal__content) {
+    width: min(100%, 420px);
+  }
+
+  :deep(.add-filter-dropdown__types) {
+    width: calc(100vw - 104px);
+    max-width: 316px;
+  }
+
+  :deep(.add-filter-dropdown__values) {
+    top: 0 !important;
+    left: 0;
+    width: 100%;
   }
 }
 </style>
