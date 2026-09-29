@@ -1369,6 +1369,13 @@ input {
       gap: 8px;
     }
   }
+
+  @media (max-width: $screen-mobile-l) {
+    &__container {
+      padding-right: 16px;
+      padding-left: 16px;
+    }
+  }
 }
 
 .task-sidebar {
