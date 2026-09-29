@@ -324,6 +324,22 @@ const isCreateTaskSidebarOpen = ref(false);
 const filterPanelRef = ref<{ clearSearch: () => void } | null>(null);
 const mobileFilterPanelRef = ref<{ clearSearch: () => void; focusSearch: () => void } | null>(null);
 const isMobileSearchOpen = ref(false);
+const isDesktopFilterPanelVisible = ref(false);
+let desktopFilterMediaQuery: MediaQueryList | null = null;
+
+const syncDesktopFilterPanelVisibility = () => {
+  isDesktopFilterPanelVisible.value = desktopFilterMediaQuery?.matches ?? false;
+};
+
+onMounted(() => {
+  desktopFilterMediaQuery = window.matchMedia('(min-width: 481px)');
+  syncDesktopFilterPanelVisibility();
+  desktopFilterMediaQuery.addEventListener('change', syncDesktopFilterPanelVisibility);
+});
+
+onBeforeUnmount(() => {
+  desktopFilterMediaQuery?.removeEventListener('change', syncDesktopFilterPanelVisibility);
+});
 
 const openCreateTaskSidebar = () => {
   isCreateTaskSidebarOpen.value = true;
@@ -778,6 +794,7 @@ useHead({
     </div>
     <div :class="['home__tasks-filters', { 'home__tasks-filters_mb-16': !filterChips.length }]">
       <TaskFilterPanel
+        v-show="isDesktopFilterPanelVisible"
         ref="filterPanelRef"
         class="home__desktop-filter-panel"
         :filters="filterChips"
@@ -795,7 +812,11 @@ useHead({
         @export="handleExport"
       />
 
-      <label class="home__today-filter" :class="{ 'home__today-filter_active': isTodayFilterActive }">
+      <label
+        v-show="isDesktopFilterPanelVisible"
+        class="home__today-filter"
+        :class="{ 'home__today-filter_active': isTodayFilterActive }"
+      >
         <input type="checkbox" :checked="isTodayFilterActive" @change="toggleTodayFilter" />
         <span>Мои сегодня</span>
       </label>
