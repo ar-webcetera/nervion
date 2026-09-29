@@ -257,6 +257,12 @@ const checkArrowActivity = (month: number, year: number) => {
   padding: 2px;
 }
 
+:deep(.dp__cell_inner) {
+  font-size: 16px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
 :deep(.dp__today) {
   border: none;
 }
@@ -299,6 +305,8 @@ const checkArrowActivity = (month: number, year: number) => {
 
 .calendar {
   --dp-font-family: 'Inter', sans-serif;
+  --dp-font-size: 16px;
+  --dp-preview-font-size: 14px;
 
   &__wrapper {
     @include flex(rn, a-center);

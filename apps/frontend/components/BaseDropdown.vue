@@ -147,7 +147,7 @@ const selectOption = (option: SelectOption) => {
 .base-dropdown {
   position: relative;
   color: var(--light-text-backgroung-primary-50);
-  @extend %text-xs-regular;
+  @extend %text-s-regular;
 
   &_disabled {
     opacity: 0.5;
