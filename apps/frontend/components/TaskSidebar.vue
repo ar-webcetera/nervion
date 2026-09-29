@@ -2076,7 +2076,7 @@ input {
     @media (max-width: $screen-mobile-l) {
       @include flex(rn, a-center, between);
       min-height: 68px;
-      padding: 12px;
+      padding: 12px 16px;
       border-bottom: 1px solid var(--light-text-backgroung-primary-10);
     }
   }
