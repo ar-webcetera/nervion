@@ -9,6 +9,15 @@ const rootStore = useRootStore();
 const router = useRouter();
 const route = useRoute();
 
+const mobileReadyRouteNames = new Set<string>([
+  PAGE_NAMES.home,
+  PAGE_NAMES.CHAT,
+  PAGE_NAMES.MAIL,
+  PAGE_NAMES.report,
+  PAGE_NAMES.AUDIT_LOGS,
+  PAGE_NAMES.MAIL_ACCOUNTS,
+]);
+
 const closeSidebar = () => {
   const { ['task-id']: _taskId, ['task-date']: _taskDate, ...query } = route.query;
 
@@ -18,7 +27,9 @@ const closeSidebar = () => {
 };
 
 const isHidden = computed(() => {
-  return route.name !== 'home' && route.name !== 'chat' && route.name !== 'mail' && !route.path.startsWith('/crm');
+  const routeName = typeof route.name === 'string' ? route.name : '';
+
+  return !mobileReadyRouteNames.has(routeName) && !route.path.startsWith('/crm');
 });
 
 const chatId = computed(() => route.query?.chatId);
