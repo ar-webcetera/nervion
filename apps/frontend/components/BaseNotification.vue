@@ -141,7 +141,7 @@ onMounted(() => {
         <div v-else class="notification__empty" role="status">
           <BellOff :size="28" :stroke-width="1.75" aria-hidden="true" />
           <strong>Уведомлений пока нет</strong>
-          <p>Здесь появятся новые события по задачам и проектам.</p>
+          <p>Здесь появятся новые события по задачам, проектам и CRM.</p>
         </div>
       </div>
       <div v-if="notifications.length" class="notification__read-all-button-wrapper">

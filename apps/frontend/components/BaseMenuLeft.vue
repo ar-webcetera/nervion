@@ -104,7 +104,7 @@ onUnmounted(() => {
 });
 
 const goToLink = (currentTaskId: number, link: string) => {
-  taskStore.currentTaskId = currentTaskId;
+  if (currentTaskId > 0) taskStore.currentTaskId = currentTaskId;
   router.push(link);
 };
 
@@ -356,6 +356,17 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
       >
         <div v-if="mailInboxUnreadCount > 0" class="chat-unread-badge">{{ mailInboxUnreadCount }}</div>
         <Mail v-bind="navigationIconProps" />
+      </NuxtLink>
+      <NuxtLink
+        v-if="userStore.user?.role === ROLES.admin && isMenuVisible('crm')"
+        to="/crm/deals"
+        class="base-menu-left__item base-menu-left__item_mob"
+        :class="{ 'base-menu-left__item_active': isCrmRoute }"
+        :aria-current="isCrmRoute ? 'page' : undefined"
+        aria-label="CRM"
+        title="CRM"
+      >
+        <Funnel v-bind="navigationIconProps" />
       </NuxtLink>
     </div>
   </div>

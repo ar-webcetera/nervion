@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager, In, QueryFailedError, Repository } from 'typeorm';
 import {
   CrmActivityKind,
@@ -11,6 +12,8 @@ import {
   type CrmDealDetail,
   type CrmOptions,
   type CrmTask,
+  type JsonObject,
+  type JsonValue,
 } from '@tracker/contracts';
 import {
   CrmActivityEntity,
@@ -39,13 +42,18 @@ import { TasksService } from '../tasks/tasks.service';
 import { TASK_STATUSES } from '../common/enums/statuses.enum';
 import { ROLES } from '../common/enums/roles.enum';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class CrmService {
+  private readonly logger = new Logger(CrmService.name);
+
   constructor(
     private readonly db: DataSource,
     private readonly tasks: TasksService,
     private readonly events: WebsocketGateway,
+    private readonly notifications: NotificationsService,
+    private readonly config: ConfigService,
   ) {}
   private author(user: AuthenticatedUser): string {
     return `${user.first_name} ${user.last_name}`.trim();
@@ -345,10 +353,25 @@ export class CrmService {
             ? `Изменены: ${changed.join(', ')}${before.stage_id !== deal.stage_id ? `. Новый этап: ${stage.name}` : ''}`
             : 'Создана сделка',
         );
-      return deal.id;
+      return {
+        id: deal.id,
+        title: deal.title,
+        responsibleId: deal.responsible_id,
+        previousResponsibleId: before.responsible_id,
+        isCreated: !id,
+      };
     });
     void this.events.sendCrmChanged();
-    return this.detail(result);
+    if (result.isCreated && result.responsibleId) {
+      void this.notifyDealCreated(result.id, result.title, result.responsibleId);
+    } else if (
+      result.responsibleId &&
+      result.responsibleId !== result.previousResponsibleId &&
+      result.responsibleId !== user.id
+    ) {
+      void this.notifyResponsibleAssigned(result.id, result.title, result.responsibleId);
+    }
+    return this.detail(result.id);
   }
   private async activity(m: EntityManager, id: number, user: AuthenticatedUser, summary: string) {
     await m
@@ -356,12 +379,111 @@ export class CrmService {
       .save({ deal_id: id, kind: CrmActivityKind.CHANGE, summary, author_name: this.author(user) });
   }
   async comment(id: number, dto: CrmCommentDto, user: AuthenticatedUser) {
-    await this.detail(id);
+    const deal = await this.detail(id);
     const result = await this.db
       .getRepository(CrmActivityEntity)
       .save({ deal_id: id, kind: CrmActivityKind.COMMENT, message: dto.message, summary: '', author_name: this.author(user) });
     void this.events.sendCrmChanged();
+    void this.notifyDealComment(deal, dto.message, user);
     return result;
+  }
+
+  private dealLink(id: number): string {
+    return `/crm/deals?deal=${id}`;
+  }
+
+  private absoluteDealLink(id: number): string {
+    const domain = this.config.get<string>('APP_DOMAIN');
+    return `https://tracker.${domain}${this.dealLink(id)}`;
+  }
+
+  private notificationHtml(message: string, dealId: number): string {
+    return `<p>${this.escapeHtml(message)}</p><p><a href="${this.absoluteDealLink(dealId)}" target="_blank" rel="noopener noreferrer">Перейти к сделке</a></p>`;
+  }
+
+  private notifyDealCreated(dealId: number, title: string, responsibleId: number): void {
+    const subject = `Новая сделка: ${title}`;
+    const message = `Вы назначены ответственным за сделку «${title}».`;
+    void this.notifications
+      .createWithEmail(
+        { name: subject, message, recipient_id: responsibleId, link: this.dealLink(dealId) },
+        this.notificationHtml(message, dealId),
+      )
+      .catch((error) => this.logger.error(`Не удалось отправить уведомление о новой сделке ${dealId}: ${String(error)}`));
+  }
+
+  private notifyResponsibleAssigned(dealId: number, title: string, responsibleId: number): void {
+    const subject = `Вам назначена сделка: ${title}`;
+    const message = `Вы назначены ответственным за сделку «${title}».`;
+    void this.notifications
+      .createWithEmail(
+        { name: subject, message, recipient_id: responsibleId, link: this.dealLink(dealId) },
+        this.notificationHtml(message, dealId),
+      )
+      .catch((error) => this.logger.error(`Не удалось отправить уведомление о назначении на сделку ${dealId}: ${String(error)}`));
+  }
+
+  private async notifyDealComment(deal: CrmDealDetail, document: JsonObject, author: AuthenticatedUser): Promise<void> {
+    const mentionIds = this.findMentionIds(document);
+    const recipientIds = new Set<number>(mentionIds);
+    if (deal.responsible_id) recipientIds.add(deal.responsible_id);
+    recipientIds.delete(author.id);
+    if (!recipientIds.size) return;
+
+    const recipients = await this.db.getRepository(Users).findBy({ id: In([...recipientIds]), role: ROLES.admin });
+    const authorName = this.author(author);
+    const message = this.extractDocumentText(document) || 'Новый комментарий';
+    await Promise.all(
+      recipients.map((recipient) => {
+        const mentioned = mentionIds.has(recipient.id);
+        const subject = mentioned
+          ? `${authorName} отметил вас в сделке: ${deal.title}`
+          : `${authorName} комментирует сделку: ${deal.title}`;
+        return this.notifications
+          .createWithEmail(
+            { name: subject, message, recipient_id: recipient.id, link: this.dealLink(deal.id) },
+            this.notificationHtml(message, deal.id),
+          )
+          .catch((error) => {
+            this.logger.error(`Не удалось отправить уведомление о комментарии к сделке ${deal.id}: ${String(error)}`);
+          });
+      }),
+    );
+  }
+
+  private findMentionIds(value: JsonValue, result: Set<number> = new Set<number>()): Set<number> {
+    if (Array.isArray(value)) {
+      value.forEach((item) => this.findMentionIds(item, result));
+      return result;
+    }
+    if (value === null || typeof value !== 'object') return result;
+    if (value.type === 'mention' && value.attrs && !Array.isArray(value.attrs) && typeof value.attrs === 'object') {
+      const mentionId = Number(value.attrs.id);
+      if (Number.isInteger(mentionId) && mentionId > 0) result.add(mentionId);
+    }
+    if (Array.isArray(value.content)) this.findMentionIds(value.content, result);
+    return result;
+  }
+
+  private extractDocumentText(value: JsonValue): string {
+    if (Array.isArray(value))
+      return value
+        .map((item) => this.extractDocumentText(item))
+        .filter(Boolean)
+        .join(' ');
+    if (value === null || typeof value !== 'object') return '';
+    if (value.type === 'text' && typeof value.text === 'string') return value.text;
+    if (value.type === 'mention' && value.attrs && !Array.isArray(value.attrs) && typeof value.attrs === 'object') {
+      return typeof value.attrs.label === 'string' ? `@${value.attrs.label}` : '';
+    }
+    return Array.isArray(value.content) ? this.extractDocumentText(value.content).replace(/\s+/g, ' ').trim() : '';
+  }
+
+  private escapeHtml(value: string): string {
+    return value.replace(/[&<>"']/g, (character) => {
+      const entities: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+      return entities[character] ?? character;
+    });
   }
   async createTask(id: number, dto: CrmTaskDto, user: AuthenticatedUser) {
     await this.detail(id);
