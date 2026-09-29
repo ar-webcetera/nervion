@@ -1275,6 +1275,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
           {{ deal?.title }}
         </h2>
         <button
+          class="crm__panel-expand"
           :aria-label="expanded ? 'Свернуть панель' : 'Расширить панель'"
           :title="expanded ? 'Свернуть' : 'Расширить'"
           @click="expanded = !expanded"
@@ -3463,6 +3464,9 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       padding-top: 12px;
       padding-bottom: 12px;
     }
+    &__panel-header > .crm__panel-expand {
+      display: none;
+    }
     &__panel_directory {
       width: calc(100vw - 24px);
       max-height: calc(100dvh - 24px);
@@ -3478,6 +3482,16 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     }
     &__comments {
       padding-top: 24px;
+    }
+    &__comments-header {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 12px;
+    }
+    &__comments-tools {
+      width: 100%;
+      min-width: 0;
+      flex-wrap: wrap;
     }
     &__section-header {
       align-items: flex-start;
