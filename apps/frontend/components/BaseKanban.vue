@@ -66,6 +66,10 @@ const props = defineProps({
       },
     ],
   },
+  quickCreateEnabled: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['click-to-card', 'swap-priority-task', 'update-task', 'toggle-collapse', 'load-more', 'task-created']);
@@ -86,6 +90,13 @@ const onTaskCreated = () => {
   closeQuickCreate();
   emit('task-created');
 };
+
+watch(
+  () => props.quickCreateEnabled,
+  (enabled) => {
+    if (!enabled) quickCreateStatus.value = null;
+  },
+);
 
 const columns = computed<KanbanColumn[]>(() => props.columns);
 
@@ -390,6 +401,7 @@ const dragend = () => {
           {{ column.cards.reduce((sum, c) => sum + (Number(c.story_points) || 0), 0) }} SP
         </span>
         <button
+          v-if="quickCreateEnabled"
           class="kanban__create-btn"
           :class="{ 'kanban__create-btn_active': quickCreateStatus === column.status }"
           :disabled="quickCreatePending"
@@ -415,7 +427,7 @@ const dragend = () => {
       </div>
 
       <KanbanQuickCreate
-        v-if="!column.collapsed && quickCreateStatus === column.status"
+        v-if="quickCreateEnabled && !column.collapsed && quickCreateStatus === column.status"
         :status="column.status"
         @close="closeQuickCreate"
         @created="onTaskCreated"

@@ -895,6 +895,7 @@ useHead({
       <template v-else-if="viewType === ViewType.KANBAN">
         <BaseKanban
           :key="String(taskStore.filter)"
+          :quick-create-enabled="isDesktopFilterPanelVisible"
           :columns="kanban"
           @click-to-card="openTaskSidebar"
           @swap-priority-task="swapPriorityTask"
