@@ -18,14 +18,13 @@ import IconSortDesc from './Icons/IconSortDesc.vue';
 import { hasTiptapContent } from '~/utils/tiptap/content';
 import IconArrowDown from './Icons/IconArrowDown.vue';
 import IconSendTime from './Icons/IconSendTime.vue';
-import IconLongBack from './Icons/IconLongBack.vue';
 import IconRecurrence from './Icons/IconRecurrence.vue';
 import { format, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { getErrorMessage } from '~/utils/error';
 import { TaskBillingType } from '@tracker/contracts';
 import { ROLES } from '~/types/user';
-import { Copy, Trash2 } from '@lucide/vue';
+import { Copy, Trash2, X } from '@lucide/vue';
 
 const RECURRENCE_DAY_OPTIONS = [
   { label: 'Пн', value: 1 },
@@ -366,9 +365,11 @@ const submitComment = async () => {
       </div>
     </div>
     <template v-else>
-      <div class="task-sidebar__close" @click="$emit('close')">
-        <IconLongBack />
+      <div class="task-sidebar__close">
         <span>Задача</span>
+        <button type="button" aria-label="Закрыть задачу" title="Закрыть" @click="$emit('close')">
+          <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+        </button>
       </div>
       <div class="task-sidebar__header">
         <button v-if="route.path.startsWith('/crm') && route.query.deal" @click="emit('close')">Назад к сделке</button>
@@ -2042,16 +2043,41 @@ input {
 
   &__close {
     display: none;
-    border-bottom: 1px solid var(--light-text-backgroung-primary-10);
-
-    @media (max-width: $screen-mobile-l) {
-      @include flex(rn, a-center);
-      gap: 8px;
-      padding: 4px 16px 28px;
-    }
 
     span {
       @extend %text-l-medium;
+    }
+
+    button {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+      @include flex(center);
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--light-text-backgroung-primary-50);
+      cursor: pointer;
+      transition:
+        background 0.15s,
+        color 0.15s;
+
+      &:hover {
+        background: var(--light-text-backgroung-primary-5);
+        color: var(--light-text-backgroung-primary);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: -2px;
+      }
+    }
+
+    @media (max-width: $screen-mobile-l) {
+      @include flex(rn, a-center, between);
+      min-height: 68px;
+      padding: 12px;
+      border-bottom: 1px solid var(--light-text-backgroung-primary-10);
     }
   }
 
