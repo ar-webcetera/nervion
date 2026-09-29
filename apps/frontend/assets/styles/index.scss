@@ -154,7 +154,10 @@ html select:not([multiple]):not([size]) {
 @media (hover: none) and (pointer: coarse) {
   input,
   textarea,
-  select {
-    font-size: 16px;
+  select,
+  [contenteditable='true'] {
+    // iOS увеличивает страницу при фокусе на поле с кеглем меньше 16 px.
+    // Важно перебить scoped-типографику конкретных компонентов.
+    font-size: 16px !important;
   }
 }
