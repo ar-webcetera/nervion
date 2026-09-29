@@ -46,7 +46,7 @@ withDefaults(
   width: 100%;
   min-width: 0;
   flex-shrink: 0;
-  padding: 8px;
+  padding: 8px 8px 12px;
   gap: 4px;
   border: none;
   border-radius: 8px;
