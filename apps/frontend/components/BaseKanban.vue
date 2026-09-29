@@ -461,11 +461,11 @@ const dragend = () => {
               <TaskCode :id="card.id" />
             </template>
             <template #title>
-              <TaskTypeBadge v-if="card.taskType" :task-type="card.taskType" />
               {{ card.title }}
             </template>
             <template v-if="card.description" #description>{{ card.description }}</template>
-            <template v-if="card.planned_date || card.story_points != null || card.users?.length" #footer>
+            <template v-if="card.taskType || card.planned_date || card.story_points != null || card.users?.length" #footer>
+              <TaskTypeBadge v-if="card.taskType" :task-type="card.taskType" />
               <span
                 v-if="card.planned_date"
                 class="kanban__card_deadline"

@@ -290,11 +290,11 @@ onMounted(() => {
                 <TaskCode :id="card.id" />
               </template>
               <template #title>
-                <TaskTypeBadge :task-type="card.taskType" />
                 {{ card.title }}
               </template>
               <template v-if="card.description" #description>{{ card.description }}</template>
-              <template v-if="card.story_points != null || card.responsible?.photo_url || card.recurrence_days?.length" #footer>
+              <template #footer>
+                <TaskTypeBadge :task-type="card.taskType" />
                 <div v-if="card.story_points != null" class="weekly-view__card-sp">{{ card.story_points }} SP</div>
                 <button
                   v-if="card.recurrence_days?.length"
