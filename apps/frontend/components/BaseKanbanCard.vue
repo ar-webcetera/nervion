@@ -110,9 +110,5 @@ withDefaults(
     gap: 8px;
     @include flex(rw, a-center);
   }
-
-  @media (max-width: $screen-tablet) {
-    padding-top: 4px;
-  }
 }
 </style>
