@@ -3201,6 +3201,11 @@ watch(
     @include flex(cn);
     gap: 16px;
     padding: 16px 24px 24px;
+
+    @media (max-width: $screen-tablet) {
+      padding-right: 16px;
+      padding-left: 16px;
+    }
   }
 
   &__compose-textarea {
