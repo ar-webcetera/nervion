@@ -273,6 +273,8 @@ const {
   () => (panelId.value ? $fetch<CrmDealDetail>(`/api/crm/deals/${panelId.value}`, request) : Promise.resolve(null)),
   { watch: [panelId] },
 );
+const isCurrentDeal = computed(() => deal.value?.id === panelId.value);
+const isDealInitialLoading = computed(() => dealPending.value && !isCurrentDeal.value);
 const panel = ref<CrmPanel | null>(panelId.value ? CrmPanel.DEAL : null);
 watch(panelId, (id) => {
   if (id) panel.value = CrmPanel.DEAL;
@@ -1243,7 +1245,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       :inert="directoryPanel ? true : undefined"
       @keydown.esc="closePanel"
     >
-      <div v-if="dealPending" class="loader__wrapper">
+      <div v-if="isDealInitialLoading" class="loader__wrapper">
         <div class="loader" role="status" aria-label="Загрузка сделки"></div>
       </div>
       <header v-else class="crm__panel-header">
@@ -1312,11 +1314,11 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
           <X :size="20" :stroke-width="1.75" aria-hidden="true" />
         </button>
       </header>
-      <p v-if="!dealPending && error" class="crm__error" role="alert">{{ error }}</p>
-      <p v-if="!dealPending && dealError" role="alert">
+      <p v-if="!isDealInitialLoading && error" class="crm__error" role="alert">{{ error }}</p>
+      <p v-if="!isDealInitialLoading && dealError && !isCurrentDeal" role="alert">
         Не удалось открыть сделку. <button @click="refreshDeal()">Повторить</button>
       </p>
-      <template v-else-if="!dealPending && deal">
+      <template v-else-if="!isDealInitialLoading && isCurrentDeal && deal">
         <p v-if="deal.loss_reason" class="crm__deal-loss-reason">Причина проигрыша: {{ deal.loss_reason }}</p>
         <div class="crm__deal-content">
           <div class="crm__deal-main">

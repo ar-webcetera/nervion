@@ -60,9 +60,9 @@ export const buildAwsObjectUrl = (key: string | null | undefined, awsEndpoint?: 
 
 /**
  * Composable для использования в компонентах Vue
- * Автоматически использует AWS_ENDPOINT из runtimeConfig.
- * Для S3-ключей внутри вызывает `buildAwsObjectUrl`, а абсолютные `http/https`
- * ссылки возвращает как есть через `resolveUrl`.
+ * Автоматически использует AWS_ENDPOINT из runtimeConfig. Приватные CRM-файлы
+ * открывает через авторизованный API, публичные S3-ключи через `buildAwsObjectUrl`,
+ * а абсолютные `http/https` ссылки возвращает как есть через `resolveUrl`.
  *
  * @example
  * const { resolveAwsUrl } = useResolveUrl();
@@ -71,8 +71,12 @@ export const buildAwsObjectUrl = (key: string | null | undefined, awsEndpoint?: 
 export const useResolveUrl = () => {
   const config = useRuntimeConfig();
   const awsEndpoint = config.public.AWS_ENDPOINT;
+  const apiUrl = String(config.public.API_URL ?? '').replace(/\/$/, '');
 
   const resolveAwsUrl = (slug: string | null | undefined): string | undefined => {
+    if (slug?.startsWith('crm/')) {
+      return `${apiUrl}/api/files/raw?key=${encodeURIComponent(slug)}`;
+    }
     return slug?.startsWith('http://') || slug?.startsWith('https://')
       ? resolveUrl(slug, awsEndpoint)
       : buildAwsObjectUrl(slug, awsEndpoint);
