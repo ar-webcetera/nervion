@@ -1282,74 +1282,81 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       <div v-if="isDealInitialLoading" class="loader__wrapper">
         <div class="loader" role="status" aria-label="Загрузка сделки"></div>
       </div>
-      <header v-else class="crm__panel-header">
-        <form v-if="isEditingDealTitle" class="crm__panel-title-form" @submit.prevent="saveDealTitle">
-          <textarea
-            ref="dealTitleInput"
-            v-model="draft.title"
-            aria-label="Название сделки"
-            required
-            maxlength="200"
-            rows="1"
-            placeholder="Введите название"
-            @input="resizeDealTitleInput"
-            @keydown.enter.prevent="saveDealTitle"
-            @keydown.esc.prevent="cancelDealTitleEdit"
-          ></textarea>
-          <div class="crm__panel-title-actions">
-            <button
-              type="submit"
-              class="crm__panel-title-save"
-              :disabled="busy || !draft.title.trim()"
-              aria-label="Сохранить название"
-            >
-              {{ busy ? 'Сохранение…' : 'Сохранить' }}
-            </button>
-            <button
-              type="button"
-              class="crm__panel-title-cancel"
-              :disabled="busy"
-              aria-label="Отменить изменение названия"
-              title="Отменить"
-              @click="cancelDealTitleEdit"
-            >
-              <X :size="20" :stroke-width="1.75" aria-hidden="true" />
-            </button>
-          </div>
-        </form>
-        <h2
-          v-else
-          id="crm-deal-title"
-          class="crm__panel-title"
-          title="Дважды нажмите, чтобы изменить"
-          @dblclick="startDealTitleEdit"
-        >
-          {{ deal?.title }}
-        </h2>
-        <button
-          class="crm__panel-expand"
-          :aria-label="expanded ? 'Свернуть панель' : 'Расширить панель'"
-          :title="expanded ? 'Свернуть' : 'Расширить'"
-          @click="expanded = !expanded"
-        >
-          <Minimize2 v-if="expanded" :size="20" :stroke-width="1.75" aria-hidden="true" />
-          <Expand v-else :size="20" :stroke-width="1.75" aria-hidden="true" />
-        </button>
-        <button aria-label="Копировать ссылку" title="Копировать ссылку" @click="copyLink">
-          <Copy :size="20" :stroke-width="1.75" aria-hidden="true" />
-        </button>
-        <button
-          class="crm__panel-delete"
-          aria-label="Удалить сделку"
-          title="Удалить сделку"
-          :disabled="busy"
-          @click="isDeleteDealConfirmOpen = true"
-        >
-          <Trash2 :size="20" :stroke-width="1.75" aria-hidden="true" />
-        </button>
-        <button aria-label="Закрыть панель" title="Закрыть" @click="closePanel">
-          <X :size="20" :stroke-width="1.75" aria-hidden="true" />
-        </button>
+      <header v-else class="crm__panel-header crm__panel-header_deal">
+        <div class="crm__panel-topbar">
+          <span>Сделка</span>
+          <button class="crm__panel-close" aria-label="Закрыть панель" title="Закрыть" @click="closePanel">
+            <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+          </button>
+        </div>
+        <div class="crm__panel-heading">
+          <form v-if="isEditingDealTitle" class="crm__panel-title-form" @submit.prevent="saveDealTitle">
+            <textarea
+              ref="dealTitleInput"
+              v-model="draft.title"
+              aria-label="Название сделки"
+              required
+              maxlength="200"
+              rows="1"
+              placeholder="Введите название"
+              @input="resizeDealTitleInput"
+              @keydown.enter.prevent="saveDealTitle"
+              @keydown.esc.prevent="cancelDealTitleEdit"
+            ></textarea>
+            <div class="crm__panel-title-actions">
+              <button
+                type="submit"
+                class="crm__panel-title-save"
+                :disabled="busy || !draft.title.trim()"
+                aria-label="Сохранить название"
+              >
+                {{ busy ? 'Сохранение…' : 'Сохранить' }}
+              </button>
+              <button
+                type="button"
+                class="crm__panel-title-cancel"
+                :disabled="busy"
+                aria-label="Отменить изменение названия"
+                title="Отменить"
+                @click="cancelDealTitleEdit"
+              >
+                <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+              </button>
+            </div>
+          </form>
+          <h2
+            v-else
+            id="crm-deal-title"
+            class="crm__panel-title"
+            title="Дважды нажмите, чтобы изменить"
+            @dblclick="startDealTitleEdit"
+          >
+            {{ deal?.title }}
+          </h2>
+        </div>
+        <div class="crm__panel-actions" aria-label="Действия со сделкой">
+          <button
+            class="crm__panel-expand"
+            :aria-label="expanded ? 'Свернуть панель' : 'Расширить панель'"
+            :title="expanded ? 'Свернуть' : 'Расширить'"
+            @click="expanded = !expanded"
+          >
+            <Minimize2 v-if="expanded" :size="20" :stroke-width="1.75" aria-hidden="true" />
+            <Expand v-else :size="20" :stroke-width="1.75" aria-hidden="true" />
+          </button>
+          <button aria-label="Копировать ссылку" title="Копировать ссылку" @click="copyLink">
+            <Copy :size="20" :stroke-width="1.75" aria-hidden="true" />
+          </button>
+          <button
+            class="crm__panel-delete"
+            aria-label="Удалить сделку"
+            title="Удалить сделку"
+            :disabled="busy"
+            @click="isDeleteDealConfirmOpen = true"
+          >
+            <Trash2 :size="20" :stroke-width="1.75" aria-hidden="true" />
+          </button>
+        </div>
       </header>
       <p v-if="!isDealInitialLoading && error" class="crm__error" role="alert">{{ error }}</p>
       <p v-if="!isDealInitialLoading && dealError && !isCurrentDeal" role="alert">
@@ -2598,6 +2605,12 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     background: var(--dark-text-background-primary);
     @include flex(rn, a-center);
 
+    &_deal {
+      align-items: stretch;
+      flex-direction: column;
+      gap: 8px;
+    }
+
     > span {
       margin-right: auto;
       color: var(--light-text-backgroung-primary-50);
@@ -2620,6 +2633,39 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     }
   }
 
+  &__panel-topbar {
+    min-height: 44px;
+    @include flex(rn, a-center, between);
+
+    span {
+      color: var(--light-text-backgroung-primary);
+      @extend %text-l-medium;
+    }
+  }
+
+  &__panel-close {
+    width: 44px;
+    height: 44px;
+    padding: 0 !important;
+  }
+
+  &__panel-heading {
+    min-width: 0;
+  }
+
+  &__panel-actions {
+    min-height: 44px;
+    margin-left: auto;
+    @include flex(rn, a-center, j-end);
+    gap: 12px;
+
+    button {
+      width: 44px;
+      height: 44px;
+      padding: 0;
+    }
+  }
+
   &__panel-title {
     min-width: 0;
     flex: 1;
@@ -2630,10 +2676,10 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     cursor: text;
     text-overflow: clip;
     white-space: normal;
-    @extend %text-m-medium;
+    @extend %display-s-bold;
   }
 
-  &__panel-header > &__panel-delete {
+  &__panel-delete {
     color: var(--danger-delete);
 
     &:hover:not(:disabled) {
@@ -2654,10 +2700,10 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       min-width: 0;
       min-height: 48px;
       max-height: 144px;
-      padding: 8px 10px;
+      padding: 3px 6px;
       border: none;
-      border-radius: 8px;
-      background: var(--light-text-backgroung-primary-5);
+      border-radius: 0;
+      background: transparent;
       color: var(--light-text-backgroung-primary);
       overflow-x: hidden;
       overflow-y: auto;
@@ -2670,7 +2716,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
 
       &:focus-visible {
         outline: none;
-        box-shadow: inset 0 0 0 1px var(--light-text-backgroung-primary-10);
+        box-shadow: none;
       }
     }
   }
@@ -3616,7 +3662,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       padding-top: 12px;
       padding-bottom: 12px;
     }
-    &__panel-header > .crm__panel-expand {
+    &__panel-actions > .crm__panel-expand {
       display: none;
     }
     &__panel_directory {
