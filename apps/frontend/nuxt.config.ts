@@ -60,6 +60,12 @@ export default defineNuxtConfig({
   app: {
     head: {
       viewport: 'width=device-width, initial-scale=1',
+      style: [
+        {
+          children:
+            '@media (max-width: 480px) {.home__desktop-filter-panel,.home__tasks-filters>.home__today-filter{display:none!important}}',
+        },
+      ],
       meta: [
         { name: 'yandex-verification', content: '1821b5a09daf0a20' },
         { name: 'mobile-web-app-capable', content: 'yes' },
