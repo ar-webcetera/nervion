@@ -2599,6 +2599,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     top: 0;
     z-index: 5;
     min-height: 72px;
+    flex-shrink: 0;
     padding: 16px 32px;
     gap: 8px;
     border-bottom: 1px solid var(--light-text-backgroung-primary-10);
