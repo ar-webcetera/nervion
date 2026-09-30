@@ -1999,6 +1999,20 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     flex-shrink: 0;
     @include flex(rw, a-center);
     gap: 6px;
+
+    @media (max-width: $screen-mobile-l) {
+      width: 100%;
+      min-width: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+    }
   }
 
   &__filter-chip {
@@ -2008,6 +2022,10 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     background: var(--primary-25);
     @include flex(rn, a-center);
     gap: 2px;
+
+    @media (max-width: $screen-mobile-l) {
+      flex: 0 0 auto;
+    }
   }
 
   &__filter-chip-label {

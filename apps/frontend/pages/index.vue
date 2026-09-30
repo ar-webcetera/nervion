@@ -1270,7 +1270,18 @@ useHead({
     margin-bottom: 16px;
 
     @media (max-width: $screen-mobile-l) {
+      width: 100%;
+      min-width: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
       margin-bottom: 8px;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
     }
   }
 
@@ -1281,6 +1292,10 @@ useHead({
     border-radius: 4px;
     background: var(--primary-25);
     height: 24px;
+
+    @media (max-width: $screen-mobile-l) {
+      flex: 0 0 auto;
+    }
   }
 
   &__filter-chip-toggle {
