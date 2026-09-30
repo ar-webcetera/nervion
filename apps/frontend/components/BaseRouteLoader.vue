@@ -1,5 +1,6 @@
 <script setup lang="ts">
 const nuxtApp = useNuxtApp();
+const router = useRouter();
 const isVisible = ref(false);
 
 const SHOW_DELAY = 90;
@@ -8,12 +9,15 @@ const MIN_VISIBLE_TIME = 180;
 let showTimer: ReturnType<typeof setTimeout> | null = null;
 let hideTimer: ReturnType<typeof setTimeout> | null = null;
 let shownAt = 0;
+let isPageTransition = true;
 
 const clearTimer = (timer: ReturnType<typeof setTimeout> | null) => {
   if (timer) clearTimeout(timer);
 };
 
 const start = () => {
+  if (!isPageTransition) return;
+
   clearTimer(hideTimer);
   clearTimer(showTimer);
   hideTimer = null;
@@ -41,8 +45,12 @@ const finish = () => {
 let removeStartHook: (() => void) | undefined;
 let removeFinishHook: (() => void) | undefined;
 let removeErrorHook: (() => void) | undefined;
+let removeBeforeEach: (() => void) | undefined;
 
 if (import.meta.client) {
+  removeBeforeEach = router.beforeEach((to, from) => {
+    isPageTransition = to.path !== from.path;
+  });
   removeStartHook = nuxtApp.hook('page:loading:start', start);
   removeFinishHook = nuxtApp.hook('page:loading:end', finish);
   removeErrorHook = nuxtApp.hook('app:error', finish);
@@ -54,6 +62,7 @@ onBeforeUnmount(() => {
   removeStartHook?.();
   removeFinishHook?.();
   removeErrorHook?.();
+  removeBeforeEach?.();
 });
 </script>
 
