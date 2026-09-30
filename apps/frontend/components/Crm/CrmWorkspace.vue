@@ -812,8 +812,19 @@ const updateDealProject = async (value: string | number | (string | number)[] | 
   await saveDeal({ project_id: draft.project_id });
 };
 const isEditingDealTitle = ref(false);
-const startDealTitleEdit = () => {
+const dealTitleInput = ref<HTMLTextAreaElement>();
+const resizeDealTitleInput = () => {
+  const input = dealTitleInput.value;
+  if (!input) return;
+  input.style.height = 'auto';
+  input.style.height = `${input.scrollHeight}px`;
+};
+const startDealTitleEdit = async () => {
   isEditingDealTitle.value = true;
+  await nextTick();
+  resizeDealTitleInput();
+  dealTitleInput.value?.focus();
+  dealTitleInput.value?.setSelectionRange(draft.title.length, draft.title.length);
 };
 const cancelDealTitleEdit = () => {
   draft.title = deal.value?.title ?? draft.title;
@@ -1273,15 +1284,18 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       </div>
       <header v-else class="crm__panel-header">
         <form v-if="isEditingDealTitle" class="crm__panel-title-form" @submit.prevent="saveDealTitle">
-          <input
+          <textarea
+            ref="dealTitleInput"
             v-model="draft.title"
             aria-label="Название сделки"
             required
             maxlength="200"
-            autofocus
+            rows="1"
             placeholder="Введите название"
+            @input="resizeDealTitleInput"
+            @keydown.enter.prevent="saveDealTitle"
             @keydown.esc.prevent="cancelDealTitleEdit"
-          />
+          ></textarea>
           <div class="crm__panel-title-actions">
             <button
               type="submit"
@@ -2633,18 +2647,22 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     flex: 1;
     margin-right: auto;
     gap: 12px;
-    @include flex(rn, a-center);
+    @include flex(rn, a-start);
 
-    input {
+    textarea {
       width: 100%;
       min-width: 0;
-      min-height: 40px;
-      padding: 3px 6px;
+      min-height: 48px;
+      max-height: 144px;
+      padding: 8px 10px;
       border: none;
       border-radius: 8px;
       background: var(--light-text-backgroung-primary-5);
       color: var(--light-text-backgroung-primary);
-      @extend %text-m-medium;
+      overflow-x: hidden;
+      overflow-y: auto;
+      resize: none;
+      @extend %display-s-bold;
 
       &::placeholder {
         color: var(--light-text-backgroung-primary-50);
@@ -2658,6 +2676,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
   }
 
   &__panel-title-actions {
+    min-height: 48px;
     flex-shrink: 0;
     @include flex(rn, a-center);
     gap: 4px;
