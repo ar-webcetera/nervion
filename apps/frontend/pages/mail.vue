@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
-import { ArrowLeft, Search, X } from '@lucide/vue';
+import { Search, X } from '@lucide/vue';
 import { MailSpamRuleScope, MailSystemFolder, type MailFolder, type MailStatsResponse } from '@tracker/contracts';
 import BaseModal from '~/components/BaseModal.vue';
 import MailActionIcon from '~/components/Mail/MailActionIcon.vue';
@@ -1665,20 +1665,20 @@ watch(
         </div>
       </template>
       <template v-else-if="composeMode">
-        <div class="mail-page__detail-header">
+        <div class="mail-page__detail-header mail-page__detail-header_compose">
           <div class="mail-page__detail-heading">
-            <button
-              class="mail-page__back-mobile"
-              type="button"
-              title="К списку писем"
-              aria-label="К списку писем"
-              @click="closeComposer"
-            >
-              <ArrowLeft :size="20" aria-hidden="true" />
-            </button>
             <h2 class="mail-page__detail-subject">Новое письмо</h2>
           </div>
           <button class="mail-page__icon-btn mail-page__icon-btn_desktop" @click="closeComposer">Закрыть</button>
+          <button
+            class="mail-page__close-mobile"
+            type="button"
+            title="Закрыть новое письмо"
+            aria-label="Закрыть новое письмо"
+            @click="closeComposer"
+          >
+            <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+          </button>
         </div>
         <div class="mail-page__compose">
           <label class="mail-composer__label">
@@ -1789,23 +1789,14 @@ watch(
       </div>
 
       <template v-else>
-        <div class="mail-page__detail-header">
+        <div class="mail-page__detail-header mail-page__detail-header_thread">
           <div class="mail-page__detail-heading">
             <div class="mail-page__detail-meta">
               <h2 class="mail-page__detail-subject">{{ currentThread?.subject }}</h2>
               <span class="mail-page__detail-account">{{ accountLabel(currentThread?.account_id ?? 0) }}</span>
             </div>
           </div>
-          <div class="mail-page__detail-actions">
-            <button
-              class="mail-page__back-mobile"
-              type="button"
-              title="К списку писем"
-              aria-label="К списку писем"
-              @click="backToList"
-            >
-              <ArrowLeft :size="20" aria-hidden="true" />
-            </button>
+          <div class="mail-page__detail-actions mail-page__detail-actions_thread">
             <button
               v-if="currentFolder === 'spam'"
               class="mail-page__action-button"
@@ -1878,6 +1869,15 @@ watch(
               @click="askDeleteThread"
             >
               <MailActionIcon name="delete" />
+            </button>
+            <button
+              class="mail-page__close-mobile mail-page__close-mobile_thread"
+              type="button"
+              title="Закрыть письмо"
+              aria-label="Закрыть письмо"
+              @click="backToList"
+            >
+              <X :size="20" :stroke-width="1.75" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -2198,7 +2198,7 @@ watch(
     }
   }
 
-  &__back-mobile {
+  &__close-mobile {
     display: none;
     flex-shrink: 0;
     width: 44px;
@@ -2221,6 +2221,10 @@ watch(
 
     @media (max-width: $screen-tablet) {
       @include flex(center);
+
+      &_thread {
+        margin-left: auto;
+      }
     }
   }
 
@@ -3108,6 +3112,16 @@ watch(
       padding: 16px;
       flex-wrap: wrap;
       align-items: center;
+
+      &_compose {
+        flex-wrap: nowrap;
+      }
+
+      &_thread {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+      }
     }
   }
 
@@ -3133,6 +3147,14 @@ watch(
       flex-basis: 100%;
       flex-wrap: wrap;
       margin-left: 0;
+
+      &_thread {
+        width: 100%;
+        min-width: 0;
+        order: -1;
+        flex-basis: auto;
+        flex-wrap: nowrap;
+      }
     }
   }
 
