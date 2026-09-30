@@ -136,6 +136,33 @@ export class CrmService {
     void this.events.sendCrmChanged();
     return result;
   }
+  async removeCompany(id: number): Promise<void> {
+    await this.db.transaction(async (manager) => {
+      const companyRepository = manager.getRepository(CrmCompanyEntity);
+      const company = await companyRepository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!company) throw new NotFoundException('Компания не найдена');
+      await manager.getRepository(CrmContactEntity).update({ company_id: id }, { company_id: null });
+      await manager.getRepository(CrmDealEntity).update({ company_id: id }, { company_id: null });
+      await companyRepository.delete(id);
+    });
+    void this.events.sendCrmChanged();
+  }
+  async removeContact(id: number): Promise<void> {
+    await this.db.transaction(async (manager) => {
+      const contactRepository = manager.getRepository(CrmContactEntity);
+      const contact = await contactRepository.findOne({ where: { id }, lock: { mode: 'pessimistic_write' } });
+      if (!contact) throw new NotFoundException('Контакт не найден');
+      await manager.query(
+        `UPDATE crm_deals
+         SET contact_ids = array_remove(contact_ids, $1),
+             primary_contact_id = CASE WHEN primary_contact_id = $1 THEN NULL ELSE primary_contact_id END
+         WHERE $1 = ANY(contact_ids) OR primary_contact_id = $1`,
+        [id],
+      );
+      await contactRepository.delete(id);
+    });
+    void this.events.sendCrmChanged();
+  }
   private async ensureContactUnique(repo: Repository<CrmContactEntity>, contact: CrmContactEntity): Promise<void> {
     const id = contact.id || 0;
     const phone = contact.phone.replace(/\D/g, '');

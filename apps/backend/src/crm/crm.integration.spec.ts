@@ -21,6 +21,7 @@ import { CRM_DEFAULT_SOURCES, CrmColumn, CrmDealDetail, CrmOptions, TaskBusiness
 import { Tasks } from '../tasks/entities/task.entity';
 import { Projects } from '../projects/entities/project.entity';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { CrmCompanyEntity, CrmContactEntity, CrmDealEntity } from './entities/crm.entity';
 
 @Module({ providers: [{ provide: DeepseekService, useValue: {} }], exports: [DeepseekService] })
 class TestAiModule {}
@@ -400,6 +401,41 @@ integration('CRM integration (disposable PostgreSQL)', () => {
       .set('Cookie', adminCookie)
       .expect(200);
     expect((filtered.body as CrmColumn).total).toBe(3);
+  });
+  it('deletes companies and contacts without deleting linked deals', async () => {
+    const company = await request(server())
+      .post('/api/crm/companies')
+      .set('Cookie', adminCookie)
+      .send({ name: 'Компания для удаления' })
+      .expect(201);
+    const companyId = (company.body as { id: number }).id;
+    const contact = await request(server())
+      .post('/api/crm/contacts')
+      .set('Cookie', adminCookie)
+      .send({ name: 'Контакт для удаления', company_id: companyId })
+      .expect(201);
+    const contactId = (contact.body as { id: number }).id;
+    const deal = await request(server())
+      .post('/api/crm/deals')
+      .set('Cookie', adminCookie)
+      .send({ title: 'Сделка со справочниками', company_id: companyId, contact_ids: [contactId], primary_contact_id: contactId })
+      .expect(201);
+    const linkedDealId = (deal.body as CrmDealDetail).id;
+
+    await request(server()).delete(`/api/crm/companies/${companyId}`).set('Cookie', employeeCookie).expect(403);
+    await request(server()).delete(`/api/crm/companies/${companyId}`).set('Cookie', adminCookie).expect(204);
+    expect(await db.getRepository(CrmCompanyEntity).findOneBy({ id: companyId })).toBeNull();
+    expect((await db.getRepository(CrmContactEntity).findOneByOrFail({ id: contactId })).company_id).toBeNull();
+    expect((await db.getRepository(CrmDealEntity).findOneByOrFail({ id: linkedDealId })).company_id).toBeNull();
+    await request(server()).delete(`/api/crm/companies/${companyId}`).set('Cookie', adminCookie).expect(404);
+
+    await request(server()).delete(`/api/crm/contacts/${contactId}`).set('Cookie', employeeCookie).expect(403);
+    await request(server()).delete(`/api/crm/contacts/${contactId}`).set('Cookie', adminCookie).expect(204);
+    expect(await db.getRepository(CrmContactEntity).findOneBy({ id: contactId })).toBeNull();
+    const unlinkedDeal = await db.getRepository(CrmDealEntity).findOneByOrFail({ id: linkedDealId });
+    expect(unlinkedDeal.contact_ids).toEqual([]);
+    expect(unlinkedDeal.primary_contact_id).toBeNull();
+    await request(server()).delete(`/api/crm/contacts/${contactId}`).set('Cookie', adminCookie).expect(404);
   });
   it('deletes a deal and keeps linked tasks without the CRM relation', async () => {
     await request(server()).delete(`/api/crm/deals/${dealId}`).set('Cookie', employeeCookie).expect(403);

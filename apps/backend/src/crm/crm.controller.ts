@@ -42,6 +42,12 @@ export class CrmController {
   @Patch('companies/:id') updateCompany(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateCompanyDto) {
     return this.crm.saveCompany(dto, id);
   }
+  @ApiOperation({ summary: 'Удалить компанию клиента' })
+  @Delete('companies/:id')
+  @HttpCode(204)
+  removeCompany(@Param('id', ParseIntPipe) id: number) {
+    return this.crm.removeCompany(id);
+  }
   @ApiOperation({ summary: 'Создать контакт клиента (без учётной записи трекера)' })
   @Post('contacts')
   contact(@Body() dto: ContactDto) {
@@ -49,6 +55,12 @@ export class CrmController {
   }
   @Patch('contacts/:id') updateContact(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateContactDto) {
     return this.crm.saveContact(dto, id);
+  }
+  @ApiOperation({ summary: 'Удалить контакт клиента' })
+  @Delete('contacts/:id')
+  @HttpCode(204)
+  removeContact(@Param('id', ParseIntPipe) id: number) {
+    return this.crm.removeContact(id);
   }
   @Get('board') board(@Query() q: CrmQueryDto, @Req() req: RequestWithCookies) {
     return this.crm.board(q, req.user);

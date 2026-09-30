@@ -301,6 +301,7 @@ watch(directoryPanel, async (value, previous) => {
 });
 const expanded = ref(false);
 const isDeleteDealConfirmOpen = ref(false);
+const isDeleteDirectoryConfirmOpen = ref(false);
 const returnToDeal = ref(false);
 const savedScroll = ref(0);
 const companyForm = ref<CrmCompany>({ id: 0, name: '', legal_name: '', inn: '', website: '', notes: '', responsible_id: null });
@@ -580,6 +581,16 @@ const directoryTitle = computed(() => {
   if (directoryPanel.value === CrmPanel.COMPANY) return companyForm.value.id ? 'Компания' : 'Новая компания';
   return contactForm.value.id ? 'Контакт' : 'Новый контакт';
 });
+const directoryEntityId = computed(() =>
+  directoryPanel.value === CrmPanel.COMPANY ? companyForm.value.id : contactForm.value.id,
+);
+const directoryEntityName = computed(() =>
+  directoryPanel.value === CrmPanel.COMPANY ? companyForm.value.name : contactFullName(contactForm.value),
+);
+const openDeleteDirectoryConfirm = () => {
+  error.value = '';
+  isDeleteDirectoryConfirmOpen.value = true;
+};
 const copyLink = () =>
   run(async () => {
     await navigator.clipboard.writeText(window.location.href);
@@ -720,6 +731,18 @@ const saveDirectory = async () => {
     if (kind === CrmPanel.COMPANY) companyForm.value = result as CrmCompany;
     else contactForm.value = result as CrmContact;
     if (returnToDeal.value) await closeDirectory();
+  });
+};
+const deleteDirectory = async () => {
+  const kind = directoryPanel.value;
+  const id = directoryEntityId.value;
+  if (!kind || !id) return;
+  await run(async () => {
+    const path = kind === CrmPanel.COMPANY ? CrmSection.COMPANIES : CrmSection.CONTACTS;
+    await $fetch(`/api/crm/${path}/${id}`, { ...request, method: 'DELETE' });
+    isDeleteDirectoryConfirmOpen.value = false;
+    await Promise.all([refreshOptions(), refreshBoard(), panelId.value ? refreshDeal() : Promise.resolve()]);
+    await closeDirectory();
   });
 };
 const createDeal = async () => {
@@ -1683,6 +1706,17 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
           <ChevronLeft :size="20" :stroke-width="1.75" aria-hidden="true" />
         </button>
         <span>{{ returnToDeal ? 'Назад к сделке' : directoryTitle }}</span>
+        <button
+          v-if="directoryEntityId"
+          class="crm__panel-delete"
+          type="button"
+          :aria-label="directoryPanel === CrmPanel.COMPANY ? 'Удалить компанию' : 'Удалить контакт'"
+          :title="directoryPanel === CrmPanel.COMPANY ? 'Удалить компанию' : 'Удалить контакт'"
+          :disabled="busy"
+          @click="openDeleteDirectoryConfirm"
+        >
+          <Trash2 :size="20" :stroke-width="1.75" aria-hidden="true" />
+        </button>
         <button v-if="!returnToDeal" aria-label="Закрыть окно" title="Закрыть" @click="closeDirectory">
           <X :size="20" :stroke-width="1.75" aria-hidden="true" />
         </button>
@@ -1755,6 +1789,28 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
         </div>
       </section>
     </aside>
+    <Teleport to="body">
+      <BaseModal v-model="isDeleteDirectoryConfirmOpen" :dismissible="!busy">
+        <div class="crm-delete-confirm" role="alertdialog" aria-modal="true" aria-labelledby="crm-delete-directory-title">
+          <h2 id="crm-delete-directory-title">
+            {{ directoryPanel === CrmPanel.COMPANY ? 'Удалить компанию?' : 'Удалить контакт?' }}
+          </h2>
+          <p v-if="directoryPanel === CrmPanel.COMPANY">
+            Компания "{{ directoryEntityName }}" будет удалена. Контакты и сделки сохранятся без связи с компанией.
+          </p>
+          <p v-else>Контакт "{{ directoryEntityName }}" будет удалён из CRM и отвязан от сделок. Сами сделки сохранятся.</p>
+          <p v-if="error" class="crm-delete-confirm__error" role="alert">{{ error }}</p>
+          <div class="crm-delete-confirm__actions">
+            <button class="button button_secondary" type="button" :disabled="busy" @click="isDeleteDirectoryConfirmOpen = false">
+              Отмена
+            </button>
+            <button class="button crm-delete-confirm__submit" type="button" :disabled="busy" @click="deleteDirectory">
+              {{ busy ? 'Удаление…' : 'Удалить' }}
+            </button>
+          </div>
+        </div>
+      </BaseModal>
+    </Teleport>
     <dialog ref="newDealDialog" class="crm__dialog">
       <form @submit.prevent="createDeal">
         <h2>Новая сделка</h2>
