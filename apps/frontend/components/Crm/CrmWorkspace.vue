@@ -2297,6 +2297,13 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     }
   }
 
+  :deep(.base-kanban-card__title) {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
   &__card-owner,
   &__next {
     min-width: 0;
@@ -2547,11 +2554,12 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     min-width: 0;
     flex: 1;
     margin: 0 auto 0 0;
-    overflow: hidden;
+    overflow: visible;
+    overflow-wrap: anywhere;
     color: var(--light-text-backgroung-primary);
     cursor: text;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    text-overflow: clip;
+    white-space: normal;
     @extend %text-m-medium;
   }
 
