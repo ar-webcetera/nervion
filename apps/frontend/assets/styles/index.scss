@@ -16,6 +16,11 @@ body {
 
   @media (max-width: $screen-mobile-l) {
     overflow: hidden;
+
+    .home__desktop-filter-panel,
+    .home__tasks-filters > .home__today-filter {
+      display: none;
+    }
   }
 }
 
