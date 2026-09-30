@@ -792,7 +792,6 @@ useHead({
     </div>
     <div :class="['home__tasks-filters', { 'home__tasks-filters_mb-16': !filterChips.length }]">
       <TaskFilterPanel
-        v-show="isDesktopFilterPanelVisible"
         ref="filterPanelRef"
         class="home__desktop-filter-panel"
         :filters="filterChips"
@@ -811,7 +810,6 @@ useHead({
       />
 
       <label
-        v-show="isDesktopFilterPanelVisible"
         class="home__today-filter"
         :class="{ 'home__today-filter_active': isTodayFilterActive }"
       >
