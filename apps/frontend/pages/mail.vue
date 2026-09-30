@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
-import { ArrowLeft } from '@lucide/vue';
+import { ArrowLeft, Search, X } from '@lucide/vue';
 import { MailSpamRuleScope, MailSystemFolder, type MailFolder, type MailStatsResponse } from '@tracker/contracts';
 import BaseModal from '~/components/BaseModal.vue';
 import MailActionIcon from '~/components/Mail/MailActionIcon.vue';
@@ -64,6 +64,8 @@ if (Number.isInteger(initialAccount) && initialAccount > 0) {
   selectedAccountId.value = initialAccount;
 }
 const search = ref('');
+const mobileSearchDraft = ref('');
+const isMobileSearchOpen = ref(false);
 const threadsLoadError = useState<string | null>('mail-threads-load-error', () => null);
 const initialThread = Number(route.query.thread);
 const selectedThreadId = ref<number | null>(Number.isInteger(initialThread) && initialThread > 0 ? initialThread : null);
@@ -460,6 +462,22 @@ const loadThreads = async () => {
   }
 };
 
+const openMobileSearch = () => {
+  mobileSearchDraft.value = search.value;
+  isMobileSearchOpen.value = true;
+};
+
+const applyMobileSearch = () => {
+  search.value = mobileSearchDraft.value.trim();
+  isMobileSearchOpen.value = false;
+};
+
+const resetMobileSearch = () => {
+  mobileSearchDraft.value = '';
+  search.value = '';
+  isMobileSearchOpen.value = false;
+};
+
 const toggleThreadSelection = (threadId: number) => {
   const nextSelection = new Set(selectedThreadIds.value);
   if (nextSelection.has(threadId)) nextSelection.delete(threadId);
@@ -662,6 +680,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);
+  if (searchTimeout) clearTimeout(searchTimeout);
   clearReplyAttachments();
   void autosaveDraft();
 });
@@ -1411,16 +1430,37 @@ watch(
 
     <div class="mail-page__list">
       <div class="mail-page__filters">
-        <select v-model.number="selectedAccountId" class="mail-page__select">
-          <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.address }}</option>
-        </select>
+        <div class="mail-page__filter-toolbar">
+          <select v-model.number="selectedAccountId" class="mail-page__select" aria-label="Почтовый ящик">
+            <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.address }}</option>
+          </select>
+          <button
+            v-if="!isStatsFolder"
+            type="button"
+            class="mail-page__mobile-search-button"
+            :class="{ 'mail-page__mobile-search-button_active': Boolean(search) }"
+            aria-label="Открыть поиск по почте"
+            aria-haspopup="dialog"
+            :aria-expanded="isMobileSearchOpen"
+            :aria-pressed="Boolean(search)"
+            @click="openMobileSearch"
+          >
+            <Search :size="20" :stroke-width="1.75" aria-hidden="true" />
+          </button>
+        </div>
         <template v-if="isStatsFolder">
           <input v-model="statsFrom" class="mail-page__search mail-page__search_date" type="date" aria-label="Дата с" />
           <input v-model="statsTo" class="mail-page__search mail-page__search_date" type="date" aria-label="Дата по" />
           <button class="mail-page__compose-btn" type="button" :disabled="pendingStats" @click="loadStats">Показать</button>
         </template>
         <template v-else>
-          <input v-model="search" class="mail-page__search" type="text" placeholder="Поиск по теме или адресу" />
+          <input
+            v-model="search"
+            class="mail-page__search mail-page__search_desktop"
+            type="search"
+            aria-label="Поиск по теме или адресу"
+            placeholder="Поиск по теме или адресу"
+          />
           <button class="mail-page__compose-btn mail-page__compose-mobile" @click="openComposer">Написать</button>
         </template>
       </div>
@@ -1981,6 +2021,33 @@ watch(
       </template>
     </div>
 
+    <BaseModal v-model="isMobileSearchOpen" class="mail-page__mobile-search-modal">
+      <form class="mail-search" role="search" aria-labelledby="mail-search-title" @submit.prevent="applyMobileSearch">
+        <header class="mail-search__header">
+          <h2 id="mail-search-title" class="mail-search__title">Поиск по почте</h2>
+          <button type="button" class="mail-search__close" aria-label="Закрыть поиск" @click="isMobileSearchOpen = false">
+            <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+          </button>
+        </header>
+        <label class="mail-search__field">
+          <span class="mail-search__label">Тема или адрес</span>
+          <input
+            v-model="mobileSearchDraft"
+            class="mail-page__search"
+            type="search"
+            name="mail-search"
+            placeholder="Введите тему или адрес"
+          />
+        </label>
+        <div class="mail-search__actions">
+          <button type="button" class="mail-page__icon-btn" :disabled="!search && !mobileSearchDraft" @click="resetMobileSearch">
+            Сбросить
+          </button>
+          <button type="submit" class="mail-page__compose-btn">Применить</button>
+        </div>
+      </form>
+    </BaseModal>
+
     <BaseModal ref="moveModal" :dismissible="!movingThreads" @close="resetMoveDialog">
       <div class="mail-confirm" :aria-busy="movingThreads">
         <h2 class="mail-confirm__title">
@@ -2460,6 +2527,47 @@ watch(
     }
   }
 
+  &__filter-toolbar {
+    min-width: 0;
+
+    @media (max-width: $screen-tablet) {
+      @include flex(rn, a-center);
+      gap: 8px;
+    }
+  }
+
+  &__mobile-search-button {
+    display: none;
+
+    @media (max-width: $screen-tablet) {
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      flex: 0 0 44px;
+      border: 1px solid var(--light-text-backgroung-primary-10);
+      border-radius: 8px;
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary-50);
+      cursor: pointer;
+      @include flex(center);
+
+      &:hover {
+        color: var(--light-text-backgroung-primary);
+        background: var(--light-text-backgroung-primary-10);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+      }
+
+      &_active {
+        border-color: var(--primary-50);
+        color: var(--primary);
+      }
+    }
+  }
+
   &__compose-mobile {
     display: none;
 
@@ -2493,8 +2601,61 @@ watch(
     }
   }
 
+  &__search_desktop {
+    @media (max-width: $screen-tablet) {
+      display: none;
+    }
+  }
+
   &__select option {
     background: var(--dark-text-background-primary);
+  }
+
+  &__mobile-search-modal {
+    :deep(.base-modal__header) {
+      display: none;
+    }
+
+    :deep(.base-modal__content) {
+      width: min(100%, 420px);
+    }
+
+    @media (max-width: $screen-tablet) {
+      align-items: flex-end;
+
+      :deep(.base-modal) {
+        width: 100%;
+        max-width: 100%;
+        left: 0;
+        transform: none;
+      }
+
+      :deep(.base-modal__content) {
+        width: 100%;
+        padding-bottom: max(24px, env(safe-area-inset-bottom));
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: 16px 16px 0 0;
+      }
+
+      &.modal-enter-active :deep(.base-modal),
+      &.modal-leave-active :deep(.base-modal) {
+        transition: transform 0.2s ease;
+      }
+
+      &.modal-enter-from :deep(.base-modal),
+      &.modal-leave-to :deep(.base-modal) {
+        transform: translateY(100%);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        &.modal-enter-active :deep(.base-modal),
+        &.modal-leave-active :deep(.base-modal) {
+          transition: none;
+        }
+      }
+    }
   }
 
   &__move-select {
@@ -3407,6 +3568,77 @@ watch(
     &_small {
       width: 14px;
       height: 14px;
+    }
+  }
+}
+
+.mail-search {
+  width: 100%;
+  padding: 0 20px;
+  @include flex(cn);
+  gap: 16px;
+
+  &__header {
+    @include flex(rn, between, a-center);
+    gap: 16px;
+  }
+
+  &__title {
+    margin: 0;
+    color: var(--light-text-backgroung-primary);
+    @extend %display-xs-medium;
+  }
+
+  &__close {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    flex: 0 0 44px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+    @include flex(center);
+
+    &:hover {
+      color: var(--light-text-backgroung-primary);
+      background: var(--light-text-backgroung-primary-5);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+  }
+
+  &__field {
+    min-width: 0;
+    @include flex(cn);
+    gap: 6px;
+  }
+
+  &__label {
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+
+  &__actions {
+    @include flex(rn, j-end);
+    gap: 12px;
+
+    button {
+      min-height: 44px;
+    }
+
+    @media (max-width: $screen-mobile-l) {
+      align-items: stretch;
+      flex-direction: column-reverse;
+
+      button {
+        width: 100%;
+        justify-content: center;
+      }
     }
   }
 }
