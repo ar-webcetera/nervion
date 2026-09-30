@@ -74,9 +74,5 @@ onBeforeUnmount(() => clearTimeout(resetTimer));
     overflow: hidden;
     clip-path: inset(50%);
   }
-
-  @media (pointer: coarse) {
-    min-height: 44px;
-  }
 }
 </style>
