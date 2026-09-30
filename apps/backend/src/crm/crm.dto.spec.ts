@@ -34,7 +34,7 @@ describe('CRM directory DTOs', () => {
   });
 
   it('accepts only a source from the fixed CRM list', async () => {
-    const allowed = plainToInstance(DealDto, { title: 'Сделка', source: 'Сайт' });
+    const allowed = plainToInstance(DealDto, { title: 'Сделка', source: 'amoCRM' });
     const custom = plainToInstance(DealDto, { title: 'Сделка', source: 'Выставка' });
 
     await expect(validate(allowed)).resolves.toHaveLength(0);

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiUnauthorizedResponse, ApiForbiddenResponse } from '@nestjs/swagger';
 import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -70,6 +70,12 @@ export class CrmController {
   }
   @Patch('deals/:id') update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDealDto, @Req() req: RequestWithCookies) {
     return this.crm.saveDeal(dto, req.user, id);
+  }
+  @ApiOperation({ summary: 'Удалить сделку' })
+  @Delete('deals/:id')
+  @HttpCode(204)
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.crm.removeDeal(id);
   }
   @Post('deals/:id/comments') comment(
     @Param('id', ParseIntPipe) id: number,

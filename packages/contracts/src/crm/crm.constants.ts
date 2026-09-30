@@ -4,6 +4,7 @@ export const CRM_DEFAULT_SOURCES = [
   "MAX Messenger",
   "ВКонтакте",
   "Телефонный звонок",
+  "amoCRM",
   "Рекомендация",
   "Повторное обращение",
 ] as const;

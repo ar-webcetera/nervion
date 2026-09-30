@@ -34,6 +34,7 @@ import {
   Phone,
   Plus,
   Send,
+  Trash2,
   UserRound,
   X,
 } from '@lucide/vue';
@@ -297,6 +298,7 @@ watch(directoryPanel, async (value, previous) => {
   else directoryTrigger?.focus({ preventScroll: true });
 });
 const expanded = ref(false);
+const isDeleteDealConfirmOpen = ref(false);
 const returnToDeal = ref(false);
 const savedScroll = ref(0);
 const companyForm = ref<CrmCompany>({ id: 0, name: '', legal_name: '', inn: '', website: '', notes: '', responsible_id: null });
@@ -631,6 +633,17 @@ const closePanel = async () => {
   panel.value = null;
   const { deal: _deal, ...rest } = route.query;
   await router.replace({ query: rest });
+};
+const deleteDeal = async () => {
+  const id = panelId.value;
+  if (!id) return;
+  await run(async () => {
+    await $fetch(`/api/crm/deals/${id}`, { ...request, method: 'DELETE' });
+    isDeleteDealConfirmOpen.value = false;
+    Reflect.deleteProperty(commentDrafts.value, id);
+    await closePanel();
+    await Promise.all([refreshBoard(), refreshOptions()]);
+  });
 };
 const closeDirectory = async () => {
   const shouldRestoreDeal = returnToDeal.value;
@@ -1286,6 +1299,15 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
         <button aria-label="Копировать ссылку" title="Копировать ссылку" @click="copyLink">
           <Copy :size="20" :stroke-width="1.75" aria-hidden="true" />
         </button>
+        <button
+          class="crm__panel-delete"
+          aria-label="Удалить сделку"
+          title="Удалить сделку"
+          :disabled="busy"
+          @click="isDeleteDealConfirmOpen = true"
+        >
+          <Trash2 :size="20" :stroke-width="1.75" aria-hidden="true" />
+        </button>
         <button aria-label="Закрыть панель" title="Закрыть" @click="closePanel">
           <X :size="20" :stroke-width="1.75" aria-hidden="true" />
         </button>
@@ -1619,6 +1641,24 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
         </div>
       </template>
     </aside>
+
+    <Teleport to="body">
+      <BaseModal v-model="isDeleteDealConfirmOpen" :dismissible="!busy">
+        <div class="crm-delete-confirm" role="alertdialog" aria-modal="true" aria-labelledby="crm-delete-deal-title">
+          <h2 id="crm-delete-deal-title">Удалить сделку?</h2>
+          <p>Сделка "{{ deal?.title }}" будет удалена. Привязанные задачи останутся в трекере без связи со сделкой.</p>
+          <p v-if="error" class="crm-delete-confirm__error" role="alert">{{ error }}</p>
+          <div class="crm-delete-confirm__actions">
+            <button class="button button_secondary" type="button" :disabled="busy" @click="isDeleteDealConfirmOpen = false">
+              Отмена
+            </button>
+            <button class="button crm-delete-confirm__submit" type="button" :disabled="busy" @click="deleteDeal">
+              {{ busy ? 'Удаление…' : 'Удалить' }}
+            </button>
+          </div>
+        </div>
+      </BaseModal>
+    </Teleport>
 
     <div
       v-if="directoryPanel && !taskStore.currentTaskId"
@@ -2511,6 +2551,15 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     text-overflow: ellipsis;
     white-space: nowrap;
     @extend %text-m-medium;
+  }
+
+  &__panel-header > &__panel-delete {
+    color: var(--danger-delete);
+
+    &:hover:not(:disabled) {
+      color: var(--danger-delete);
+      background: var(--danger-delete-10);
+    }
   }
 
   &__panel-title-form {
@@ -3533,6 +3582,50 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     select,
     textarea {
       font-size: 16px;
+    }
+  }
+}
+
+.crm-delete-confirm {
+  padding: 0 24px;
+  @include flex(cn);
+  gap: 16px;
+
+  h2,
+  p {
+    margin: 0;
+  }
+
+  h2 {
+    @extend %display-xs-medium;
+  }
+
+  p {
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-s-regular;
+  }
+
+  &__error {
+    color: var(--danger-delete) !important;
+  }
+
+  &__actions {
+    @include flex(rn, flex-end, a-center);
+    gap: 8px;
+  }
+
+  &__submit {
+    border-color: var(--danger-delete);
+    background: var(--danger-delete);
+    color: var(--light-text-backgroung-primary);
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    padding: 0 16px;
+
+    &__actions {
+      align-items: stretch;
+      flex-direction: column-reverse;
     }
   }
 }

@@ -373,6 +373,11 @@ export class CrmService {
     }
     return this.detail(result.id);
   }
+  async removeDeal(id: number): Promise<void> {
+    const result = await this.db.getRepository(CrmDealEntity).delete(id);
+    if (!result.affected) throw new NotFoundException('Сделка не найдена');
+    void this.events.sendCrmChanged();
+  }
   private async activity(m: EntityManager, id: number, user: AuthenticatedUser, summary: string) {
     await m
       .getRepository(CrmActivityEntity)

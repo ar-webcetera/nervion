@@ -190,10 +190,10 @@ integration('CRM integration (disposable PostgreSQL)', () => {
     await request(server())
       .patch(`/api/crm/deals/${(created.body as CrmDealDetail).id}`)
       .set('Authorization', authorization)
-      .send({ source: 'Форма сайта' })
+      .send({ source: 'amoCRM' })
       .expect(200);
     const options = await request(server()).get('/api/crm/options').set('Authorization', authorization).expect(200);
-    expect((options.body as CrmOptions).sources).toEqual(expect.arrayContaining([...CRM_DEFAULT_SOURCES, 'Форма сайта']));
+    expect((options.body as CrmOptions).sources).toEqual(expect.arrayContaining([...CRM_DEFAULT_SOURCES]));
     await request(server()).post('/api/crm/deals').set('Authorization', authorization).send({}).expect(400);
     await request(server()).delete(`/api/api-tokens/${record.id}`).set('Cookie', adminCookie).expect(204);
     await request(server()).get('/api/crm/options').set('Authorization', authorization).expect(401);
@@ -400,5 +400,12 @@ integration('CRM integration (disposable PostgreSQL)', () => {
       .set('Cookie', adminCookie)
       .expect(200);
     expect((filtered.body as CrmColumn).total).toBe(3);
+  });
+  it('deletes a deal and keeps linked tasks without the CRM relation', async () => {
+    await request(server()).delete(`/api/crm/deals/${dealId}`).set('Cookie', employeeCookie).expect(403);
+    await request(server()).delete(`/api/crm/deals/${dealId}`).set('Cookie', adminCookie).expect(204);
+    await request(server()).get(`/api/crm/deals/${dealId}`).set('Cookie', adminCookie).expect(404);
+    expect((await db.getRepository(Tasks).findOneByOrFail({ id: salesId })).deal_id).toBeNull();
+    await request(server()).delete(`/api/crm/deals/${dealId}`).set('Cookie', adminCookie).expect(404);
   });
 });
