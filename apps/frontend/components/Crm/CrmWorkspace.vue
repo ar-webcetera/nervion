@@ -2607,6 +2607,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     @include flex(rn, a-center);
 
     &_deal {
+      position: static;
       align-items: stretch;
       flex-direction: column;
       gap: 8px;
