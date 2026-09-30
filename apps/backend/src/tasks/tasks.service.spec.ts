@@ -340,7 +340,100 @@ describe('TasksService', () => {
       );
       expect(mockTimelogRepository.update).toHaveBeenCalledWith(
         expect.objectContaining({ task_id: 1, status: TIMELOG_STATUSES.completed }),
-        { billing_status: BillingReviewStatus.PENDING },
+        expect.objectContaining({ billing_status: BillingReviewStatus.PENDING }),
+      );
+    });
+
+    it('должен заменить почасовые начисления закрытой задачи на фиксированное', async () => {
+      const updateTaskDto = Object.assign(new UpdateTaskDto(), {
+        billing_type: TaskBillingType.FIXED,
+        fixed_price: 25000,
+      });
+      mockTasksRepository.findOne
+        .mockResolvedValueOnce({
+          id: 1,
+          status: TASK_STATUSES.closed,
+          billing_type: TaskBillingType.HOURLY,
+          recurrence_days: null,
+        } as Partial<Tasks>)
+        .mockResolvedValueOnce({
+          id: 1,
+          status: TASK_STATUSES.closed,
+          billing_type: TaskBillingType.FIXED,
+          fixed_price: 25000,
+          closed_date: new Date('2026-09-30T08:00:00.000Z'),
+          recurrence_days: null,
+        } as Partial<Tasks>);
+      mockFixedRevenueRepository.findOne.mockResolvedValue(null);
+
+      await service.updateTask('1', updateTaskDto, { id: 1, role: ROLES.admin } as AuthenticatedUser);
+
+      expect(mockTimelogRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({ task_id: 1, status: TIMELOG_STATUSES.completed }),
+        expect.objectContaining({ billing_status: null, billing_rate: null }),
+      );
+      expect(mockFixedRevenueRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ task_id: 1, amount: 25000, status: BillingReviewStatus.PENDING }),
+      );
+    });
+
+    it('должен удалить начисления при отключении оплаты задачи', async () => {
+      const updateTaskDto = Object.assign(new UpdateTaskDto(), {
+        billing_type: null,
+        fixed_price: null,
+      });
+      mockTasksRepository.findOne
+        .mockResolvedValueOnce({
+          id: 1,
+          status: TASK_STATUSES.closed,
+          billing_type: TaskBillingType.HOURLY,
+          recurrence_days: null,
+        } as Partial<Tasks>)
+        .mockResolvedValueOnce({
+          id: 1,
+          status: TASK_STATUSES.closed,
+          billing_type: null,
+          fixed_price: null,
+          recurrence_days: null,
+        } as Partial<Tasks>);
+
+      await service.updateTask('1', updateTaskDto, { id: 1, role: ROLES.admin } as AuthenticatedUser);
+
+      expect(mockTimelogRepository.update).toHaveBeenCalledWith(
+        expect.objectContaining({ task_id: 1, status: TIMELOG_STATUSES.completed }),
+        expect.objectContaining({ billing_status: null, billing_rate: null }),
+      );
+      expect(mockFixedRevenueRepository.delete).toHaveBeenCalledWith(expect.objectContaining({ task_id: 1 }));
+    });
+
+    it('должен обновить фиксированное начисление закрытой задачи при изменении суммы', async () => {
+      const updateTaskDto = Object.assign(new UpdateTaskDto(), {
+        fixed_price: 30000,
+      });
+      const closedDate = new Date('2026-09-30T08:00:00.000Z');
+      mockTasksRepository.findOne
+        .mockResolvedValueOnce({
+          id: 1,
+          status: TASK_STATUSES.closed,
+          billing_type: TaskBillingType.FIXED,
+          fixed_price: 25000,
+          recurrence_days: null,
+        } as Partial<Tasks>)
+        .mockResolvedValueOnce({
+          id: 1,
+          status: TASK_STATUSES.closed,
+          billing_type: TaskBillingType.FIXED,
+          fixed_price: 30000,
+          closed_date: closedDate,
+          recurrence_days: null,
+        } as Partial<Tasks>);
+      mockFixedRevenueRepository.findOne.mockResolvedValue({ id: 9, task_id: 1 });
+
+      await service.updateTask('1', updateTaskDto, { id: 1, role: ROLES.admin } as AuthenticatedUser);
+
+      expect(mockTimelogRepository.update).not.toHaveBeenCalled();
+      expect(mockFixedRevenueRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 9, task_id: 1, amount: 30000, status: BillingReviewStatus.PENDING }),
       );
     });
 

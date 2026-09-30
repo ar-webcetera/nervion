@@ -859,30 +859,16 @@ export class TasksService {
         id: Number(taskId),
         ...data,
       });
-      if (updateTaskDto.billing_type === TaskBillingType.HOURLY && existingTask.billing_type !== TaskBillingType.HOURLY) {
-        await this.timelogRepository.update(
-          {
-            task_id: Number(taskId),
-            status: TIMELOG_STATUSES.completed,
-            billing_status: IsNull(),
-          },
-          { billing_status: BillingReviewStatus.PENDING },
-        );
-      }
       const findTask = await this.tasksRepository.findOne({
         where: { id: Number(taskId) },
         relations: ['responsible', 'participants', 'project'],
       });
-      if (findTask && updateTaskDto.status === TASK_STATUSES.closed && existingTask.status !== TASK_STATUSES.closed) {
-        await this.upsertFixedRevenue(findTask);
-      }
-      if (
-        findTask &&
-        updateTaskDto.status &&
-        updateTaskDto.status !== TASK_STATUSES.closed &&
-        existingTask.status === TASK_STATUSES.closed
-      ) {
-        await this.fixedRevenueRepository.delete({ task_id: findTask.id, occurrence_date: IsNull() });
+      const billingSettingsChanged = updateTaskDto.billing_type !== undefined || updateTaskDto.fixed_price !== undefined;
+      const billingTypeChanged =
+        updateTaskDto.billing_type !== undefined && updateTaskDto.billing_type !== existingTask.billing_type;
+      const statusChanged = updateTaskDto.status !== undefined && updateTaskDto.status !== existingTask.status;
+      if (findTask && (billingSettingsChanged || statusChanged)) {
+        await this.syncTaskBilling(findTask, billingTypeChanged);
       }
       if (findTask) {
         this.websocketGateway.sendTaskUpdate(findTask);
@@ -1503,6 +1489,48 @@ export class TasksService {
       reviewed_at: null,
       reviewed_by_id: null,
     });
+  }
+
+  private async syncTaskBilling(task: Tasks, billingTypeChanged: boolean): Promise<void> {
+    if (billingTypeChanged) {
+      if (task.billing_type === TaskBillingType.HOURLY) {
+        await this.timelogRepository.update(
+          {
+            task_id: task.id,
+            status: TIMELOG_STATUSES.completed,
+            billing_status: IsNull(),
+          },
+          {
+            billing_status: BillingReviewStatus.PENDING,
+            billing_rate: null,
+            recognized_at: null,
+            reviewed_at: null,
+            reviewed_by_id: null,
+          },
+        );
+      } else {
+        await this.timelogRepository.update(
+          {
+            task_id: task.id,
+            status: TIMELOG_STATUSES.completed,
+          },
+          {
+            billing_status: null,
+            billing_rate: null,
+            recognized_at: null,
+            reviewed_at: null,
+            reviewed_by_id: null,
+          },
+        );
+      }
+    }
+
+    if (task.status === TASK_STATUSES.closed && task.billing_type === TaskBillingType.FIXED) {
+      await this.upsertFixedRevenue(task);
+      return;
+    }
+
+    await this.fixedRevenueRepository.delete({ task_id: task.id, occurrence_date: IsNull() });
   }
 
   private serializeTaskForAudit(task: Partial<Tasks>): TaskAuditPayload {

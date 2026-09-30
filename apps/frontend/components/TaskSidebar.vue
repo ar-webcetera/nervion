@@ -41,6 +41,7 @@ const commentStore = useCommentStore();
 const userStore = useUserStore();
 const route = useRoute();
 const notificationStore = useNotificationStore();
+const reportStore = useReportStore();
 const { $toast } = useNuxtApp();
 
 const props = defineProps<{ currentTaskId: number | null }>();
@@ -193,6 +194,17 @@ const updateBilling = async (value?: string | number | (string | number)[] | nul
   } catch (e) {
     $toast.error(getErrorMessage(e));
     await fetchTask();
+    return;
+  }
+
+  try {
+    if (route.name === 'report') {
+      await reportStore.fetchFinancialData();
+    } else {
+      await reportStore.fetchPendingCount();
+    }
+  } catch {
+    $toast.error('Формат оплаты сохранён, но отчёт не обновился');
   }
 };
 
