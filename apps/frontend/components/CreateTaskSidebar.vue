@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { X } from '@lucide/vue';
 import TaskFormFields from '~/components/TaskForm/TaskFormFields.vue';
-import IconLongBack from './Icons/IconLongBack.vue';
 
 const emit = defineEmits<{
   (e: 'close'): void;
@@ -70,16 +70,18 @@ onUnmounted(() => {
 
 <template>
   <div class="task-sidebar__wrapper" @click="closeSidebar"></div>
-  <div class="task-sidebar" :style="sidebarStyle" @click.stop>
+  <aside class="task-sidebar" :style="sidebarStyle" @click.stop>
     <div class="task-sidebar__resize-handle" @mousedown="handleResizeStart"></div>
+    <div class="task-sidebar__close">
+      <span>Создание задачи</span>
+      <button type="button" aria-label="Закрыть создание задачи" title="Закрыть" @click="closeSidebar">
+        <X :size="20" :stroke-width="1.75" aria-hidden="true" />
+      </button>
+    </div>
     <div class="task-sidebar__content">
-      <div class="task-sidebar__close" @click="$emit('close')">
-        <IconLongBack />
-        <span>Задача</span>
-      </div>
       <TaskFormFields @close="emit('close')" />
     </div>
-  </div>
+  </aside>
 </template>
 
 <style scoped lang="scss">
@@ -131,23 +133,52 @@ onUnmounted(() => {
     overflow-y: auto;
 
     @media (max-width: $screen-mobile-l) {
-      padding: 24px 16px;
+      padding: 0 16px 24px;
     }
   }
 
   &__close {
     display: none;
-    border-bottom: 1px solid var(--light-text-backgroung-primary-10);
-
-    @media (max-width: $screen-mobile-l) {
-      @include flex(rn, a-center);
-      gap: 8px;
-      padding: 4px 0 28px;
-    }
 
     span {
       @extend %text-l-medium;
     }
+
+    button {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--light-text-backgroung-primary-50);
+      cursor: pointer;
+      transition:
+        background 0.15s,
+        color 0.15s;
+      @include flex(center);
+
+      &:hover {
+        background: var(--light-text-backgroung-primary-5);
+        color: var(--light-text-backgroung-primary);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: -2px;
+      }
+    }
+
+    @media (max-width: $screen-mobile-l) {
+      min-height: 72px;
+      padding: max(14px, env(safe-area-inset-top)) 12px 14px 16px;
+      border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+      @include flex(rn, between, a-center);
+    }
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    height: 100dvh;
   }
 }
 </style>
