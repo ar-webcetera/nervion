@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { storeToRefs } from 'pinia';
 import { activateAudioPlayback, clearActiveAudioPlayback } from '~/utils/tiptap/audioPlaybackCoordinator';
 
 const props = defineProps<{ src: string; duration?: number }>();
@@ -10,9 +11,9 @@ const audioRef = ref<HTMLAudioElement | null>(null);
 const isPlaying = ref(false);
 const currentTime = ref(0);
 const loadedDuration = ref(totalDuration.value);
-const playbackRates = [1, 1.5, 2] as const;
-type PlaybackRate = (typeof playbackRates)[number];
-const playbackRate = ref<PlaybackRate>(1);
+const audioPreferences = useAudioPreferencesStore();
+const { playbackRate, nextPlaybackRate } = storeToRefs(audioPreferences);
+const { cyclePlaybackRate } = audioPreferences;
 
 const config = useRuntimeConfig();
 const transcriptionText = ref<string | null>(null);
@@ -43,10 +44,6 @@ const progress = computed(() => {
 const hasError = ref(false);
 
 const playbackRateLabel = computed(() => `${playbackRate.value}×`);
-const nextPlaybackRate = computed<PlaybackRate>(() => {
-  const currentIndex = playbackRates.indexOf(playbackRate.value);
-  return playbackRates[(currentIndex + 1) % playbackRates.length] ?? 1;
-});
 const playbackRateAriaLabel = computed(
   () => `Скорость воспроизведения ${playbackRateLabel.value}. Следующая ${nextPlaybackRate.value}×`,
 );
@@ -90,15 +87,18 @@ const togglePlay = () => {
   }
 };
 
-const cyclePlaybackRate = () => {
-  const nextRate = nextPlaybackRate.value;
-  playbackRate.value = nextRate;
-
+const applyPlaybackRate = () => {
   const audio = audioRef.value;
   if (!audio) return;
-  audio.defaultPlaybackRate = nextRate;
-  audio.playbackRate = nextRate;
+  audio.defaultPlaybackRate = playbackRate.value;
+  audio.playbackRate = playbackRate.value;
 };
+
+watch([playbackRate, audioRef], applyPlaybackRate, { flush: 'sync' });
+onMounted(() => {
+  audioPreferences.initialize();
+  applyPlaybackRate();
+});
 
 const onTimeUpdate = () => {
   if (audioRef.value) currentTime.value = audioRef.value.currentTime;

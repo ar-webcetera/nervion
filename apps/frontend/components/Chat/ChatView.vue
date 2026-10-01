@@ -579,6 +579,7 @@ const scrollToMessage = (id: string) => {
 
     @media (max-width: $screen-mobile-l) {
       margin-top: 74px;
+      gap: 4px;
     }
 
     @media (hover: none) and (pointer: coarse) {
@@ -751,6 +752,10 @@ const scrollToMessage = (id: string) => {
 
   &_last {
     margin-bottom: 8px;
+
+    @media (max-width: $screen-mobile-l) {
+      margin-bottom: 4px;
+    }
   }
 
   &__avatar {

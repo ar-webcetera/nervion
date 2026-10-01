@@ -480,16 +480,28 @@ const unlinkYandex = async () => {
 
   &__menu-toggle {
     @include flex(rn, a-center);
-    gap: 10px;
+    gap: 12px;
+    min-height: 44px;
     cursor: pointer;
     color: var(--light-text-backgroung-primary);
-    @extend %text-s-regular;
+    @extend %text-m-regular;
+
+    span {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
 
     input {
-      width: 16px;
-      height: 16px;
+      width: 20px;
+      height: 20px;
+      margin: 0;
+      flex-shrink: 0;
       cursor: pointer;
       accent-color: var(--primary);
+      &:focus-visible {
+        outline: 2px solid var(--light-text-backgroung-primary);
+        outline-offset: 3px;
+      }
     }
   }
 

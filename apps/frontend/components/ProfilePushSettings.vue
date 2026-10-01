@@ -61,9 +61,9 @@ onMounted(async () => {
   color: var(--light-text-backgroung-primary);
 
   &__toggle {
-    @extend %text-s-regular;
+    @extend %text-m-regular;
     @include flex(rn a-center);
-    gap: 8px;
+    gap: 12px;
     min-height: 44px;
     cursor: pointer;
     span {
@@ -71,8 +71,8 @@ onMounted(async () => {
       overflow-wrap: anywhere;
     }
     input {
-      width: 16px;
-      height: 16px;
+      width: 20px;
+      height: 20px;
       margin: 0;
       flex-shrink: 0;
       accent-color: var(--primary);
@@ -88,7 +88,7 @@ onMounted(async () => {
   }
 
   &__test {
-    @extend %text-s-medium;
+    @extend %text-m-medium;
     align-self: flex-start;
     min-height: 44px;
     max-width: 100%;
