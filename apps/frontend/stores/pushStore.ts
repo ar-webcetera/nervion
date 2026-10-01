@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import type { PushTestRequest } from '@tracker/contracts';
-import { PushStatus } from '~/enums/push.enums';
+import { PushFailureStage, PushStatus } from '~/enums/push.enums';
+import { reportPushFailure } from '~/services/pushDiagnostics';
 import { getValidPushSubscription, urlBase64ToUint8Array, waitForServiceWorker } from '~/services/pushSubscription';
 import { getErrorMessage } from '~/utils/error';
 
@@ -8,6 +9,7 @@ export const usePushStore = defineStore('push', () => {
   const config = useRuntimeConfig();
   const userStore = useUserStore();
   const status = ref(PushStatus.Checking);
+  const enabled = ref(false);
   const busy = ref(false);
   const message = ref('');
   const showBanner = ref(false);
@@ -34,6 +36,7 @@ export const usePushStore = defineStore('push', () => {
     syncedAt = 0;
     attemptedAt = 0;
     status.value = PushStatus.Checking;
+    enabled.value = false;
     message.value = '';
     showBanner.value = false;
   };
@@ -43,14 +46,18 @@ export const usePushStore = defineStore('push', () => {
     if (!userId) return false;
     busy.value = true;
     attemptedAt = Date.now();
+    let stage = PushFailureStage.PublicKey;
     try {
       const { key } = await $fetch<{ key: string }>('/api/push/vapid-public-key', apiOptions());
       if (!key) throw new Error('Уведомления не настроены на сервере.');
+      stage = PushFailureStage.ServiceWorker;
       const registration = await waitForServiceWorker(navigator.serviceWorker);
+      stage = PushFailureStage.BrowserSubscription;
       const subscription = await getValidPushSubscription(registration, urlBase64ToUint8Array(key));
       const keys = subscription.toJSON().keys;
       if (!keys?.p256dh || !keys.auth) throw new Error('Не удалось создать подписку. Повторите попытку.');
       if (userStore.user?.id !== userId || disabled()) return false;
+      stage = PushFailureStage.SaveSubscription;
       await $fetch('/api/push/subscribe', {
         ...apiOptions(),
         method: 'POST',
@@ -58,6 +65,7 @@ export const usePushStore = defineStore('push', () => {
       });
       if (userStore.user?.id !== userId) return false;
       if (disabled()) {
+        stage = PushFailureStage.UnsubscribeServer;
         await $fetch('/api/push/unsubscribe', {
           ...apiOptions(),
           method: 'DELETE',
@@ -66,11 +74,13 @@ export const usePushStore = defineStore('push', () => {
         return false;
       }
       status.value = PushStatus.Enabled;
+      enabled.value = true;
       syncedAt = Date.now();
       message.value = '';
       showBanner.value = false;
       return true;
-    } catch {
+    } catch (error) {
+      reportPushFailure(stage, error as Error);
       if (userStore.user?.id === userId) {
         status.value = PushStatus.Error;
         message.value = 'Не удалось подключить уведомления. Проверьте соединение и повторите попытку.';
@@ -96,12 +106,14 @@ export const usePushStore = defineStore('push', () => {
     if (busy.value) return Promise.resolve(false);
     if (Notification.permission === 'denied') {
       status.value = PushStatus.Blocked;
+      enabled.value = false;
       showBanner.value = false;
       return Promise.resolve(false);
     }
     if (disabled() || Notification.permission !== 'granted') {
       status.value = localStorage.getItem(disabledKey) === 'pending' ? PushStatus.Error : PushStatus.Disabled;
-      if (status.value === PushStatus.Error) message.value = 'Отключение не завершено. Нажмите "Выключить" ещё раз.';
+      enabled.value = status.value === PushStatus.Error;
+      if (status.value === PushStatus.Error) message.value = 'Отключение не завершено. Снимите галочку ещё раз.';
       showBanner.value = !disabled() && !dismissed();
       return Promise.resolve(false);
     }
@@ -126,7 +138,8 @@ export const usePushStore = defineStore('push', () => {
         return;
       }
       localStorage.removeItem(disabledKey);
-    } catch {
+    } catch (error) {
+      reportPushFailure(PushFailureStage.Permission, error as Error);
       status.value = PushStatus.Error;
       message.value = 'Не удалось запросить разрешение. Повторите попытку.';
       return;
@@ -155,39 +168,60 @@ export const usePushStore = defineStore('push', () => {
           }),
           subscription.unsubscribe(),
         ]);
-        if (results.every((result) => result.status === 'rejected')) throw new Error('Unsubscribe failed');
+        for (const [index, result] of results.entries()) {
+          if (result.status === 'rejected') {
+            reportPushFailure(
+              index === 0 ? PushFailureStage.UnsubscribeServer : PushFailureStage.UnsubscribeBrowser,
+              result.reason as Error,
+            );
+          }
+        }
+        if (results.every((result) => result.status === 'rejected')) {
+          status.value = PushStatus.Error;
+          enabled.value = true;
+          message.value = 'Не удалось завершить отключение. Проверьте соединение и снимите галочку ещё раз.';
+          return;
+        }
       }
       localStorage.setItem(disabledKey, '1');
       status.value = PushStatus.Disabled;
+      enabled.value = false;
       syncedAt = 0;
-    } catch {
+    } catch (error) {
+      reportPushFailure(PushFailureStage.ReadSubscription, error as Error);
       status.value = PushStatus.Error;
-      message.value = 'Не удалось завершить отключение. Проверьте соединение и нажмите "Выключить" ещё раз.';
+      enabled.value = true;
+      message.value = 'Не удалось завершить отключение. Проверьте соединение и снимите галочку ещё раз.';
     } finally {
       busy.value = false;
     }
   };
 
-  const test = async () => {
-    if (!supported() || busy.value || status.value !== PushStatus.Enabled) return;
+  const test = async (): Promise<boolean> => {
+    if (!supported() || busy.value || !enabled.value) return false;
     busy.value = true;
     message.value = '';
+    let stage = PushFailureStage.ReadSubscription;
     try {
       const registration = await navigator.serviceWorker.getRegistration();
       const subscription = await registration?.pushManager.getSubscription();
       if (!subscription) throw new Error('Подписка отсутствует. Включите уведомления повторно.');
       const body: PushTestRequest = { endpoint: subscription.endpoint };
+      stage = PushFailureStage.Test;
       await $fetch('/api/push/test', { ...apiOptions(), method: 'POST', body });
       message.value =
         'Запрос отправлен. Проверьте уведомления устройства. Если ничего нет, проверьте разрешения браузера и Android.';
+      return true;
     } catch (error) {
+      reportPushFailure(stage, error as Error);
       status.value = PushStatus.Error;
       message.value = getErrorMessage(error);
       syncedAt = 0;
+      return false;
     } finally {
       busy.value = false;
     }
   };
 
-  return { status, busy, message, showBanner, sync, enable, disable, test, reset, dismissBanner };
+  return { status, enabled, busy, message, showBanner, sync, enable, disable, test, reset, dismissBanner };
 });

@@ -18,6 +18,7 @@ const source = compile(new URL('../stores/pushStore.ts', import.meta.url));
 const setup = ({ disabled, permission = 'granted', failDelete = false, failUnsubscribe = false, failTest = false } = {}) => {
   const storage = new Map(disabled ? [['push-device-disabled', disabled]] : []);
   const requests = [];
+  const reports = [];
   let permissionRequests = 0;
   const subscription = {
     endpoint: 'https://push.example/this-device',
@@ -59,6 +60,7 @@ const setup = ({ disabled, permission = 'granted', failDelete = false, failUnsub
     require: (name) => {
       if (name === 'pinia') return { defineStore: (_name, factory) => factory };
       if (name.endsWith('push.enums')) return enumExports;
+      if (name.endsWith('pushDiagnostics')) return { reportPushFailure: (stage, error) => reports.push({ stage, error }) };
       if (name.endsWith('/error')) return { getErrorMessage: (error) => error.message };
       if (name.endsWith('pushSubscription'))
         return {
@@ -70,7 +72,14 @@ const setup = ({ disabled, permission = 'granted', failDelete = false, failUnsub
     },
   };
   runInNewContext(source, context);
-  return { store: exports.usePushStore(), storage, requests, notification, permissionRequests: () => permissionRequests };
+  return {
+    store: exports.usePushStore(),
+    storage,
+    requests,
+    reports,
+    notification,
+    permissionRequests: () => permissionRequests,
+  };
 };
 
 test('explicit device opt-out prevents reconnect and banner, including after reload', async () => {
@@ -87,14 +96,16 @@ test('enable requests permission and only reports enabled after server registrat
   assert.equal(permissionRequests(), 1);
   assert.equal(storage.has('push-device-disabled'), false);
   assert.equal(store.status.value, PushStatus.Enabled);
+  assert.equal(store.enabled.value, true);
   assert.ok(requests.some(({ path }) => path === '/api/push/subscribe'));
 });
 
 test('blocked permission does not create a subscription', async () => {
-  const { store, requests } = setup({ permission: 'denied' });
+  const { store, requests, reports } = setup({ permission: 'denied' });
   await store.enable();
   assert.equal(store.status.value, PushStatus.Blocked);
   assert.equal(requests.length, 0);
+  assert.equal(reports.length, 0);
 });
 
 test('disable is endpoint-specific and background sync does not turn it back on', async () => {
@@ -102,6 +113,7 @@ test('disable is endpoint-specific and background sync does not turn it back on'
   await store.disable();
   await store.sync(true);
   assert.equal(store.status.value, PushStatus.Disabled);
+  assert.equal(store.enabled.value, false);
   assert.equal(requests.length, 1);
   assert.equal(requests[0].options.body.endpoint, 'https://push.example/this-device');
 });
@@ -133,9 +145,85 @@ test('test targets the current endpoint and does not claim delivery', async () =
 });
 
 test('test provider failures become visible errors', async () => {
-  const { store } = setup({ failTest: true });
+  const { store, reports } = setup({ failTest: true });
   await store.enable();
   await store.test();
   assert.equal(store.status.value, PushStatus.Error);
+  assert.equal(store.enabled.value, true);
   assert.equal(store.message.value, 'Push service unavailable');
+  assert.equal(reports[0].stage, 'test_push');
+});
+
+test('unsubscribe failures report both original causes without a misleading read failure', async () => {
+  const { store, reports } = setup({ failDelete: true, failUnsubscribe: true });
+  await store.disable();
+  assert.deepEqual(
+    reports.map(({ stage }) => stage),
+    ['unsubscribe_server', 'unsubscribe_browser'],
+  );
+});
+
+test('diagnostics keep safe context, deduplicate and tolerate a broken monitoring client', () => {
+  const events = [];
+  const exports = {};
+  let monitoringEnabled = false;
+  let broken = false;
+  runInNewContext(compile(new URL('../services/pushDiagnostics.ts', import.meta.url)), {
+    exports,
+    require: () => ({
+      getClient: () => ({ getOptions: () => ({ dsn: monitoringEnabled ? 'configured' : undefined }) }),
+      captureEvent: (event) => {
+        if (broken) throw new Error('monitoring unavailable');
+        events.push(event);
+      },
+    }),
+    Notification: { permission: 'granted' },
+    navigator: { onLine: true, serviceWorker: { controller: {} } },
+    window: { isSecureContext: true, matchMedia: () => ({ matches: true }) },
+  });
+  const error = {
+    name: 'FetchError',
+    statusCode: 503,
+    message: 'secret endpoint',
+    stack: 'secret key',
+    data: { auth: 'secret auth' },
+  };
+  exports.reportPushFailure('save_subscription', error);
+  assert.equal(events.length, 0);
+  monitoringEnabled = true;
+  exports.reportPushFailure('save_subscription', error);
+  exports.reportPushFailure('save_subscription', error);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].tags.http_status, '503');
+  assert.equal(events[0].contexts.push.standalone, true);
+  assert.doesNotMatch(JSON.stringify(events), /secret/);
+  broken = true;
+  assert.doesNotThrow(() => exports.reportPushFailure('test_push', error));
+});
+
+test('Sentry final filter strips automatically attached private context only for push events', () => {
+  let options;
+  runInNewContext(compile(new URL('../sentry.client.config.ts', import.meta.url)), {
+    exports: {},
+    require: (name) =>
+      name === '#imports'
+        ? { useRuntimeConfig: () => ({ public: { SENTRY_DSN: 'configured' } }) }
+        : {
+            init: (value) => {
+              options = value;
+            },
+          },
+  });
+  const event = {
+    tags: { feature: 'web_push' },
+    breadcrumbs: ['secret'],
+    request: { url: 'secret' },
+    user: { email: 'secret' },
+    extra: { endpoint: 'secret' },
+    contexts: { push: { online: true } },
+  };
+  assert.doesNotMatch(JSON.stringify(options.beforeSend(event)), /secret/);
+  assert.equal(event.contexts.push.online, true);
+  const unrelated = { message: 'other', breadcrumbs: ['keep'] };
+  assert.equal(options.beforeSend(unrelated).breadcrumbs[0], 'keep');
 });
