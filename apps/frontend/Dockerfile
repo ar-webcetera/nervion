@@ -4,10 +4,10 @@
 FROM node:22-bookworm AS build
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@8.15.6 --activate
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig*.json ./
-COPY apps/frontend/package.json apps/frontend/
+COPY .npmrc pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig*.json ./
+COPY apps/frontend/package.json apps/frontend/pnpm-lock.yaml apps/frontend/
 COPY packages packages
-RUN pnpm install --no-frozen-lockfile --filter frontend...
+RUN pnpm install --frozen-lockfile --filter frontend...
 COPY apps/frontend apps/frontend
 RUN pnpm --filter frontend... build
 

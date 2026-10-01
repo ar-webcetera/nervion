@@ -138,6 +138,10 @@ pnpm --filter frontend dev
 
 Подробнее — в [`docs/development.md`](./docs/development.md).
 
+Docker-сборка frontend устанавливает зависимости с `--frozen-lockfile` и
+использует `apps/frontend/pnpm-lock.yaml` вместе с настройками `.npmrc`.
+При изменении зависимостей обновляйте и коммитьте соответствующий lockfile.
+
 ## API и документация
 
 Весь API описан через OpenAPI / Swagger. После запуска интерактивная документация доступна по адресу `/api/docs` (например `http://localhost:3026/api/docs`), машинное описание — `/api/docs-json`. Авторизация поддерживается как по cookie-сессии, так и по API-токену для внешних интеграций.
