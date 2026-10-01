@@ -127,6 +127,11 @@ const unlinkYandex = async () => {
       </button>
     </div>
 
+    <div class="base-profile-popup__divider"></div>
+    <div class="base-profile-popup__section">
+      <ProfilePushSettings />
+    </div>
+
     <div class="base-profile-popup__section base-profile-popup__section_menu">
       <div class="base-profile-popup__section-title">Пункты меню</div>
       <label v-for="item in configurableMenuItems" :key="item.key" class="base-profile-popup__menu-toggle">

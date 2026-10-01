@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { GoneException, Injectable, Logger, NotFoundException, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import * as webpush from 'web-push';
@@ -56,18 +56,36 @@ export class PushService implements OnModuleInit {
     await Promise.all(subs.map((s) => this.send(s, payload)));
   }
 
-  private async send(sub: PushSubscription, payload: PushPayload): Promise<void> {
+  async sendTest(userId: number, endpoint: string): Promise<void> {
+    const subscription = await this.subscriptionRepo.findOneBy({ user_id: userId, endpoint });
+    if (!subscription) throw new NotFoundException('Подписка не найдена. Включите уведомления повторно.');
+    await this.send(
+      subscription,
+      {
+        title: 'Уведомления работают',
+        body: 'Это проверочное уведомление Нервион для этого устройства.',
+        url: '/',
+        tag: 'push-test',
+      },
+      true,
+    );
+  }
+
+  private async send(sub: PushSubscription, payload: PushPayload, reportFailure = false): Promise<void> {
     try {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
         JSON.stringify(payload),
+        { timeout: 10000 },
       );
-    } catch (err: unknown) {
+    } catch (err) {
       const status = (err as { statusCode?: number }).statusCode;
       if (status === 410 || status === 404) {
         await this.subscriptionRepo.delete({ endpoint: sub.endpoint });
+        if (reportFailure) throw new GoneException('Подписка истекла. Выключите и снова включите уведомления.');
       } else {
         this.logger.warn(`Push failed for user ${sub.user_id}: ${String(err)}`);
+        if (reportFailure) throw new ServiceUnavailableException('Push-сервис недоступен. Повторите проверку позже.');
       }
     }
   }

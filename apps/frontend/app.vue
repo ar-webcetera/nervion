@@ -10,6 +10,7 @@ import { TypeSort } from '~/constants/sort.constants';
 import type { ChatMessage } from './types/chat';
 import { extractPlainText } from '~/utils/extractPainText';
 import type { TiptapDoc } from '~/utils/extractPainText';
+import { PushStatus } from '~/enums/push.enums';
 const taskStore = useTaskStore();
 const commentStore = useCommentStore();
 const userStore = useUserStore();
@@ -284,6 +285,7 @@ const addNotification = (newNotification: Notification) => {
 };
 
 const showPushEvent = async (newMessage: ChatMessage) => {
+  if (pushStore.status !== PushStatus.Enabled) return;
   if (Notification.permission !== 'granted') return;
   const messageText = newMessage.message?.content?.[0]?.content?.[0]?.text || 'Новое сообщение';
   const title = newMessage.author ? `${newMessage.author.first_name} ${newMessage.author.last_name}` : 'Удалённый пользователь';
@@ -524,130 +526,26 @@ const handlePageShow = (event: PageTransitionEvent) => {
   // bfcache: после «Назад» onMounted не вызывается — обновляем unread принудительно.
   syncAfterResume(event.persisted);
 };
-const urlBase64ToUint8Array = (base64String: string): Uint8Array => {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const rawData = atob(base64);
-  const output = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; i++) output[i] = rawData.charCodeAt(i);
-  return output;
-};
-
-const config = useRuntimeConfig();
-
-const showNotificationBanner = ref(false);
-const pushSubscriptionInFlight = ref(false);
-const pushSubscriptionUserId = ref<number | null>(null);
-
-const dismissNotificationBanner = () => {
-  showNotificationBanner.value = false;
-  if (import.meta.client) localStorage.setItem('push-banner-dismissed', '1');
-};
-
-const isSubscriptionServerKeyMismatch = (subscription: PushSubscription, expectedServerKey: Uint8Array): boolean => {
-  const currentServerKey = subscription.options.applicationServerKey;
-  if (!currentServerKey) return false;
-
-  const currentServerKeyBytes = new Uint8Array(currentServerKey);
-  if (currentServerKeyBytes.length !== expectedServerKey.length) return true;
-
-  for (let index = 0; index < currentServerKeyBytes.length; index++) {
-    if (currentServerKeyBytes[index] !== expectedServerKey[index]) return true;
-  }
-
-  return false;
-};
-
-const getValidPushSubscription = async (
-  registration: ServiceWorkerRegistration,
-  applicationServerKey: Uint8Array,
-): Promise<PushSubscription | null> => {
-  const existing = await registration.pushManager.getSubscription();
-
-  if (existing) {
-    const existingKeys = existing.toJSON().keys;
-    if (existingKeys?.p256dh && existingKeys?.auth && !isSubscriptionServerKeyMismatch(existing, applicationServerKey)) {
-      return existing;
-    }
-    await existing.unsubscribe().catch(() => {});
-  }
-
-  const created = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: applicationServerKey as unknown as BufferSource,
-  });
-  const createdKeys = created.toJSON().keys;
-  if (!createdKeys?.p256dh || !createdKeys?.auth) return null;
-  return created;
-};
-
-const subscribeToPush = async () => {
-  const userId = userStore.user?.id;
-  if (!userId || pushSubscriptionInFlight.value || pushSubscriptionUserId.value === userId) return;
-  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
-  if (Notification.permission !== 'granted') return;
-
-  pushSubscriptionInFlight.value = true;
-  try {
-    const vapid = await $fetch<{ key: string }>('/api/push/vapid-public-key', { baseURL: config.public.API_URL as string });
-    if (!vapid.key) {
-      console.warn('Push subscription skipped: empty VAPID public key');
-      return;
-    }
-
-    const applicationServerKey = urlBase64ToUint8Array(vapid.key);
-    const reg = await navigator.serviceWorker.ready;
-    const sub = await getValidPushSubscription(reg, applicationServerKey);
-    if (!sub) {
-      console.warn('Push subscription skipped: subscription keys are missing');
-      return;
-    }
-
-    const json = sub.toJSON();
-    if (!json.keys?.p256dh || !json.keys?.auth) {
-      console.warn('Push subscription skipped: subscription keys are missing');
-      return;
-    }
-
-    await $fetch('/api/push/subscribe', {
-      method: 'POST',
-      baseURL: config.public.API_URL as string,
-      credentials: 'include',
-      body: { endpoint: sub.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } },
-    });
-    pushSubscriptionUserId.value = userId;
-  } catch (e) {
-    console.error('Push subscription failed:', e);
-  } finally {
-    pushSubscriptionInFlight.value = false;
-  }
-};
-
+const pushStore = usePushStore();
+const { showBanner: showNotificationBanner, busy: pushSubscriptionInFlight } = storeToRefs(pushStore);
+const syncPushState = () => { void pushStore.sync(); };
 const requestNotificationPermission = async () => {
-  if (!('Notification' in window)) return;
-  showNotificationBanner.value = false;
-  if (import.meta.client) localStorage.setItem('push-banner-dismissed', '1');
-  const permission = await Notification.requestPermission().catch(() => 'denied' as NotificationPermission);
-  if (permission === 'granted') await subscribeToPush();
+  await pushStore.enable();
+  if (pushStore.status === PushStatus.Enabled) $toast.success('Уведомления включены');
+  else if (pushStore.status === PushStatus.Blocked) $toast.error('Разрешите уведомления в настройках сайта и Android.');
+  else if (pushStore.message) $toast.error(pushStore.message);
 };
-
-const syncPushState = () => {
-  if (!import.meta.client || !('Notification' in window)) return;
-  if (Notification.permission === 'granted') {
-    subscribeToPush().catch(() => {});
-    return;
-  }
-
-  if (Notification.permission === 'default' && userStore.user?.id && !localStorage.getItem('push-banner-dismissed')) {
-    showNotificationBanner.value = true;
-  }
+const dismissNotificationBanner = () => pushStore.dismissBanner();
+const handlePushPreferenceChange = (event: StorageEvent) => {
+  if (event.key?.startsWith('push-')) { pushStore.reset(); syncPushState(); }
 };
-
 watch(
   () => userStore.user?.id ?? null,
   (userId, previousUserId) => {
     if (!import.meta.client) return;
-    if (userId !== previousUserId) pushSubscriptionUserId.value = null;
+    if (userId !== previousUserId) {
+      pushStore.reset();
+    }
     if (userId) {
       syncUnreadState(true).catch(() => {});
     }
@@ -681,8 +579,10 @@ onMounted(async () => {
   window.addEventListener('focus', handlePageFocus);
   window.addEventListener('pageshow', handlePageShow);
   window.addEventListener('online', handlePageFocus);
+  window.addEventListener('storage', handlePushPreferenceChange);
   syncIntervalId = setInterval(() => {
     if (document.visibilityState !== 'visible') return;
+    syncPushState();
     syncUnreadState().catch(() => {});
     syncScreenState().catch(() => {});
   }, 30000);
@@ -698,6 +598,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('focus', handlePageFocus);
   window.removeEventListener('pageshow', handlePageShow);
   window.removeEventListener('online', handlePageFocus);
+  window.removeEventListener('storage', handlePushPreferenceChange);
   destroySocket();
 });
 </script>
@@ -711,73 +612,12 @@ onBeforeUnmount(() => {
   <ChangelogModal />
   <ClientOnly>
     <Transition name="banner">
-      <div v-if="showNotificationBanner" class="push-banner">
-        <span>Разрешить уведомления о задачах и сообщениях?</span>
-        <div class="push-banner__actions">
-          <button class="push-banner__allow" @click="requestNotificationPermission">Разрешить</button>
-          <button class="push-banner__dismiss" @click="dismissNotificationBanner">Не сейчас</button>
-        </div>
-      </div>
+      <PushNotificationBanner
+        v-if="showNotificationBanner"
+        :busy="pushSubscriptionInFlight"
+        @allow="requestNotificationPermission"
+        @dismiss="dismissNotificationBanner"
+      />
     </Transition>
   </ClientOnly>
 </template>
-
-<style scoped lang="scss">
-.push-banner {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 9999;
-  background: var(--dark-text-background-secondary);
-  border: 1px solid var(--border, #3a3a4a);
-  border-radius: 12px;
-  padding: 14px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 360px;
-  width: calc(100% - 32px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  font-size: 14px;
-
-  &__actions {
-    display: flex;
-    gap: 8px;
-  }
-
-  &__allow {
-    flex: 1;
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: none;
-    background: var(--primary, #6c63ff);
-    color: #fff;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 500;
-  }
-
-  &__dismiss {
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--border, #3a3a4a);
-    background: transparent;
-    color: var(--text-secondary, #888);
-    cursor: pointer;
-    font-size: 13px;
-  }
-}
-
-.banner-enter-active,
-.banner-leave-active {
-  transition:
-    opacity 0.25s,
-    transform 0.25s;
-}
-.banner-enter-from,
-.banner-leave-to {
-  opacity: 0;
-  transform: translateX(-50%) translateY(16px);
-}
-</style>

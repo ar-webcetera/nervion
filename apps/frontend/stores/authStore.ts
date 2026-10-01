@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { useUserStore } from '~/stores/userStore';
 import type { User } from '~/types/user';
+import { waitForServiceWorker } from '~/services/pushSubscription';
 
 export const useAuthStore = defineStore('auth', () => {
   const config = useRuntimeConfig();
@@ -10,7 +11,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!import.meta.client) return;
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
-    const registration = await navigator.serviceWorker.ready;
+    const registration = await waitForServiceWorker(navigator.serviceWorker);
     const subscription = await registration.pushManager.getSubscription();
     if (!subscription) return;
 
@@ -19,6 +20,7 @@ export const useAuthStore = defineStore('auth', () => {
         baseURL: config.public.API_URL,
         method: 'DELETE',
         credentials: 'include',
+        timeout: 15000,
         body: {
           endpoint: subscription.endpoint,
         },

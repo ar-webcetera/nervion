@@ -3,6 +3,7 @@ export * from "./audit";
 export * from "./tasks";
 export * from "./timelogs";
 export * from "./notifications";
+export * from "./notifications/push.types";
 export * from "./mailbox";
 export * from "./billing";
 
