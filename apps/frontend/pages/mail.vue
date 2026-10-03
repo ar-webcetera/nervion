@@ -718,6 +718,7 @@ const orderedMessages = computed(() =>
 );
 
 const lastInboundMessage = computed(() => orderedMessages.value.find((message) => message.direction === MAIL_DIRECTIONS.inbound));
+const lastReplyMessage = computed(() => orderedMessages.value.find((message) => message.status !== 'draft'));
 
 const replyRecipient = computed(() => lastInboundMessage.value?.from_address || currentThread.value?.counterparty_address || '');
 
@@ -744,14 +745,15 @@ const collectReplyAddresses = (includeAllRecipients: boolean): ReplyRecipients =
     target.push(trimmedAddress);
   };
 
-  add(to, replyRecipient.value);
   if (includeAllRecipients) {
-    for (const message of orderedMessages.value) {
-      if (message.status === 'draft') continue;
-      add(cc, message.from_address);
-      for (const recipient of message.to_addresses) add(cc, recipient.address);
+    const message = lastReplyMessage.value;
+    if (message) {
+      add(to, message.from_address);
+      for (const recipient of message.to_addresses) add(to, recipient.address);
       for (const recipient of message.cc_addresses) add(cc, recipient.address);
     }
+  } else {
+    add(to, replyRecipient.value);
   }
 
   return { to, cc };
