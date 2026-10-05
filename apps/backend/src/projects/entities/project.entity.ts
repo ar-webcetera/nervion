@@ -46,6 +46,16 @@ export class Projects {
   @Column({ type: 'integer', default: 0 })
   hourlyRate: number;
 
+  @Column({ name: 'is_private', type: 'boolean', default: false })
+  isPrivate: boolean;
+
+  @Column({ name: 'owner_id', type: 'integer', nullable: true })
+  ownerId: number | null;
+
+  @ManyToOne(() => Users, { nullable: true, onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'owner_id' })
+  owner: Users | null;
+
   @OneToMany(() => ProjectMembers, (pm) => pm.project, { cascade: true })
   members: ProjectMembers[];
 

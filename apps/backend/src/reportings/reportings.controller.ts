@@ -18,24 +18,29 @@ export class ReportingsController {
   @Get('revenue/dashboard')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(ROLES.admin)
-  dashboard() {
-    return this.reportingsService.getRevenueDashboard();
+  dashboard(@Req() req: RequestWithCookies) {
+    return this.reportingsService.getRevenueDashboard(req.user.id);
   }
 
   @Get('billing/count')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(ROLES.admin)
-  pendingCount() {
-    return this.reportingsService.getPendingCount();
+  pendingCount(@Req() req: RequestWithCookies) {
+    return this.reportingsService.getPendingCount(req.user.id);
   }
 
   @Get('billing/items')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(ROLES.admin)
-  billingItems(@Query('pending') pending?: string, @Query('limit') limit?: string, @Query('offset') offset?: string) {
+  billingItems(
+    @Req() req: RequestWithCookies,
+    @Query('pending') pending?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
     const parsedLimit = Math.min(100, Math.max(1, Number(limit) || 20));
     const parsedOffset = Math.max(0, Number(offset) || 0);
-    return this.reportingsService.getBillingItems(pending !== 'false', parsedLimit, parsedOffset);
+    return this.reportingsService.getBillingItems(req.user.id, pending !== 'false', parsedLimit, parsedOffset);
   }
 
   @Patch('billing/timelogs/:id')
@@ -68,8 +73,8 @@ export class ReportingsController {
   @ApiResponse({ status: 201, description: 'Строки отчёта по таймлогам для предпросмотра' })
   @ApiResponse({ status: 400, description: 'Некорректные данные запроса' })
   @ApiResponse({ status: 401, description: 'Пользователь не авторизован' })
-  async preview(@Body() createReportingDto: CreateReportingDto) {
-    return this.reportingsService.preview(createReportingDto);
+  async preview(@Body() createReportingDto: CreateReportingDto, @Req() req: RequestWithCookies) {
+    return this.reportingsService.preview(createReportingDto, req.user.id);
   }
 
   @UseGuards(AuthGuard)
@@ -80,8 +85,8 @@ export class ReportingsController {
   @ApiResponse({ status: 401, description: 'Пользователь не авторизован' })
   @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
   @Header('Content-Disposition', `attachment; filename="timelogs.xlsx"`)
-  async create(@Body() createReportingDto: CreateReportingDto) {
-    const file = await this.reportingsService.create(createReportingDto);
+  async create(@Body() createReportingDto: CreateReportingDto, @Req() req: RequestWithCookies) {
+    const file = await this.reportingsService.create(createReportingDto, req.user.id);
     return new StreamableFile(file);
   }
 }

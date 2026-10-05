@@ -22,6 +22,7 @@ import {
 import { FixedRevenue } from './entities/fixed-revenue.entity';
 import { MonthlyRevenueTarget } from './entities/monthly-revenue-target.entity';
 import { ReviewBillingDto } from './dto/review-billing.dto';
+import { Projects } from '../projects/entities/project.entity';
 
 export interface TimelogRow {
   taskId: number | null;
@@ -96,16 +97,26 @@ export class ReportingsService {
     private readonly monthlyTargetRepository: Repository<MonthlyRevenueTarget>,
   ) {}
 
-  async getPendingCount(): Promise<{ count: number }> {
+  async getPendingCount(currentUserId: number): Promise<{ count: number }> {
     const [timelogs, fixed] = await Promise.all([
-      this.timelogRepository.count({ where: { billing_status: BillingReviewStatus.PENDING } }),
-      this.fixedRevenueRepository.count({ where: { status: BillingReviewStatus.PENDING } }),
+      this.timelogRepository
+        .createQueryBuilder('timelog')
+        .leftJoin('timelog.task', 'task')
+        .leftJoin('task.project', 'project')
+        .where('timelog.billing_status = :status', { status: BillingReviewStatus.PENDING })
+        .andWhere('(project.id IS NULL OR project.isPrivate = false OR project.ownerId = :currentUserId)', { currentUserId })
+        .getCount(),
+      this.fixedRevenueRepository
+        .createQueryBuilder('revenue')
+        .leftJoin('revenue.project', 'project')
+        .where('revenue.status = :status', { status: BillingReviewStatus.PENDING })
+        .andWhere('(project.id IS NULL OR project.isPrivate = false OR project.ownerId = :currentUserId)', { currentUserId })
+        .getCount(),
     ]);
     return { count: timelogs + fixed };
   }
 
-  async getBillingItems(pending: boolean, limit = 20, offset = 0): Promise<BillingQueuePage> {
-    const statuses = pending ? [BillingReviewStatus.PENDING] : [BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED];
+  async getBillingItems(currentUserId: number, pending: boolean, limit = 20, offset = 0): Promise<BillingQueuePage> {
     const fetchLimit = offset + limit + 1;
     const timelogQb = this.timelogRepository
       .createQueryBuilder('timelog')
@@ -116,6 +127,7 @@ export class ReportingsService {
         pending: BillingReviewStatus.PENDING,
         reviewed: [BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED],
       })
+      .andWhere('(project.id IS NULL OR project.isPrivate = false OR project.ownerId = :currentUserId)', { currentUserId })
       .orderBy('timelog.updated_at', 'DESC')
       .take(fetchLimit);
     const fixedQb = this.fixedRevenueRepository
@@ -126,13 +138,14 @@ export class ReportingsService {
         pending: BillingReviewStatus.PENDING,
         reviewed: [BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED],
       })
+      .andWhere('(project.id IS NULL OR project.isPrivate = false OR project.ownerId = :currentUserId)', { currentUserId })
       .orderBy('revenue.closed_at', 'DESC')
       .take(fetchLimit);
     const [timelogs, fixed, timelogTotal, fixedTotal] = await Promise.all([
       timelogQb.getMany(),
       fixedQb.getMany(),
-      this.timelogRepository.count({ where: { billing_status: In(statuses) } }),
-      this.fixedRevenueRepository.count({ where: { status: In(statuses) } }),
+      timelogQb.clone().getCount(),
+      fixedQb.clone().getCount(),
     ]);
     const timelogItems: BillingQueueItem[] = timelogs.map((item) => {
       const rate = item.billing_rate == null ? Number(item.task?.project?.hourlyRate ?? 0) : Number(item.billing_rate);
@@ -177,6 +190,7 @@ export class ReportingsService {
   async reviewTimelog(id: number, dto: ReviewBillingDto, reviewerId: number): Promise<void> {
     const timelog = await this.timelogRepository.findOne({ where: { id }, relations: ['task', 'task.project'] });
     if (!timelog) throw new NotFoundException('Таймтрек не найден');
+    this.assertProjectVisible(timelog.task?.project ?? null, reviewerId);
     const rate = dto.rate ?? Number(timelog.billing_rate ?? timelog.task?.project?.hourlyRate ?? 0);
     await this.timelogRepository.update(id, {
       billing_status: dto.status,
@@ -188,8 +202,9 @@ export class ReportingsService {
   }
 
   async reviewFixedRevenue(id: number, dto: ReviewBillingDto, reviewerId: number): Promise<void> {
-    const revenue = await this.fixedRevenueRepository.findOneBy({ id });
+    const revenue = await this.fixedRevenueRepository.findOne({ where: { id }, relations: ['project'] });
     if (!revenue) throw new NotFoundException('Начисление не найдено');
+    this.assertProjectVisible(revenue.project ?? null, reviewerId);
     await this.fixedRevenueRepository.update(id, {
       status: dto.status,
       amount: dto.amount ?? revenue.amount,
@@ -204,11 +219,11 @@ export class ReportingsService {
     await this.monthlyTargetRepository.save({ ...(existing ?? {}), year, month, amount, updated_by_id: userId });
   }
 
-  async getRevenueDashboard(now = new Date()): Promise<RevenueDashboard> {
+  async getRevenueDashboard(currentUserId: number, now = new Date()): Promise<RevenueDashboard> {
     const currentStart = format(startOfMonth(now), 'yyyy-MM-dd');
     const currentEnd = format(endOfMonth(now), 'yyyy-MM-dd');
     const previous = subMonths(now, 1);
-    const [timelogs, fixed, openFixed, target] = await Promise.all([
+    const [allTimelogs, allFixed, allOpenFixed, target] = await Promise.all([
       this.timelogRepository.find({
         where: { billing_status: In([BillingReviewStatus.APPROVED, BillingReviewStatus.PENDING]) },
         relations: ['task', 'task.project'],
@@ -227,6 +242,9 @@ export class ReportingsService {
         .getMany(),
       this.monthlyTargetRepository.findOneBy({ year: now.getFullYear(), month: now.getMonth() + 1 }),
     ]);
+    const timelogs = allTimelogs.filter((item) => this.isProjectVisible(item.task?.project ?? null, currentUserId));
+    const fixed = allFixed.filter((item) => this.isProjectVisible(item.project ?? null, currentUserId));
+    const openFixed = allOpenFixed.filter((item) => this.isProjectVisible(item.project ?? null, currentUserId));
     type Entry = { date: string; amount: number; project: string; status: BillingReviewStatus };
     const entries: Entry[] = [
       ...timelogs.map((item) => ({
@@ -299,8 +317,19 @@ export class ReportingsService {
   private roundMoney(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
   }
+
+  private isProjectVisible(project: Projects | null, currentUserId: number): boolean {
+    return !project?.isPrivate || project.ownerId === currentUserId;
+  }
+
+  private assertProjectVisible(project: Projects | null, currentUserId: number): void {
+    if (!this.isProjectVisible(project, currentUserId)) {
+      throw new NotFoundException('Запись не найдена');
+    }
+  }
   private async buildTimelogs(
     createReportingDto: CreateReportingDto,
+    currentUserId: number,
   ): Promise<{ timelogs: TimelogRow[]; rawTimelogs: Timelogs[]; rateByUserId: Map<number, number> }> {
     const { from, to, project_id, executor_id } = createReportingDto;
     const rateByUserId = new Map<number, number>();
@@ -326,10 +355,11 @@ export class ReportingsService {
       where.author_id = executor_id;
     }
 
-    const rawTimelogs = await this.timelogRepository.find({
+    const loadedTimelogs = await this.timelogRepository.find({
       where,
       relations: ['task', 'author', 'task.project'],
     });
+    const rawTimelogs = loadedTimelogs.filter((item) => this.isProjectVisible(item.task?.project ?? null, currentUserId));
     rawTimelogs.sort((left, right) => this.resolveTimelogLoggedAt(right).getTime() - this.resolveTimelogLoggedAt(left).getTime());
 
     const timelogs: TimelogRow[] = rawTimelogs.map((timelog) => {
@@ -359,13 +389,13 @@ export class ReportingsService {
     return { timelogs, rawTimelogs, rateByUserId };
   }
 
-  async preview(createReportingDto: CreateReportingDto): Promise<TimelogRow[]> {
-    const { timelogs } = await this.buildTimelogs(createReportingDto);
+  async preview(createReportingDto: CreateReportingDto, currentUserId: number): Promise<TimelogRow[]> {
+    const { timelogs } = await this.buildTimelogs(createReportingDto, currentUserId);
     return timelogs;
   }
 
-  async create(createReportingDto: CreateReportingDto) {
-    const { timelogs, rawTimelogs, rateByUserId } = await this.buildTimelogs(createReportingDto);
+  async create(createReportingDto: CreateReportingDto, currentUserId: number) {
+    const { timelogs, rawTimelogs, rateByUserId } = await this.buildTimelogs(createReportingDto, currentUserId);
 
     const rows: ReportRow[] = timelogs.map((t) => ({
       Проект: t.project,

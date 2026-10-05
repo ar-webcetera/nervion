@@ -7,6 +7,7 @@ import { Timelogs } from '../timelogs/entities/timelog.entity';
 import { QuickLink } from '../quick-links/entities/quick-link.entity';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { ROLES } from '../common/enums/roles.enum';
 
 describe('Project deletion', () => {
   it('removes blocking quick links and the project within the same transaction', async () => {
@@ -26,7 +27,7 @@ describe('Project deletion', () => {
         { provide: AuditLogsService, useValue: { record: jest.fn() } },
       ],
     }).compile();
-    await module.get(ProjectsService).deleteProject(12, { id: 1 } as AuthenticatedUser);
+    await module.get(ProjectsService).deleteProject(12, { id: 1, role: ROLES.admin } as AuthenticatedUser);
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(manager.delete).toHaveBeenCalledWith(QuickLink, { project_id: 12 });
     expect(manager.remove).toHaveBeenCalledWith(project);

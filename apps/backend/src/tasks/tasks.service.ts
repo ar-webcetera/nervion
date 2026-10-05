@@ -177,6 +177,9 @@ export class TasksService {
 
   private applyProjectAccessScope(qb: SelectQueryBuilder<Tasks>, currentUser: AuthenticatedUser) {
     if (currentUser.role === ROLES.admin) {
+      qb.andWhere('(task.project_id IS NULL OR project.isPrivate = false OR project.ownerId = :userId)', {
+        userId: currentUser.id,
+      });
       return;
     }
     qb.andWhere("task.business_kind = 'production'");
@@ -542,6 +545,7 @@ export class TasksService {
       throw new HttpException({ message: ['Проект задачи находится в архиве'] }, HttpStatus.NOT_FOUND);
     }
     const isAdmin = currentUser.role === ROLES.admin;
+    await this.assertProjectAccess(task.project ?? null, currentUser, task.project_id);
     if (!isAdmin && task.business_kind === TaskBusinessKind.SALES)
       throw new HttpException('Задача не найдена', HttpStatus.NOT_FOUND);
     if (isAdmin) {
@@ -593,6 +597,7 @@ export class TasksService {
           HttpStatus.NOT_FOUND,
         );
       }
+      await this.assertProjectAccess(project, currentUser);
     }
 
     if (project?.status === PROJECT_STATUSES.ON_HOLD) {
@@ -612,6 +617,7 @@ export class TasksService {
           HttpStatus.NOT_FOUND,
         );
       }
+      this.assertPrivateProjectResponsible(project, responsible);
     }
 
     const last = await this.tasksRepository.findOne({
@@ -671,7 +677,7 @@ export class TasksService {
       });
     }
 
-    this.websocketGateway.sendTaskAdded(createdTask);
+    void this.websocketGateway.sendTaskAdded(createdTask);
     await this.recordCrmTask(createdTask.id, currentUser, `Создана задача «${createdTask.title}»`);
 
     return createdTask;
@@ -695,6 +701,7 @@ export class TasksService {
     }
 
     const isAdmin = currentUser?.role === ROLES.admin;
+    await this.assertProjectAccess(source.project ?? null, currentUser, source.project_id);
     if (currentUser && !isAdmin && source.project) {
       const hasAccess = await this.projectsMembersRepository.exist({
         where: {
@@ -737,7 +744,7 @@ export class TasksService {
 
     for (const related of source.related_tasks ?? []) {
       if (related.id === createdTask.id) continue;
-      await this.linkTasks(String(createdTask.id), String(related.id));
+      await this.linkTasks(String(createdTask.id), String(related.id), currentUser);
     }
 
     const createdTaskForLog = await this.tasksRepository.findOne({
@@ -781,6 +788,8 @@ export class TasksService {
         throw new HttpException({ message: [`Задача с id=${taskId} не найдена`] }, HttpStatus.NOT_FOUND);
       }
 
+      await this.assertProjectAccess(existingTask.project ?? null, currentUser, existingTask.project_id);
+
       await this.validateCommercial(updateTaskDto, currentUser, existingTask);
       const data: DeepPartial<Tasks> = {};
       if (updateTaskDto.deal_id !== undefined) data.deal_id = updateTaskDto.deal_id;
@@ -798,6 +807,7 @@ export class TasksService {
               HttpStatus.NOT_FOUND,
             );
           }
+          this.assertPrivateProjectResponsible(existingTask.project ?? null, responsible);
         }
         data.responsible_id = updateTaskDto.responsible_id;
       }
@@ -823,6 +833,10 @@ export class TasksService {
         }
         if (project.status === PROJECT_STATUSES.ON_HOLD) {
           throw new HttpException({ message: ['Нельзя перенести задачу в архивный проект'] }, HttpStatus.BAD_REQUEST);
+        }
+        await this.assertProjectAccess(project, currentUser);
+        if (updateTaskDto.responsible_id === undefined && existingTask.responsible) {
+          this.assertPrivateProjectResponsible(project, existingTask.responsible);
         }
         data.project_id = project.id;
       }
@@ -871,7 +885,7 @@ export class TasksService {
         await this.syncTaskBilling(findTask, billingTypeChanged);
       }
       if (findTask) {
-        this.websocketGateway.sendTaskUpdate(findTask);
+        void this.websocketGateway.sendTaskUpdate(findTask);
       }
 
       const previousResponsibleId = existingTask.responsible?.id ?? existingTask.responsible_id ?? null;
@@ -937,6 +951,8 @@ export class TasksService {
         throw new HttpException({ message: [`Задача с id=${task_id} не найдена`] }, HttpStatus.NOT_FOUND);
       }
 
+      await this.assertProjectAccess(existingTask.project ?? null, currentUser, existingTask.project_id);
+
       if (existingTask.business_kind === TaskBusinessKind.SALES) await this.commentRepository.delete({ task_id });
       await this.recordCrmTask(task_id, currentUser, `Удалена задача «${existingTask.title}»`);
       await this.tasksRepository.delete(task_id);
@@ -952,16 +968,23 @@ export class TasksService {
         beforePayload: this.serializeTaskForAudit(existingTask),
       });
       if (existingTask.business_kind === TaskBusinessKind.SALES) this.websocketGateway.sendTaskDeleted(task_id, true);
-      else this.websocketGateway.sendTaskDeleted(task_id);
+      else {
+        this.websocketGateway.sendTaskDeleted(
+          task_id,
+          false,
+          existingTask.project?.isPrivate ? existingTask.project.ownerId : null,
+        );
+      }
     } catch (e) {
       console.log(e);
       throw e;
     }
   }
-  async updatePriorityTask(updatePriorityTaskDto: UpdatePriorityTaskDto) {
+  async updatePriorityTask(updatePriorityTaskDto: UpdatePriorityTaskDto, currentUser: AuthenticatedUser) {
     const ids = updatePriorityTaskDto.ids;
 
     const [fromId, toId] = ids;
+    await Promise.all([this.assertTaskAccess(fromId, currentUser), this.assertTaskAccess(toId, currentUser)]);
     await this.dataSource.transaction(async (manager) => {
       const repo = manager.getRepository(Tasks);
       const [fromTask, toTask] = await Promise.all([repo.findOneByOrFail({ id: fromId }), repo.findOneByOrFail({ id: toId })]);
@@ -981,20 +1004,25 @@ export class TasksService {
     return taskJson;
   }
 
-  async linkTasks(baseTaskId: string, relatedTaskId: string) {
+  async linkTasks(baseTaskId: string, relatedTaskId: string, currentUser?: AuthenticatedUser) {
     const baseTask = await this.tasksRepository.findOne({
       where: { id: Number(baseTaskId) },
-      relations: ['related_tasks'],
+      relations: ['related_tasks', 'project'],
     });
 
     const relatedTask = await this.tasksRepository.findOne({
       where: { id: Number(relatedTaskId) },
-      relations: ['related_tasks'],
+      relations: ['related_tasks', 'project'],
     });
 
     if (!baseTask || !relatedTask) {
       throw new HttpException({ message: [`Задача с id=${baseTaskId} или ${relatedTaskId} не найдена`] }, HttpStatus.NOT_FOUND);
     }
+
+    await Promise.all([
+      this.assertProjectAccess(baseTask.project ?? null, currentUser, baseTask.project_id),
+      this.assertProjectAccess(relatedTask.project ?? null, currentUser, relatedTask.project_id),
+    ]);
 
     if (baseTask.id === relatedTask.id) {
       throw new HttpException({ message: ['Нельзя связать задачу саму с собой'] }, HttpStatus.BAD_REQUEST);
@@ -1022,7 +1050,7 @@ export class TasksService {
       throw new HttpException({ message: [`Задача с id=${baseTaskId} не найдена`] }, HttpStatus.NOT_FOUND);
     }
     const newTask = await this.createTask({ ...createDto, business_kind: baseTask.business_kind } as CreateTaskDto, currentUser);
-    await this.linkTasks(baseTaskId, newTask.id.toString());
+    await this.linkTasks(baseTaskId, newTask.id.toString(), currentUser);
     return newTask;
   }
 
@@ -1107,20 +1135,25 @@ export class TasksService {
     }
   }
 
-  async unlinkTasks(baseTaskId: string, relatedTaskId: number) {
+  async unlinkTasks(baseTaskId: string, relatedTaskId: number, currentUser: AuthenticatedUser) {
     const baseTask = await this.tasksRepository.findOne({
       where: { id: Number(baseTaskId) },
-      relations: ['related_tasks'],
+      relations: ['related_tasks', 'project'],
     });
 
     const relatedTask = await this.tasksRepository.findOne({
       where: { id: Number(relatedTaskId) },
-      relations: ['related_tasks'],
+      relations: ['related_tasks', 'project'],
     });
 
     if (!baseTask || !relatedTask) {
       throw new HttpException({ message: [`Задача с id=${baseTaskId} или ${relatedTaskId} не найдена`] }, HttpStatus.NOT_FOUND);
     }
+
+    await Promise.all([
+      this.assertProjectAccess(baseTask.project ?? null, currentUser, baseTask.project_id),
+      this.assertProjectAccess(relatedTask.project ?? null, currentUser, relatedTask.project_id),
+    ]);
 
     if (baseTask.id === relatedTask.id) {
       throw new HttpException({ message: ['Нельзя отвязать задачу от самой себя'] }, HttpStatus.BAD_REQUEST);
@@ -1356,6 +1389,7 @@ export class TasksService {
     if (!task) {
       throw new HttpException({ message: [`Задача с id=${taskId} не найдена`] }, HttpStatus.NOT_FOUND);
     }
+    await this.assertProjectAccess(null, currentUser, task.project_id);
 
     const existing = await this.completionRepository.findOne({
       where: { task_id: taskId, completed_at: date },
@@ -1392,6 +1426,7 @@ export class TasksService {
     if (!task) {
       throw new HttpException({ message: [`Задача с id=${taskId} не найдена`] }, HttpStatus.NOT_FOUND);
     }
+    await this.assertProjectAccess(null, currentUser, task.project_id);
 
     await this.completionRepository.delete({ task_id: taskId, completed_at: date });
     await this.auditLogsService.record({
@@ -1558,6 +1593,63 @@ export class TasksService {
 
     const plainText = extractPlainText(description as TiptapDoc, undefined, ExtractPlainTextMode.ALL_NODES).trim();
     return plainText || null;
+  }
+
+  private async assertTaskAccess(taskId: number, currentUser: AuthenticatedUser): Promise<void> {
+    const task = await this.tasksRepository.findOne({
+      where: { id: taskId },
+      relations: ['project'],
+    });
+    if (!task) {
+      throw new HttpException({ message: [`Задача с id=${taskId} не найдена`] }, HttpStatus.NOT_FOUND);
+    }
+    await this.assertProjectAccess(task.project ?? null, currentUser, task.project_id);
+  }
+
+  private async assertProjectAccess(
+    loadedProject: Projects | null,
+    currentUser?: AuthenticatedUser,
+    projectId?: number | null,
+  ): Promise<void> {
+    const resolvedProjectId = loadedProject?.id ?? projectId ?? null;
+    if (!resolvedProjectId) return;
+
+    const project =
+      loadedProject ??
+      (await this.projectsRepository.findOne({
+        where: { id: resolvedProjectId },
+      }));
+    if (!project) {
+      throw new HttpException({ message: [`Проект с id=${resolvedProjectId} не найден`] }, HttpStatus.NOT_FOUND);
+    }
+
+    if (project.isPrivate) {
+      if (!currentUser || project.ownerId !== currentUser.id) {
+        throw new HttpException({ message: ['Задача не найдена'] }, HttpStatus.NOT_FOUND);
+      }
+      return;
+    }
+
+    if (!currentUser || currentUser.role === ROLES.admin) return;
+
+    const hasAccess = await this.projectsMembersRepository.exist({
+      where: {
+        project: { id: project.id },
+        user: { id: currentUser.id },
+      },
+    });
+    if (!hasAccess) {
+      throw new HttpException({ message: ['Доступ к проекту запрещён'] }, HttpStatus.FORBIDDEN);
+    }
+  }
+
+  private assertPrivateProjectResponsible(project: Projects | null, responsible: Users): void {
+    if (project?.isPrivate && project.ownerId !== responsible.id) {
+      throw new HttpException(
+        { message: ['В личной задаче ответственным может быть только владелец проекта'] },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
   }
 
   private getChangedTaskAuditFields(beforePayload: TaskAuditPayload, afterPayload: TaskAuditPayload): string[] {

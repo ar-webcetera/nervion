@@ -6,6 +6,7 @@ import { PROJECT_STATUS_OPTIONS, PROJECT_STATUSES } from '~/constants/project.co
 import IconTrash from './Icons/IconTrash.vue';
 import type { JSONContent } from '@tiptap/vue-3';
 import { PAGE_NAMES } from '~/constants/pages.constants';
+import { ROLES } from '~/types/user';
 
 const props = defineProps<{
   project: Project;
@@ -19,6 +20,9 @@ const emit = defineEmits<{
 const isCreatingMode = computed(() => props.project.id === 0);
 const project = ref(props.project);
 const projectName = ref(props.project.name);
+const isPrivate = ref(props.project.isPrivate);
+const userStore = useUserStore();
+const canChooseVisibility = computed(() => userStore.user?.role === ROLES.admin);
 
 const projectRef = toRef(props, 'project');
 
@@ -170,6 +174,7 @@ const createProject = () => {
   project.value.name = projectName.value;
   project.value.budget = normalizeNonNegativeNumber(budgetInput.value);
   project.value.hourlyRate = normalizeNonNegativeNumber(hourlyRateInput.value);
+  project.value.isPrivate = isPrivate.value;
   emit('create', project.value);
 };
 
@@ -244,6 +249,14 @@ onUnmounted(() => {
         </div>
 
         <div class="project-sidebar__info">
+          <label v-if="isCreatingMode" class="project-sidebar__privacy">
+            <input v-model="isPrivate" type="checkbox" :disabled="!canChooseVisibility" />
+            <span class="project-sidebar__privacy-control" aria-hidden="true"></span>
+            <span class="project-sidebar__privacy-copy">
+              <strong>Личный проект</strong>
+              <small>Доступ будет только у вас. Изменить тип проекта после создания нельзя.</small>
+            </span>
+          </label>
           <div class="project-sidebar__info-item">
             <span class="project-sidebar__info-label">Статус</span>
             <BaseDropdown
@@ -388,7 +401,8 @@ onUnmounted(() => {
   position: fixed;
   top: 0;
   right: 0;
-  height: 100vh;
+  height: 100dvh;
+  max-width: 100vw;
   background-color: var(--dark-text-background-primary);
   box-shadow: -2px 0 8px var(--black-10);
   z-index: 1000;
@@ -650,7 +664,81 @@ onUnmounted(() => {
   &__info {
     @include flex(cn);
     gap: 12px;
-    width: 150px;
+    width: 240px;
+  }
+
+  &__privacy {
+    position: relative;
+    min-height: 44px;
+    padding: 12px;
+    border-radius: 8px;
+    background: var(--light-text-backgroung-primary-5);
+    cursor: pointer;
+    @include flex(rn a-start);
+    gap: 10px;
+
+    input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+
+      &:focus-visible + .project-sidebar__privacy-control {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+      }
+
+      &:checked + .project-sidebar__privacy-control {
+        border-color: var(--primary);
+        background: var(--primary);
+
+        &::after {
+          opacity: 1;
+        }
+      }
+
+      &:disabled ~ * {
+        cursor: default;
+      }
+    }
+  }
+
+  &__privacy-control {
+    position: relative;
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    border: 1px solid var(--light-text-backgroung-primary-50);
+    border-radius: 4px;
+
+    &::after {
+      content: '';
+      position: absolute;
+      left: 6px;
+      top: 2px;
+      width: 5px;
+      height: 10px;
+      border-right: 2px solid var(--light-text-backgroung-primary);
+      border-bottom: 2px solid var(--light-text-backgroung-primary);
+      opacity: 0;
+      transform: rotate(45deg);
+    }
+  }
+
+  &__privacy-copy {
+    min-width: 0;
+    @include flex(cn);
+    gap: 4px;
+
+    strong {
+      @extend %text-s-medium;
+      color: var(--light-text-backgroung-primary);
+    }
+
+    small {
+      @extend %text-xs-regular;
+      color: var(--light-text-backgroung-primary-50);
+    }
   }
 
   &__info-item {
@@ -714,6 +802,34 @@ onUnmounted(() => {
     border-radius: 4px;
     border: none;
     transition: background 0.2s ease;
+  }
+
+  @media (max-width: $screen-tablet) {
+    width: 100% !important;
+
+    &__resize-handle {
+      display: none;
+    }
+
+    &__content {
+      padding: 16px;
+    }
+
+    &__content-container {
+      flex-direction: column;
+    }
+
+    &__info {
+      width: 100%;
+    }
+
+    &__actions {
+      flex-wrap: wrap;
+
+      button {
+        min-height: 44px;
+      }
+    }
   }
 }
 </style>

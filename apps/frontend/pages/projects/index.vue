@@ -11,6 +11,7 @@ import ProjectMembersModal from '~/components/ProjectMembersModal.vue';
 import IconPlus from '~/components/Icons/IconPlus.vue';
 import IconAddUser from '~/components/Icons/IconAddUser.vue';
 import { useProject } from '~/composables/useProject';
+import { Lock } from '@lucide/vue';
 const config = useRuntimeConfig();
 
 const { $toast } = useNuxtApp();
@@ -49,6 +50,7 @@ const getStatusLabel = (status: string): string => {
 };
 
 const openCreateProjectSidebar = () => {
+  const isPrivate = userStore.user?.role !== ROLES.admin;
   selectedProject.value = {
     id: 0,
     name: '',
@@ -58,6 +60,8 @@ const openCreateProjectSidebar = () => {
     hourlyRate: 0,
     spentBudget: 0,
     members: [],
+    isPrivate,
+    ownerId: userStore.user?.id ?? null,
   } as Project;
   isProjectSidebarOpen.value = true;
   isOpenTaskCreateModal.value = false;
@@ -78,17 +82,18 @@ const createProjectFromSidebar = async (project: Project) => {
       status: selectedProject.value.status as PROJECT_STATUSES,
       budget: Math.max(0, selectedProject.value.budget),
       hourlyRate: Math.max(0, selectedProject.value.hourlyRate),
+      isPrivate: selectedProject.value.isPrivate,
     });
     await projectStore.fetchProjectsWithArchived();
     closeProjectSidebar();
-    $toast.success(`Проект “${projectName}” создан`);
+    $toast.success(`Проект "${projectName}" создан`);
   } catch (e) {
     $toast.error(getErrorMessage(e));
   }
 };
 
 const openProjectSidebar = (project: Project) => {
-  if (userStore.user?.role !== ROLES.admin) return;
+  if (!canManageProject(project)) return;
   selectedProject.value = project;
   isProjectSidebarOpen.value = true;
 };
@@ -99,6 +104,7 @@ const closeProjectSidebar = () => {
 };
 
 const openSelectedMembersModal = (project: Project) => {
+  if (project.isPrivate || userStore.user?.role !== ROLES.admin) return;
   selectedProjectForMembers.value = project;
   openMembersModal();
 };
@@ -125,7 +131,7 @@ const deleteProject = async () => {
   try {
     const projectName = selectedProject.value.name;
     await projectStore.deleteProject(selectedProject.value.id);
-    $toast.trash(`Проект “${projectName}” успешно удален`);
+    $toast.trash(`Проект "${projectName}" успешно удален`);
     closeProjectSidebar();
   } catch (e) {
     if (!import.meta.server) {
@@ -133,6 +139,9 @@ const deleteProject = async () => {
     }
   }
 };
+
+const canManageProject = (project: Project): boolean =>
+  userStore.user?.role === ROLES.admin || (project.isPrivate && project.ownerId === userStore.user?.id);
 
 definePageMeta({
   middleware: ['auth', 'role'],
@@ -146,7 +155,11 @@ definePageMeta({
     <div class="project__header">
       <div class="project__title">Проекты</div>
       <div class="project__add-task">
-        <div v-if="userStore.user?.role === ROLES.admin" class="project__open-modal" @click.stop="openCreateProjectSidebar">
+        <div
+          v-if="userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee"
+          class="project__open-modal"
+          @click.stop="openCreateProjectSidebar"
+        >
           <button>
             <IconsIconPlus />
             Новый проект
@@ -165,11 +178,14 @@ definePageMeta({
         @click="openProjectSidebar(project)"
       >
         <div class="project-item__header">
-          <span class="project-item__title">{{ project.name }}</span>
-          <IconsIconArrowRight v-if="userStore.user?.role === ROLES.admin" class="project-item__arrow" />
+          <div class="project-item__heading">
+            <span class="project-item__title">{{ project.name }}</span>
+            <span v-if="project.isPrivate" class="project-item__private"><Lock aria-hidden="true" /> Личный</span>
+          </div>
+          <IconsIconArrowRight v-if="canManageProject(project)" class="project-item__arrow" />
         </div>
 
-        <div v-if="userStore.user?.role === ROLES.admin" class="project-item__content">
+        <div v-if="canManageProject(project)" class="project-item__content">
           <div class="project-item__subtitle">Выработка за {{ currentMonthName }}</div>
 
           <div class="project-item__progress-text">
@@ -208,7 +224,7 @@ definePageMeta({
                 +{{ (project.members || []).length - 3 }}
               </div>
             </div>
-            <template v-if="userStore.user?.role === ROLES.admin">
+            <template v-if="userStore.user?.role === ROLES.admin && !project.isPrivate">
               <button v-if="project.members?.length" title="Управлять участниками" class="project-item__members-button">
                 <IconPlus />
               </button>
@@ -349,6 +365,13 @@ definePageMeta({
     gap: 12px;
   }
 
+  &__heading {
+    min-width: 0;
+    @include flex(rn a-center);
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
   &__add-task {
     position: relative;
     cursor: pointer;
@@ -375,6 +398,23 @@ definePageMeta({
 
   &__title {
     @extend %display-xs-medium;
+  }
+
+  &__private {
+    min-height: 24px;
+    padding: 3px 7px;
+    border-radius: 999px;
+    background: var(--primary-25);
+    color: var(--light-text-backgroung-primary);
+    @extend %text-xs-medium;
+    @include flex(rn a-center);
+    gap: 4px;
+
+    svg {
+      width: 13px;
+      height: 13px;
+      stroke-width: 1.75;
+    }
   }
 
   &__items {

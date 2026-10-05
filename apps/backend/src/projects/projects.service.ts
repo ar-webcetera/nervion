@@ -1,6 +1,6 @@
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { QuickLink } from '../quick-links/entities/quick-link.entity';
-import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AuditActionType, AuditEntityType } from '@tracker/contracts';
 import { QueryFailedError, Repository, SelectQueryBuilder } from 'typeorm';
@@ -11,6 +11,8 @@ import { Timelogs } from '../timelogs/entities/timelog.entity';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { PROJECT_STATUSES } from '../common/enums/project-status.enum';
+import { ROLES } from '../common/enums/roles.enum';
+import { Users } from '../users/entities/users.entity';
 
 @Injectable()
 export class ProjectsService {
@@ -33,11 +35,12 @@ export class ProjectsService {
     return qb.andWhere('project.status != :archivedProjectStatus', { archivedProjectStatus: PROJECT_STATUSES.ON_HOLD });
   }
 
-  async findProjectsByFilter(includeArchived = false) {
+  async findProjectsByFilter(currentUser: AuthenticatedUser, includeArchived = false) {
     const qb = this.projectRepository
       .createQueryBuilder('project')
       .leftJoinAndSelect('project.members', 'members')
       .leftJoinAndSelect('members.user', 'user')
+      .andWhere('(project.isPrivate = false OR project.ownerId = :currentUserId)', { currentUserId: currentUser.id })
       .orderBy('project.createdAt', 'DESC');
 
     const projects = await this.applyActiveProjectScope(qb, includeArchived).getMany();
@@ -108,9 +111,30 @@ export class ProjectsService {
   }
 
   async createProject(createProjectDto: CreateProjectDto, currentUser: AuthenticatedUser) {
+    if (currentUser.role !== ROLES.admin && !createProjectDto.isPrivate) {
+      throw new ForbiddenException('Сотрудник может создать только личный проект');
+    }
+
     try {
-      const project = this.projectRepository.create(createProjectDto);
-      const createdProject = await this.projectRepository.save(project);
+      const createdProject = await this.projectRepository.manager.transaction(async (manager) => {
+        const project = manager.create(Projects, {
+          ...createProjectDto,
+          isPrivate: createProjectDto.isPrivate ?? false,
+          ownerId: currentUser.id,
+        });
+        const savedProject = await manager.save(Projects, project);
+
+        if (savedProject.isPrivate) {
+          const ownerMembership = manager.create(ProjectMembers, {
+            project: savedProject,
+            user: { id: currentUser.id } as Users,
+            role: currentUser.role,
+          });
+          await manager.save(ProjectMembers, ownerMembership);
+        }
+
+        return savedProject;
+      });
       void this.auditLogsService.record({
         actionType: AuditActionType.PROJECT_CREATED,
         entityType: AuditEntityType.PROJECT,
@@ -141,6 +165,7 @@ export class ProjectsService {
     if (!project) {
       throw new NotFoundException(`Проект с ID ${id} не найден`);
     }
+    this.assertCanManageProject(project, currentUser);
 
     const beforePayload = this.serializeProjectForAudit(project);
     Object.assign(project, updateProjectDto);
@@ -190,6 +215,7 @@ export class ProjectsService {
     if (!project) {
       throw new NotFoundException(`Проект с ID ${id} не найден`);
     }
+    this.assertCanManageProject(project, currentUser);
 
     await this.projectRepository.manager.transaction(async (manager) => {
       await manager.delete(QuickLink, { project_id: id });
@@ -216,6 +242,10 @@ export class ProjectsService {
 
     if (!project) {
       throw new NotFoundException(`Проект с ID ${projectId} не найден`);
+    }
+    this.assertCanManageProject(project, currentUser);
+    if (project.isPrivate) {
+      throw new ForbiddenException('Участников личного проекта нельзя изменять');
     }
 
     const beforeMembers = project.members.map((member) => ({
@@ -277,6 +307,21 @@ export class ProjectsService {
       status: project.status ?? null,
       budget: project.budget ?? 0,
       hourlyRate: project.hourlyRate ?? 0,
+      isPrivate: project.isPrivate ?? false,
+      ownerId: project.ownerId ?? null,
     };
+  }
+
+  private assertCanManageProject(project: Projects, currentUser: AuthenticatedUser): void {
+    if (project.isPrivate) {
+      if (project.ownerId !== currentUser.id) {
+        throw new NotFoundException(`Проект с ID ${project.id} не найден`);
+      }
+      return;
+    }
+
+    if (currentUser.role !== ROLES.admin) {
+      throw new ForbiddenException('Недостаточно прав для изменения проекта');
+    }
   }
 }

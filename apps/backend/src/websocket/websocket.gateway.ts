@@ -12,6 +12,7 @@ import { Comments } from '../comments/entities/comment.entity';
 import { Notifications } from '../notifications/entities/notification.entity';
 import { ChatMessage } from '../chats/entities/chat-message.entity';
 import { Timelogs } from '../timelogs/entities/timelog.entity';
+import { Projects } from '../projects/entities/project.entity';
 
 @WebSocketGateway({ namespace: '/ws', cors: true })
 export class WebsocketGateway {
@@ -48,45 +49,93 @@ export class WebsocketGateway {
     }
   }
 
+  private async sendUserEvent(userId: number, event: string, data: { type: SOCKET_EVENT_TYPE; data: object }) {
+    if (!this.server) return;
+    for (const client of await this.server.fetchSockets()) {
+      try {
+        const raw = client.handshake.headers.cookie
+          ?.split(';')
+          .map((part) => part.trim())
+          .find((part) => part.startsWith('authToken='))
+          ?.slice(10);
+        if (!raw) continue;
+        const payload = this.jwt.verifyToken(decodeURIComponent(raw));
+        if ((payload.id ?? payload.userId) !== userId) continue;
+        client.emit(event, data);
+      } catch {
+        /* Invalid, expired or revoked sessions never receive private events. */
+      }
+    }
+  }
+
+  private async getPrivateProjectOwner(projectId?: number | null): Promise<number | null> {
+    if (!projectId) return null;
+    const project = await this.db.getRepository(Projects).findOne({
+      where: { id: projectId },
+      select: ['id', 'isPrivate', 'ownerId'],
+    });
+    return project?.isPrivate ? project.ownerId : null;
+  }
+
   sendProjectsChanged() {
     this.server.emit(ProjectRealtimeEvent.CHANGED);
   }
 
-  sendTaskAdded(task: Tasks) {
+  async sendTaskAdded(task: Tasks) {
     if (task.business_kind === TaskBusinessKind.SALES) {
       void this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.task_added, data: task });
       void this.sendCrmChanged();
       return;
     }
     const { deal_id: _dealId, ...publicTask } = task;
+    const privateOwnerId = await this.getPrivateProjectOwner(task.project_id ?? task.project?.id);
+    if (privateOwnerId) {
+      await this.sendUserEvent(privateOwnerId, 'event', { type: SOCKET_EVENT_TYPE.task_added, data: publicTask });
+      return;
+    }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.task_added, data: publicTask });
   }
 
-  sendTaskUpdate(task: Tasks) {
+  async sendTaskUpdate(task: Tasks) {
     if (task.business_kind === TaskBusinessKind.SALES) {
       void this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.task_update, data: task });
       void this.sendCrmChanged();
       return;
     }
     const { deal_id: _dealId, ...publicTask } = task;
+    const privateOwnerId = await this.getPrivateProjectOwner(task.project_id ?? task.project?.id);
+    if (privateOwnerId) {
+      await this.sendUserEvent(privateOwnerId, 'event', { type: SOCKET_EVENT_TYPE.task_update, data: publicTask });
+      return;
+    }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.task_update, data: publicTask });
   }
 
-  sendTaskDeleted(taskId: number, commercial = false) {
+  sendTaskDeleted(taskId: number, commercial = false, privateOwnerId?: number | null) {
     if (commercial) {
       void this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.task_deleted, data: { id: taskId } });
       void this.sendCrmChanged();
       return;
     }
+    if (privateOwnerId) {
+      void this.sendUserEvent(privateOwnerId, 'event', { type: SOCKET_EVENT_TYPE.task_deleted, data: { id: taskId } });
+      return;
+    }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.task_deleted, data: { id: taskId } });
   }
 
-  sendNotificationAdded(notification: Notifications) {
-    this.server.emit('event', { type: SOCKET_EVENT_TYPE.notification_added, data: notification });
+  sendNotificationAdded(notification: Notifications, recipientId: number) {
+    void this.sendUserEvent(recipientId, 'event', {
+      type: SOCKET_EVENT_TYPE.notification_added,
+      data: notification,
+    });
   }
 
-  sendNotificationUpdated(notification: Notifications) {
-    this.server.emit('event', { type: SOCKET_EVENT_TYPE.notification_updated, data: notification });
+  sendNotificationUpdated(notification: Notifications, recipientId: number) {
+    void this.sendUserEvent(recipientId, 'event', {
+      type: SOCKET_EVENT_TYPE.notification_updated,
+      data: notification,
+    });
   }
 
   async sendCommentAdded(comment: Comments) {
@@ -94,12 +143,21 @@ export class WebsocketGateway {
       await this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.comment_added, data: comment });
       return;
     }
+    const privateOwnerId = await this.getPrivateProjectOwnerForTask(comment.task_id ?? comment.task?.id);
+    if (privateOwnerId) {
+      await this.sendUserEvent(privateOwnerId, 'event', { type: SOCKET_EVENT_TYPE.comment_added, data: comment });
+      return;
+    }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.comment_added, data: comment });
   }
 
-  sendCommentDeleted(commentId: number, commercial = false) {
+  sendCommentDeleted(commentId: number, commercial = false, privateOwnerId?: number | null) {
     if (commercial) {
       void this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.comment_deleted, data: { id: commentId } });
+      return;
+    }
+    if (privateOwnerId) {
+      void this.sendUserEvent(privateOwnerId, 'event', { type: SOCKET_EVENT_TYPE.comment_deleted, data: { id: commentId } });
       return;
     }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.comment_deleted, data: { id: commentId } });
@@ -108,6 +166,11 @@ export class WebsocketGateway {
   async sendCommentUpdated(comment: Comments) {
     if (await this.isCommercialComment(comment)) {
       await this.sendAdminEvent('event', { type: SOCKET_EVENT_TYPE.comment_updated, data: comment });
+      return;
+    }
+    const privateOwnerId = await this.getPrivateProjectOwnerForTask(comment.task_id ?? comment.task?.id);
+    if (privateOwnerId) {
+      await this.sendUserEvent(privateOwnerId, 'event', { type: SOCKET_EVENT_TYPE.comment_updated, data: comment });
       return;
     }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.comment_updated, data: comment });
@@ -129,15 +192,36 @@ export class WebsocketGateway {
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.chat_deleted, data: { id: chatId, memberIds } });
   }
 
-  sendVoiceRoomUpdate(projectId: number, participants: { userId: number; displayName: string; photoUrl: string | null }[]) {
+  async sendVoiceRoomUpdate(projectId: number, participants: { userId: number; displayName: string; photoUrl: string | null }[]) {
+    const privateOwnerId = await this.getPrivateProjectOwner(projectId);
+    if (privateOwnerId) {
+      await this.sendUserEvent(privateOwnerId, 'event', {
+        type: SOCKET_EVENT_TYPE.voice_room_updated,
+        data: { projectId, participants },
+      });
+      return;
+    }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.voice_room_updated, data: { projectId, participants } });
   }
 
-  sendTimelogUpdated(timelog: Timelogs) {
+  async sendTimelogUpdated(timelog: Timelogs) {
+    const privateOwnerId = await this.getPrivateProjectOwnerForTask(timelog.task_id);
+    if (privateOwnerId) {
+      await this.sendUserEvent(privateOwnerId, 'event', { type: SOCKET_EVENT_TYPE.timelog_updated, data: timelog });
+      return;
+    }
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.timelog_updated, data: timelog });
   }
 
-  sendTimelogDeleted(timelog: Pick<Timelogs, 'id' | 'task_id' | 'author_id'>) {
+  async sendTimelogDeleted(timelog: Pick<Timelogs, 'id' | 'task_id' | 'author_id'>) {
+    const privateOwnerId = await this.getPrivateProjectOwnerForTask(timelog.task_id);
+    if (privateOwnerId) {
+      await this.sendUserEvent(privateOwnerId, 'event', {
+        type: SOCKET_EVENT_TYPE.timelog_deleted,
+        data: { id: timelog.id, task_id: timelog.task_id, author_id: timelog.author_id },
+      });
+      return;
+    }
     this.server.emit('event', {
       type: SOCKET_EVENT_TYPE.timelog_deleted,
       data: { id: timelog.id, task_id: timelog.task_id, author_id: timelog.author_id },
@@ -167,6 +251,12 @@ export class WebsocketGateway {
     const id = comment.task_id ?? comment.task?.id;
     if (!id) return false;
     return this.db.getRepository(Tasks).existsBy({ id, business_kind: TaskBusinessKind.SALES });
+  }
+
+  private async getPrivateProjectOwnerForTask(taskId?: number | null): Promise<number | null> {
+    if (!taskId) return null;
+    const task = await this.db.getRepository(Tasks).findOne({ where: { id: taskId }, select: ['id', 'project_id'] });
+    return this.getPrivateProjectOwner(task?.project_id);
   }
 
   private getUserIdFromClient(client: Socket): string | null {

@@ -139,8 +139,8 @@ export class TasksController {
     status: 200,
   })
   @UseGuards(AuthGuard, RolesGuard)
-  async updatePriorityTask(@Body() updatePriorityTaskDto: UpdatePriorityTaskDto) {
-    return await this.tasksService.updatePriorityTask(updatePriorityTaskDto);
+  async updatePriorityTask(@Body() updatePriorityTaskDto: UpdatePriorityTaskDto, @Req() req: RequestWithCookies) {
+    return await this.tasksService.updatePriorityTask(updatePriorityTaskDto, req.user);
   }
 
   @Delete(':taskId/links')
@@ -159,8 +159,8 @@ export class TasksController {
   })
   @ApiResponse({ status: 204, description: 'Связь удалена' })
   @ApiResponse({ status: 404, description: 'Одна из задач не найдена' })
-  async unlinkTasks(@Param('taskId') taskId: string, @Body() unlinkTaskDto: UnlinkTaskDto) {
-    return this.tasksService.unlinkTasks(taskId, unlinkTaskDto.relatedTaskId);
+  async unlinkTasks(@Param('taskId') taskId: string, @Body() unlinkTaskDto: UnlinkTaskDto, @Req() req: RequestWithCookies) {
+    return this.tasksService.unlinkTasks(taskId, unlinkTaskDto.relatedTaskId, req.user);
   }
   @Get('filter-state')
   @ApiOperation({ summary: 'Получение состояния фильтров задач' })
@@ -373,11 +373,15 @@ export class TasksController {
   })
   @ApiResponse({ status: 400, description: 'Нельзя привязать задачу к самой себе или некорректные данные' })
   @ApiResponse({ status: 404, description: 'Одна из задач не найдена' })
-  async linkExistingTask(@Param('taskId') taskId: string, @Body() linkExistingDto: LinkExistingDto) {
+  async linkExistingTask(
+    @Param('taskId') taskId: string,
+    @Body() linkExistingDto: LinkExistingDto,
+    @Req() req: RequestWithCookies,
+  ) {
     if (linkExistingDto.relatedTaskId === taskId) {
       throw new HttpException('Нельзя привязать задачу к самой себе', HttpStatus.BAD_REQUEST);
     }
-    return this.tasksService.linkTasks(taskId, linkExistingDto.relatedTaskId);
+    return this.tasksService.linkTasks(taskId, linkExistingDto.relatedTaskId, req.user);
   }
 
   @Post(':taskId/links/create')

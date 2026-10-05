@@ -6,6 +6,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { Timelogs } from '../timelogs/entities/timelog.entity';
 import { ProjectMembers, Projects } from './entities/project.entity';
 import { ProjectsService } from './projects.service';
+import { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 type QueryParamValue = string | number;
 type QueryParams = Record<string, QueryParamValue>;
@@ -38,6 +39,7 @@ describe('ProjectsService', () => {
   const projectRepository = {
     createQueryBuilder: jest.fn<ProjectsQueryBuilderMock, [string]>(),
   };
+  const currentUser = { id: 7, role: 'admin' } as AuthenticatedUser;
 
   beforeEach(() => {
     qb = createProjectsQueryBuilderMock();
@@ -54,15 +56,18 @@ describe('ProjectsService', () => {
 
   describe('findProjectsByFilter', () => {
     it('должен исключать архивные проекты из общего списка по умолчанию', async () => {
-      await service.findProjectsByFilter();
+      await service.findProjectsByFilter(currentUser);
 
+      expect(qb.andWhere).toHaveBeenCalledWith('(project.isPrivate = false OR project.ownerId = :currentUserId)', {
+        currentUserId: 7,
+      });
       expect(qb.andWhere).toHaveBeenCalledWith('project.status != :archivedProjectStatus', {
         archivedProjectStatus: PROJECT_STATUSES.ON_HOLD,
       });
     });
 
     it('должен отдавать архивные проекты в полном списке для страницы проектов', async () => {
-      await service.findProjectsByFilter(true);
+      await service.findProjectsByFilter(currentUser, true);
 
       expect(qb.andWhere).not.toHaveBeenCalledWith('project.status != :archivedProjectStatus', {
         archivedProjectStatus: PROJECT_STATUSES.ON_HOLD,

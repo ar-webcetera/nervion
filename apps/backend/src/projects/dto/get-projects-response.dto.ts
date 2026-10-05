@@ -64,4 +64,10 @@ export class GetProjectsResponseDto {
     type: [ProjectMemberDto],
   })
   members: ProjectMemberDto[];
+
+  @ApiProperty({ description: 'Признак личного проекта', example: false })
+  isPrivate: boolean;
+
+  @ApiProperty({ description: 'Идентификатор владельца проекта', nullable: true, example: 7 })
+  ownerId: number | null;
 }

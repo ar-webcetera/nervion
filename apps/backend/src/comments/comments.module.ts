@@ -8,9 +8,10 @@ import { Tasks } from '../tasks/entities/task.entity';
 import { CommentsGateway } from './comments.gateway';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { WebsocketModule } from '../websocket/websocket.module';
+import { ProjectMembers } from '../projects/entities/project.entity';
 
 @Module({
-  imports: [WebsocketModule, NotificationsModule, TypeOrmModule.forFeature([Comments, Users, Tasks])],
+  imports: [WebsocketModule, NotificationsModule, TypeOrmModule.forFeature([Comments, Users, Tasks, ProjectMembers])],
   controllers: [CommentsController],
   providers: [CommentsService, CommentsGateway],
 })

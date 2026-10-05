@@ -312,7 +312,7 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
       displayName: p.displayName,
       photoUrl: p.photoUrl,
     }));
-    this.wsGateway.sendVoiceRoomUpdate(projectId, participants);
+    void this.wsGateway.sendVoiceRoomUpdate(projectId, participants);
   }
 
   private getUserId(client: Socket): number | null {

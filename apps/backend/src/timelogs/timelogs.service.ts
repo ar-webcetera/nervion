@@ -16,7 +16,7 @@ import {
 } from '@tracker/contracts';
 import * as XLSX from 'xlsx';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DeepPartial, FindOptionsWhere, In, QueryFailedError, Repository } from 'typeorm';
+import { DeepPartial, QueryFailedError, Repository } from 'typeorm';
 import { Timelogs } from './entities/timelog.entity';
 import { CreateTimelogDto } from './dto/create-timelog.dto';
 import { Users } from '../users/entities/users.entity';
@@ -128,7 +128,7 @@ export class TimelogsService {
         summary: `Создан таймлог #${createdTimelog.id}`,
         afterPayload: this.serializeTimelogForAudit(createdTimelog),
       });
-      this.websocketGateway.sendTimelogUpdated(createdTimelog);
+      void this.websocketGateway.sendTimelogUpdated(createdTimelog);
     }
     return createdTimelog;
   }
@@ -141,28 +141,36 @@ export class TimelogsService {
       ':',
     );
   };
-  async findByFilter(getTimelogByFilterDto: GetTimelogByFilterDto) {
+  async findByFilter(getTimelogByFilterDto: GetTimelogByFilterDto, currentUser: AuthenticatedUser) {
     const { status, author_id } = getTimelogByFilterDto;
-    const filter: FindOptionsWhere<Timelogs> = {};
+    const query = this.timelogRepository
+      .createQueryBuilder('timelog')
+      .leftJoinAndSelect('timelog.author', 'author')
+      .leftJoin('timelog.task', 'task')
+      .leftJoin('task.project', 'project');
     if (status) {
       if (Array.isArray(status)) {
-        filter.status = In(status);
+        query.andWhere('timelog.status IN (:...statuses)', { statuses: status });
       } else {
-        filter.status = status;
+        query.andWhere('timelog.status = :status', { status });
       }
     }
     if (author_id) {
-      filter.author_id = author_id;
+      query.andWhere('timelog.author_id = :authorId', { authorId: author_id });
     }
-    const timelogs = await this.timelogRepository.find({
-      where: filter,
-      relations: ['author'],
+    query.andWhere('(task.project_id IS NULL OR project.isPrivate = false OR project.ownerId = :currentUserId)', {
+      currentUserId: currentUser.id,
     });
 
-    return timelogs;
+    return query.getMany();
   }
 
-  async findByTask(task_id: number) {
+  async findByTask(task_id: number, currentUser: AuthenticatedUser) {
+    const task = await this.tasksRepository.findOneBy({ id: task_id });
+    if (!task) {
+      throw new HttpException({ message: [`Задача с id=${task_id} не найдена`] }, HttpStatus.NOT_FOUND);
+    }
+    await this.assertTaskAccess(task, currentUser);
     const timelogs = await this.timelogRepository.find({
       where: { task_id },
       relations: ['author'],
@@ -189,6 +197,10 @@ export class TimelogsService {
       );
     }
     this.assertIsOwner(timelog, currentUser);
+    if (timelog.task_id) {
+      const currentTask = await this.tasksRepository.findOneBy({ id: timelog.task_id });
+      if (currentTask) await this.assertTaskAccess(currentTask, currentUser);
+    }
 
     const beforePayload = this.serializeTimelogForAudit(timelog);
 
@@ -270,7 +282,7 @@ export class TimelogsService {
       beforePayload,
       afterPayload: this.serializeTimelogForAudit(updatedTimelog),
     });
-    this.websocketGateway.sendTimelogUpdated(updatedTimelog);
+    void this.websocketGateway.sendTimelogUpdated(updatedTimelog);
     return updatedTimelog;
   }
 
@@ -289,7 +301,7 @@ export class TimelogsService {
    *
    * @returns {Promise<Buffer>} Промис, который разрешается в Buffer с данными Excel-файла.
    */
-  async getWorkHoursBySpecialistReport(): Promise<Buffer> {
+  async getWorkHoursBySpecialistReport(currentUser: AuthenticatedUser): Promise<Buffer> {
     this.logger.log('Начало генерации отчета по выработке часов.');
 
     interface WorkHoursReportRaw {
@@ -302,6 +314,8 @@ export class TimelogsService {
     const results: WorkHoursReportRaw[] = await this.timelogRepository
       .createQueryBuilder('timelog')
       .leftJoin('timelog.author', 'author')
+      .leftJoin('timelog.task', 'task')
+      .leftJoin('task.project', 'project')
       .select([
         "author.last_name || ' ' || author.first_name || COALESCE(' ' || author.patronymic, '') as fullName",
         'DATE(timelog.created_at) as date',
@@ -309,6 +323,9 @@ export class TimelogsService {
       ])
       .where('author.id IS NOT NULL')
       .andWhere('timelog.task_id IS NOT NULL')
+      .andWhere('(project.id IS NULL OR project.isPrivate = false OR project.ownerId = :currentUserId)', {
+        currentUserId: currentUser.id,
+      })
       .groupBy('fullName, date')
       .orderBy('date', 'DESC')
       .getRawMany();
@@ -342,7 +359,13 @@ export class TimelogsService {
 
   async deleteTimelog(id: number, currentUser?: AuthenticatedUser) {
     const timelog = await this.timelogRepository.findOne({ where: { id }, relations: ['task'] });
-    if (timelog) this.assertIsOwner(timelog, currentUser);
+    if (timelog) {
+      this.assertIsOwner(timelog, currentUser);
+      if (timelog.task_id) {
+        const task = await this.tasksRepository.findOneBy({ id: timelog.task_id });
+        if (task) await this.assertTaskAccess(task, currentUser);
+      }
+    }
 
     const result = await this.timelogRepository.delete({ id });
 
@@ -358,7 +381,7 @@ export class TimelogsService {
         summary: `Удален таймлог #${timelog.id}`,
         beforePayload: this.serializeTimelogForAudit(timelog),
       });
-      this.websocketGateway.sendTimelogDeleted(timelog);
+      void this.websocketGateway.sendTimelogDeleted(timelog);
     }
 
     return result;
@@ -381,6 +404,8 @@ export class TimelogsService {
       const projectIds = memberships.map((m) => m.project.id);
       if (projectIds.length === 0) return [];
       query.andWhere('project.id IN (:...projectIds)', { projectIds });
+    } else {
+      query.andWhere('(project.isPrivate = false OR project.ownerId = :currentUserId)', { currentUserId: currentUser.id });
     }
 
     if (filters.start_date && filters.end_date) {
@@ -457,12 +482,23 @@ export class TimelogsService {
 
   /** Привязать таймлог можно только к задаче из доступного пользователю проекта */
   private async assertTaskAccess(task: Tasks, currentUser?: AuthenticatedUser) {
-    if (!currentUser || currentUser.role === ROLES.admin) return;
+    if (!currentUser) return;
     if (task.project_id === null) return;
     const membership = await this.projectMembersRepository.findOne({
       where: { project: { id: task.project_id }, user: { id: currentUser.id } },
       select: ['id'],
     });
+    if (membership) return;
+
+    if (currentUser.role === ROLES.admin) {
+      const privateProject = await this.projectMembersRepository.manager.findOne(Projects, {
+        where: { id: task.project_id, isPrivate: true },
+        select: ['id'],
+      });
+      if (!privateProject) return;
+      throw new ForbiddenException('Нет доступа к личному проекту этой задачи');
+    }
+
     if (!membership) {
       throw new ForbiddenException('Нет доступа к проекту этой задачи');
     }

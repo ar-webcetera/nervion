@@ -19,4 +19,6 @@ export interface Project {
   hourlyRate: number;
   spentBudget: number;
   members: ProjectMember[];
+  isPrivate: boolean;
+  ownerId: number | null;
 }

@@ -66,13 +66,16 @@ describe('ReportingsService', () => {
       },
     ]);
 
-    const rows = await service.preview({
-      from: '2026-07-01',
-      to: '2026-07-01',
-      employees: [{ user_id: 6, cost: 1000 }],
-      project_id: null,
-      executor_id: null,
-    });
+    const rows = await service.preview(
+      {
+        from: '2026-07-01',
+        to: '2026-07-01',
+        employees: [{ user_id: 6, cost: 1000 }],
+        project_id: null,
+        executor_id: null,
+      },
+      6,
+    );
 
     expect(timelogRepository.find).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -113,13 +116,16 @@ describe('ReportingsService', () => {
       },
     ]);
 
-    const rows = await service.preview({
-      from: '2026-07-01',
-      to: '2026-07-10',
-      employees: [{ user_id: 6, cost: 1000 }],
-      project_id: null,
-      executor_id: null,
-    });
+    const rows = await service.preview(
+      {
+        from: '2026-07-01',
+        to: '2026-07-10',
+        employees: [{ user_id: 6, cost: 1000 }],
+        project_id: null,
+        executor_id: null,
+      },
+      6,
+    );
 
     expect(rows.map((row) => row.summary)).toEqual(['Новая запись', 'Старая запись']);
   });

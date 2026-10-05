@@ -16,6 +16,7 @@ import { Brackets, In, Repository } from 'typeorm';
 import { AuditContextService } from './audit-context.service';
 import { GetAuditLogsDto } from './dto/get-audit-logs.dto';
 import { AuditLog } from './entities/audit-log.entity';
+import { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 type AuditPayload = JsonObject | null | undefined;
 
@@ -170,11 +171,17 @@ export class AuditLogsService {
     });
   }
 
-  async findAll(dto: GetAuditLogsDto): Promise<AuditLogsResponse> {
+  async findAll(dto: GetAuditLogsDto, currentUser: AuthenticatedUser): Promise<AuditLogsResponse> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 25;
 
-    const qb = this.auditLogRepository.createQueryBuilder('audit').leftJoinAndSelect('audit.actor', 'actor');
+    const qb = this.auditLogRepository
+      .createQueryBuilder('audit')
+      .leftJoinAndSelect('audit.actor', 'actor')
+      .leftJoin(Projects, 'audit_project', 'audit_project.id = audit.project_id')
+      .andWhere('(audit.project_id IS NULL OR audit_project.is_private = false OR audit_project.owner_id = :currentUserId)', {
+        currentUserId: currentUser.id,
+      });
 
     if (dto.action_types?.length) {
       qb.andWhere('audit.action_type IN (:...actionTypes)', { actionTypes: dto.action_types });
@@ -240,11 +247,16 @@ export class AuditLogsService {
     };
   }
 
-  async findOne(id: number): Promise<AuditLogItem | null> {
-    const item = await this.auditLogRepository.findOne({
-      where: { id },
-      relations: ['actor'],
-    });
+  async findOne(id: number, currentUser: AuthenticatedUser): Promise<AuditLogItem | null> {
+    const item = await this.auditLogRepository
+      .createQueryBuilder('audit')
+      .leftJoinAndSelect('audit.actor', 'actor')
+      .leftJoin(Projects, 'audit_project', 'audit_project.id = audit.project_id')
+      .where('audit.id = :id', { id })
+      .andWhere('(audit.project_id IS NULL OR audit_project.is_private = false OR audit_project.owner_id = :currentUserId)', {
+        currentUserId: currentUser.id,
+      })
+      .getOne();
 
     return item ? this.toAuditLogItem(item) : null;
   }

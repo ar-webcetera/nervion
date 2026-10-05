@@ -57,8 +57,8 @@ export class TimelogsController {
       },
     },
   })
-  async findByTask(@Param('task_id') task_id: number) {
-    return this.timelogsService.findByTask(task_id);
+  async findByTask(@Param('task_id') task_id: number, @Req() request: RequestWithUser) {
+    return this.timelogsService.findByTask(task_id, request.user);
   }
 
   @Get()
@@ -81,8 +81,8 @@ export class TimelogsController {
       ],
     },
   })
-  async findByFilter(@Query() getTimelogByFilterDto: GetTimelogByFilterDto) {
-    return this.timelogsService.findByFilter(getTimelogByFilterDto);
+  async findByFilter(@Query() getTimelogByFilterDto: GetTimelogByFilterDto, @Req() request: RequestWithUser) {
+    return this.timelogsService.findByFilter(getTimelogByFilterDto, request.user);
   }
 
   @Patch(':id')
@@ -103,8 +103,8 @@ export class TimelogsController {
     status: 200,
     description: 'Отчет успешно сформирован',
   })
-  async getWorkHoursBySpecialistReport(@Res() res: Response) {
-    const buffer: Buffer = await this.timelogsService.getWorkHoursBySpecialistReport();
+  async getWorkHoursBySpecialistReport(@Res() res: Response, @Req() request: RequestWithUser) {
+    const buffer: Buffer = await this.timelogsService.getWorkHoursBySpecialistReport(request.user);
     const formattedDate = new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
     const filename = `work-hours-report-${formattedDate}.xlsx`;
 

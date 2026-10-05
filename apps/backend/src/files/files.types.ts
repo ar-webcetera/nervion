@@ -4,4 +4,5 @@ export type RawFileResponse = {
   contentLength?: number;
   etag?: string;
   lastModified?: Date;
+  isPrivate: boolean;
 };

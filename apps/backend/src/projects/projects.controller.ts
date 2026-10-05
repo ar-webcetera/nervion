@@ -19,7 +19,7 @@ export class ProjectsController {
 
   @Post()
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles(ROLES.admin)
+  @Roles(ROLES.admin, ROLES.employee)
   @ApiOperation({ summary: 'Создание проекта' })
   @ApiResponse({
     status: 200,
@@ -36,7 +36,7 @@ export class ProjectsController {
 
   @Patch(':id/members')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles(ROLES.admin)
+  @Roles(ROLES.admin, ROLES.employee)
   @ApiOperation({ summary: 'Обновление участников проекта' })
   @ApiResponse({ status: 200, description: 'Участники успешно обновлены' })
   @ApiResponse({ status: 404, description: 'Проект не найден' })
@@ -50,7 +50,7 @@ export class ProjectsController {
 
   @Patch(':id')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles(ROLES.admin)
+  @Roles(ROLES.admin, ROLES.employee)
   @ApiOperation({ summary: 'Обновление проекта' })
   @ApiResponse({ status: 200, description: 'Проект успешно обновлен' })
   @ApiResponse({ status: 404, description: 'Проект не найден' })
@@ -60,7 +60,7 @@ export class ProjectsController {
 
   @Delete(':id')
   @UseGuards(AuthGuard, RolesGuard)
-  @Roles(ROLES.admin)
+  @Roles(ROLES.admin, ROLES.employee)
   @ApiOperation({ summary: 'Удаление проекта' })
   @ApiResponse({ status: 200, description: 'Проект успешно удален' })
   @ApiResponse({ status: 404, description: 'Проект не найден' })
@@ -79,7 +79,7 @@ export class ProjectsController {
   })
   getProjectsWithArchived(@Req() req: RequestWithCookies) {
     if (req.user.role === ROLES.admin) {
-      return this.projectsService.findProjectsByFilter(true);
+      return this.projectsService.findProjectsByFilter(req.user, true);
     }
 
     return this.projectsService.getMyProjects(req.user.id, true);
@@ -115,7 +115,7 @@ export class ProjectsController {
     description: 'Проекты успешно получены',
     type: [GetProjectsResponseDto],
   })
-  async findProjectsByFilter() {
-    return await this.projectsService.findProjectsByFilter();
+  async findProjectsByFilter(@Req() req: RequestWithCookies) {
+    return await this.projectsService.findProjectsByFilter(req.user);
   }
 }

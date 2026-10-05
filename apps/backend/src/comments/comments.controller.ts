@@ -18,38 +18,38 @@ export class CommentsController {
   @ApiResponse({ status: 201, description: 'Комментарий создан' })
   @ApiResponse({ status: 400, description: 'Некорректные данные комментария' })
   @Post()
-  create(@Body() createCommentDto: CreateCommentDto) {
-    return this.commentsService.create(createCommentDto);
+  create(@Body() createCommentDto: CreateCommentDto, @Req() req: RequestWithCookies) {
+    return this.commentsService.create(createCommentDto, req.user);
   }
 
   @ApiOperation({ summary: 'Получить список комментариев по фильтру' })
   @ApiResponse({ status: 200, description: 'Список комментариев' })
   @Get()
   findByFilter(@Query() findCommentsByFilterDto: FindCommentsByFilterDto, @Req() req: RequestWithCookies) {
-    return this.commentsService.findCommentsByFilter(findCommentsByFilterDto, req.user.role);
+    return this.commentsService.findCommentsByFilter(findCommentsByFilterDto, req.user);
   }
 
   @ApiOperation({ summary: 'Получить комментарий по идентификатору' })
   @ApiResponse({ status: 200, description: 'Найденный комментарий' })
   @ApiResponse({ status: 404, description: 'Комментарий не найден' })
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.commentsService.findOne(+id);
+  findOne(@Param('id') id: string, @Req() req: RequestWithCookies) {
+    return this.commentsService.findOne(+id, req.user);
   }
 
   @ApiOperation({ summary: 'Обновить комментарий' })
   @ApiResponse({ status: 200, description: 'Комментарий обновлён' })
   @ApiResponse({ status: 404, description: 'Комментарий не найден' })
   @Patch(':id')
-  update(@Param('id') id: number, @Body() updateCommentDto: UpdateCommentDto) {
-    return this.commentsService.update(+id, updateCommentDto);
+  update(@Param('id') id: number, @Body() updateCommentDto: UpdateCommentDto, @Req() req: RequestWithCookies) {
+    return this.commentsService.update(+id, updateCommentDto, req.user);
   }
 
   @ApiOperation({ summary: 'Удалить комментарий' })
   @ApiResponse({ status: 200, description: 'Комментарий удалён' })
   @ApiResponse({ status: 404, description: 'Комментарий не найден' })
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.commentsService.remove(+id);
+  remove(@Param('id') id: string, @Req() req: RequestWithCookies) {
+    return this.commentsService.remove(+id, req.user);
   }
 }

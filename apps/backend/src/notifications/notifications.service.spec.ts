@@ -107,7 +107,7 @@ describe('NotificationsService', () => {
           link: '/tasks/1',
         }),
       );
-      expect(mockWebsocketGateway.sendNotificationAdded).toHaveBeenCalledWith(saved);
+      expect(mockWebsocketGateway.sendNotificationAdded).toHaveBeenCalledWith(saved, 4);
       expect(mockPushService.sendToUser).toHaveBeenCalledWith(
         4,
         expect.objectContaining({
@@ -257,7 +257,7 @@ describe('NotificationsService', () => {
           is_read: false,
         }),
       );
-      expect(mockWebsocketGateway.sendNotificationUpdated).toHaveBeenCalledWith(updatedNotification);
+      expect(mockWebsocketGateway.sendNotificationUpdated).toHaveBeenCalledWith(updatedNotification, 10);
       expect(mockMailboxService.moveNotificationThreadsToTrash).not.toHaveBeenCalled();
       expect(result).toBe(updatedNotification);
     });

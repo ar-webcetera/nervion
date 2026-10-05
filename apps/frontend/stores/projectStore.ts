@@ -17,6 +17,7 @@ export const useProjectStore = defineStore('project', () => {
     status: PROJECT_STATUSES;
     budget: number;
     hourlyRate: number;
+    isPrivate: boolean;
   }
 
   const upsertProject = (list: Ref<Project[]>, project: Project) => {

@@ -8,16 +8,21 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { WikiPages } from './entities/wiki-page.entity';
 import { FindWikiPagesByFilterDto } from './dto/find-wiki-pages-by-filter.dto';
 import { WikiTreeNode } from './dto/tree-item.dto';
+import { ProjectMembers } from '../projects/entities/project.entity';
+import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { ROLES } from '../common/enums/roles.enum';
 
 @Injectable()
 export class WikiPagesService {
   constructor(
     @InjectRepository(Projects)
     private readonly projectsRepository: Repository<Projects>,
+    @InjectRepository(ProjectMembers)
+    private readonly projectMembersRepository: Repository<ProjectMembers>,
     @InjectRepository(WikiPages)
     private readonly wikiPagesRepository: Repository<WikiPages>,
   ) {}
-  async create(createWikiPageDto: CreateWikiPageDto) {
+  async create(createWikiPageDto: CreateWikiPageDto, currentUser: AuthenticatedUser) {
     const project = await this.projectsRepository.findOne({
       where: { id: createWikiPageDto.project_id },
     });
@@ -29,6 +34,7 @@ export class WikiPagesService {
         HttpStatus.NOT_FOUND,
       );
     }
+    await this.assertProjectAccess(project, currentUser);
 
     const data: DeepPartial<WikiPages> = {
       project,
@@ -83,7 +89,12 @@ export class WikiPagesService {
     return tree;
   }
 
-  async findByFilter(findWikiPagesByFilterDto: FindWikiPagesByFilterDto) {
+  async findByFilter(findWikiPagesByFilterDto: FindWikiPagesByFilterDto, currentUser: AuthenticatedUser) {
+    if (findWikiPagesByFilterDto.project_id) {
+      const project = await this.projectsRepository.findOne({ where: { id: findWikiPagesByFilterDto.project_id } });
+      if (!project) return [];
+      await this.assertProjectAccess(project, currentUser);
+    }
     const where: FindOptionsWhere<WikiPages> = { project: { status: Not(PROJECT_STATUSES.ON_HOLD) } };
     if (findWikiPagesByFilterDto.project_id) {
       where.project = { id: findWikiPagesByFilterDto.project_id, status: Not(PROJECT_STATUSES.ON_HOLD) };
@@ -95,14 +106,19 @@ export class WikiPagesService {
     return this.buildTree(pages);
   }
 
-  findOne(id: number) {
-    return this.wikiPagesRepository.findOne({ where: { id, project: { status: Not(PROJECT_STATUSES.ON_HOLD) } } });
+  async findOne(id: number, currentUser: AuthenticatedUser) {
+    const page = await this.wikiPagesRepository.findOne({
+      where: { id, project: { status: Not(PROJECT_STATUSES.ON_HOLD) } },
+      relations: ['project'],
+    });
+    if (page?.project) await this.assertProjectAccess(page.project, currentUser);
+    return page;
   }
 
-  async update(id: number, updateWikiPageDto: UpdateWikiPageDto) {
+  async update(id: number, updateWikiPageDto: UpdateWikiPageDto, currentUser: AuthenticatedUser) {
     const wikiPage = await this.wikiPagesRepository.findOne({
       where: { id },
-      relations: ['parent_page'],
+      relations: ['parent_page', 'project'],
     });
     if (!wikiPage) {
       throw new HttpException(
@@ -112,6 +128,10 @@ export class WikiPagesService {
         HttpStatus.NOT_FOUND,
       );
     }
+    if (!wikiPage.project) {
+      throw new HttpException({ message: [`Проект вики-страницы с id=${id} не найден`] }, HttpStatus.NOT_FOUND);
+    }
+    await this.assertProjectAccess(wikiPage.project, currentUser);
 
     if (updateWikiPageDto.priority !== undefined) wikiPage.priority = updateWikiPageDto.priority;
     if (updateWikiPageDto.name) wikiPage.name = updateWikiPageDto.name;
@@ -137,7 +157,26 @@ export class WikiPagesService {
     return await this.wikiPagesRepository.save(wikiPage);
   }
 
-  remove(id: number) {
+  async remove(id: number, currentUser: AuthenticatedUser) {
+    const page = await this.wikiPagesRepository.findOne({ where: { id }, relations: ['project'] });
+    if (page?.project) await this.assertProjectAccess(page.project, currentUser);
     return this.wikiPagesRepository.delete({ id });
+  }
+
+  private async assertProjectAccess(project: Projects, currentUser: AuthenticatedUser): Promise<void> {
+    if (project.isPrivate) {
+      if (project.ownerId !== currentUser.id) {
+        throw new HttpException({ message: ['Вики-страница не найдена'] }, HttpStatus.NOT_FOUND);
+      }
+      return;
+    }
+    if (currentUser.role === ROLES.admin) return;
+
+    const hasAccess = await this.projectMembersRepository.exist({
+      where: { project: { id: project.id }, user: { id: currentUser.id } },
+    });
+    if (!hasAccess) {
+      throw new HttpException({ message: ['Доступ к проекту запрещён'] }, HttpStatus.FORBIDDEN);
+    }
   }
 }

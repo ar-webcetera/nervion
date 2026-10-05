@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsObject, IsEnum, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsEnum, IsNumber, Min, IsBoolean } from 'class-validator';
 import type { JSONContent } from '@tiptap/core';
 import { PROJECT_STATUSES } from '../../common/enums/project-status.enum';
 
@@ -32,4 +32,13 @@ export class CreateProjectDto {
   @IsNumber()
   @Min(0)
   budget?: number;
+
+  @ApiProperty({
+    description: 'Личный проект, доступный только создателю. Значение нельзя изменить после создания',
+    required: false,
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isPrivate?: boolean;
 }

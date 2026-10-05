@@ -38,8 +38,11 @@ export class AllocationsService {
       const projectIds = memberships.map((m) => m.project.id);
       if (projectIds.length === 0) return [];
       query.andWhere('allocation.project_id IN (:...projectIds)', { projectIds });
-    } else if (filters.user_id) {
-      query.andWhere('allocation.user_id = :user_id', { user_id: filters.user_id });
+    } else {
+      query.andWhere('(project.isPrivate = false OR project.ownerId = :currentUserId)', { currentUserId: currentUser.id });
+      if (filters.user_id) {
+        query.andWhere('allocation.user_id = :user_id', { user_id: filters.user_id });
+      }
     }
 
     if (filters.project_id) {

@@ -12,6 +12,8 @@ import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { UpdateCommentDto } from './dto/update-comment.dto';
 import { TiptapNodeType } from '../common/enums/tiptap-node-type.enum';
+import { ProjectMembers } from '../projects/entities/project.entity';
+import { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 describe('CommentsService', () => {
   let service: CommentsService;
@@ -47,6 +49,7 @@ describe('CommentsService', () => {
     sendCommentUpdated: jest.fn(),
     sendCommentDeleted: jest.fn(),
   };
+  const currentUser = { id: 7 } as AuthenticatedUser;
 
   const message = {
     type: TiptapNodeType.Doc,
@@ -66,6 +69,7 @@ describe('CommentsService', () => {
         { provide: getRepositoryToken(Comments), useValue: mockCommentRepository },
         { provide: getRepositoryToken(Users), useValue: mockUsersRepository },
         { provide: getRepositoryToken(Tasks), useValue: mockTasksRepository },
+        { provide: getRepositoryToken(ProjectMembers), useValue: {} },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: ConfigService, useValue: mockConfig },
         { provide: WebsocketGateway, useValue: mockWebsocketGateway },
@@ -104,7 +108,7 @@ describe('CommentsService', () => {
       mockTasksRepository.findOne.mockResolvedValue(task);
       mockCommentRepository.save.mockResolvedValue(savedComment);
 
-      const result = await service.create(dto);
+      const result = await service.create(dto, currentUser);
 
       expect(mockCommentRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -149,7 +153,7 @@ describe('CommentsService', () => {
       mockTasksRepository.findOne.mockResolvedValue(task);
       mockCommentRepository.findOne.mockResolvedValue(parentComment);
 
-      await expect(service.create(dto)).rejects.toMatchObject({
+      await expect(service.create(dto, currentUser)).rejects.toMatchObject({
         status: HttpStatus.BAD_REQUEST,
       });
     });
@@ -168,6 +172,7 @@ describe('CommentsService', () => {
         Object.assign(new UpdateCommentDto(), {
           resolved: false,
         }),
+        currentUser,
       );
 
       expect(mockCommentRepository.save).toHaveBeenCalledWith(
@@ -183,7 +188,7 @@ describe('CommentsService', () => {
     it('должен выбрасывать 404, если комментарий не найден', async () => {
       mockCommentRepository.findOne.mockResolvedValue(null);
 
-      await expect(service.update(1, new UpdateCommentDto())).rejects.toMatchObject({
+      await expect(service.update(1, new UpdateCommentDto(), currentUser)).rejects.toMatchObject({
         status: HttpStatus.NOT_FOUND,
       });
     });

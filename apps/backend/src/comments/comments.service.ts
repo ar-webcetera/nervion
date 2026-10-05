@@ -14,6 +14,8 @@ import { ConfigService } from '@nestjs/config';
 import { AnyTiptapNode, TiptapDoc } from '../common/types/tiptap';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { extractTextFromDoc } from 'src/common/utils/extractTextFromDoc';
+import { ProjectMembers, Projects } from '../projects/entities/project.entity';
+import { AuthenticatedUser } from '../auth/types/authenticated-user';
 
 @Injectable()
 export class CommentsService {
@@ -24,6 +26,8 @@ export class CommentsService {
     private readonly usersRepository: Repository<Users>,
     @InjectRepository(Tasks)
     private readonly tasksRepository: Repository<Tasks>,
+    @InjectRepository(ProjectMembers)
+    private readonly projectMembersRepository: Repository<ProjectMembers>,
     private notifications: NotificationsService,
     private readonly config: ConfigService,
     private readonly websocketGateway: WebsocketGateway,
@@ -45,7 +49,7 @@ export class CommentsService {
 
     return result;
   }
-  async create(createCommentDto: CreateCommentDto) {
+  async create(createCommentDto: CreateCommentDto, currentUser: AuthenticatedUser) {
     const domain = this.config.get<string>('APP_DOMAIN');
     let author: Users | null = null;
     if (createCommentDto.author_id) {
@@ -74,6 +78,7 @@ export class CommentsService {
         HttpStatus.NOT_FOUND,
       );
     }
+    await this.assertTaskAccess(task, currentUser);
 
     const data: DeepPartial<Comments> = {
       message: createCommentDto.message,
@@ -142,6 +147,11 @@ export class CommentsService {
     const link = `?task-id=${task.id}&comment-id=${newComment.id}`;
     const absoluteLink = `https://tracker.${domain}${link}`;
     const mentionIds = this.findMentionIds(rawMessage);
+    if (task.project?.isPrivate) {
+      for (const mentionId of mentionIds) {
+        if (mentionId !== task.project.ownerId) mentionIds.delete(mentionId);
+      }
+    }
 
     const recipientIds = new Set<number>();
     const recipients: Users[] = [];
@@ -189,32 +199,51 @@ export class CommentsService {
     );
   }
 
-  async findCommentsByFilter(dto: FindCommentsByFilterDto, role: ROLES = ROLES.employee) {
+  async findCommentsByFilter(dto: FindCommentsByFilterDto, currentUser: AuthenticatedUser) {
     const { task_id, sort = SortOrder.ASC } = dto;
+
+    if (task_id) {
+      const task = await this.tasksRepository.findOne({ where: { id: task_id }, relations: ['project'] });
+      if (!task) return [];
+      await this.assertTaskAccess(task, currentUser);
+    }
 
     const where: Record<string, any> = { parent: IsNull() };
     if (task_id) where.task = { id: task_id };
-    if (role !== ROLES.admin) where.task = { ...where.task, business_kind: TaskBusinessKind.PRODUCTION };
+    if (currentUser.role !== ROLES.admin) where.task = { ...where.task, business_kind: TaskBusinessKind.PRODUCTION };
 
     const roots = await this.commentRepository.find({
       where,
-      relations: ['author', 'subComments', 'subComments.author'],
+      relations: ['author', 'task', 'task.project', 'subComments', 'subComments.author'],
       order: { created_at: sort },
     });
 
-    return roots.map((c: Comments) => {
-      const { subComments, ...rest } = c;
+    const visibleRoots: Comments[] = [];
+    for (const comment of roots) {
+      try {
+        if (comment.task) await this.assertTaskAccess(comment.task, currentUser);
+        visibleRoots.push(comment);
+      } catch {
+        continue;
+      }
+    }
+
+    return visibleRoots.map((c: Comments) => {
+      const { subComments, task: loadedTask, ...rest } = c;
+      void loadedTask;
       const sortedChildren = (subComments ?? []).sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
       return { ...(rest as Omit<Comments, 'subComments'>), subComments: sortedChildren };
     });
   }
 
-  findOne(id: number) {
-    return this.commentRepository.findOne({ where: { id } });
+  async findOne(id: number, currentUser: AuthenticatedUser) {
+    const comment = await this.commentRepository.findOne({ where: { id }, relations: ['task', 'task.project'] });
+    if (comment?.task) await this.assertTaskAccess(comment.task, currentUser);
+    return comment;
   }
 
-  async update(id: number, updateCommentDto: UpdateCommentDto) {
-    const comment = await this.commentRepository.findOne({ where: { id } });
+  async update(id: number, updateCommentDto: UpdateCommentDto, currentUser: AuthenticatedUser) {
+    const comment = await this.commentRepository.findOne({ where: { id }, relations: ['task', 'task.project'] });
     if (!comment) {
       throw new HttpException(
         {
@@ -223,6 +252,7 @@ export class CommentsService {
         HttpStatus.NOT_FOUND,
       );
     }
+    if (comment.task) await this.assertTaskAccess(comment.task, currentUser);
     if (updateCommentDto.message) comment.message = updateCommentDto.message;
     if (updateCommentDto.resolved || updateCommentDto.resolved === false) {
       comment.resolved = updateCommentDto.resolved;
@@ -241,13 +271,46 @@ export class CommentsService {
       });
   }
 
-  async remove(id: number) {
-    const comment = await this.commentRepository.findOne({ where: { id } });
+  async remove(id: number, currentUser: AuthenticatedUser) {
+    const comment = await this.commentRepository.findOne({ where: { id }, relations: ['task', 'task.project'] });
+    if (comment?.task) await this.assertTaskAccess(comment.task, currentUser);
     const commercial = comment?.task_id
       ? await this.tasksRepository.existsBy({ id: comment.task_id, business_kind: TaskBusinessKind.SALES })
       : false;
     const resultDelete = await this.commentRepository.delete(id);
-    this.websocketGateway.sendCommentDeleted(id, commercial);
+    this.websocketGateway.sendCommentDeleted(
+      id,
+      commercial,
+      comment?.task?.project?.isPrivate ? comment.task.project.ownerId : null,
+    );
     return resultDelete;
+  }
+
+  private async assertTaskAccess(task: Tasks, currentUser: AuthenticatedUser): Promise<void> {
+    const project = task.project;
+    if (!project && !task.project_id) return;
+
+    const resolvedProject =
+      project ??
+      (await this.projectMembersRepository.manager.findOne(Projects, {
+        where: { id: task.project_id! },
+      }));
+    if (!resolvedProject) {
+      throw new HttpException({ message: ['Задача не найдена'] }, HttpStatus.NOT_FOUND);
+    }
+    if (resolvedProject.isPrivate) {
+      if (resolvedProject.ownerId !== currentUser.id) {
+        throw new HttpException({ message: ['Задача не найдена'] }, HttpStatus.NOT_FOUND);
+      }
+      return;
+    }
+    if (currentUser.role === ROLES.admin) return;
+
+    const hasAccess = await this.projectMembersRepository.exist({
+      where: { project: { id: resolvedProject.id }, user: { id: currentUser.id } },
+    });
+    if (!hasAccess) {
+      throw new HttpException({ message: ['Доступ к проекту запрещён'] }, HttpStatus.FORBIDDEN);
+    }
   }
 }

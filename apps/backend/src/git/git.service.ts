@@ -5,6 +5,7 @@ import { execFile } from 'child_process';
 import { Repo } from './entities/repo.entity';
 import { CreateRepoDto } from './dto/create-repo.dto';
 import { GitRepoListItem, toGitRepoListItem } from './git-clone-url.util';
+import { Projects } from '../projects/entities/project.entity';
 
 /** Хеш пустого дерева git — база для диффа первого коммита (у него нет родителя). */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
@@ -84,21 +85,28 @@ export class GitService {
   constructor(
     @InjectRepository(Repo)
     private readonly reposRepo: Repository<Repo>,
+    @InjectRepository(Projects)
+    private readonly projectsRepo: Repository<Projects>,
   ) {}
 
   // ---------------------------------------------------------------- репозитории
 
-  listRepos(projectId?: number): Promise<GitRepoListItem[]> {
-    return this.reposRepo
-      .find({
-        where: projectId ? { projectId } : {},
-        order: { name: 'ASC' },
-      })
-      .then((repos) => repos.map(toGitRepoListItem));
+  async listRepos(userId: number, projectId?: number): Promise<GitRepoListItem[]> {
+    if (projectId) await this.assertProjectAccess(projectId, userId);
+
+    const query = this.reposRepo
+      .createQueryBuilder('repo')
+      .leftJoin(Projects, 'project', 'project.id = repo.projectId')
+      .where('(repo.projectId IS NULL OR project.isPrivate = false OR project.ownerId = :userId)', { userId })
+      .orderBy('repo.name', 'ASC');
+    if (projectId) query.andWhere('repo.projectId = :projectId', { projectId });
+
+    return (await query.getMany()).map(toGitRepoListItem);
   }
 
   /** Подключить существующий git-каталог (bare-репа или .../.git) как репозиторий трекера. */
-  async createRepo(dto: CreateRepoDto): Promise<GitRepoListItem> {
+  async createRepo(dto: CreateRepoDto, userId: number): Promise<GitRepoListItem> {
+    if (dto.projectId) await this.assertProjectAccess(dto.projectId, userId);
     const gitdir = dto.gitdir.trim();
     if (!gitdir.startsWith('/')) {
       throw new BadRequestException('Путь должен быть абсолютным');
@@ -148,8 +156,8 @@ export class GitService {
     }
   }
 
-  async deleteRepo(id: number): Promise<void> {
-    const repo = await this.getRepoOrThrow(id);
+  async deleteRepo(id: number, userId: number): Promise<void> {
+    const repo = await this.getRepoOrThrow(id, userId);
     await this.reposRepo.remove(repo);
   }
 
@@ -159,6 +167,7 @@ export class GitService {
    * SSR делает один надёжный fetch и состояние не приходит частичным.
    */
   async getInitial(
+    userId: number,
     projectId?: number,
     repoId?: number,
     branchName?: string,
@@ -173,18 +182,21 @@ export class GitService {
     tree: TreeEntry[];
     detail: { kind: 'diff'; commit: CommitInfo; data: DiffResult } | { kind: 'file'; entry: TreeEntry; data: FileContent } | null;
   }> {
-    const reposList = await this.listRepos(projectId);
+    const reposList = await this.listRepos(userId, projectId);
     if (!reposList.length) {
       return { repos: [], repoId: null, branch: '', branches: [], commits: [], tree: [], detail: null };
     }
     const selected = (repoId != null ? reposList.find((r) => r.id === repoId) : undefined) ?? reposList[0];
-    const branchList = await this.branches(selected.id);
+    const branchList = await this.branches(selected.id, userId);
     const wanted = branchName && branchList.some((b) => b.name === branchName) ? branchName : undefined;
     const branch = wanted ?? (branchList.find((b) => b.isDefault) ?? branchList[0])?.name ?? '';
     let commitList: CommitInfo[] = [];
     let treeList: TreeEntry[] = [];
     if (branch) {
-      [commitList, treeList] = await Promise.all([this.commits(selected.id, branch), this.tree(selected.id, branch, '')]);
+      [commitList, treeList] = await Promise.all([
+        this.commits(selected.id, branch, 1, 30, userId),
+        this.tree(selected.id, branch, '', userId),
+      ]);
     }
 
     let detail:
@@ -193,7 +205,7 @@ export class GitService {
       | null = null;
     try {
       if (commit) {
-        const data = await this.diffCommit(selected.id, commit);
+        const data = await this.diffCommit(selected.id, commit, userId);
         const c = commitList.find((x) => x.hash === commit) ?? {
           hash: commit,
           shortHash: commit.slice(0, 8),
@@ -204,7 +216,7 @@ export class GitService {
         };
         detail = { kind: 'diff', commit: c, data };
       } else if (branch && file) {
-        const data = await this.file(selected.id, branch, file);
+        const data = await this.file(selected.id, branch, file, userId);
         detail = {
           kind: 'file',
           entry: { type: 'blob', mode: '', oid: '', size: data.size, name: file.split('/').pop() ?? file, path: file },
@@ -226,9 +238,17 @@ export class GitService {
     };
   }
 
-  private async getRepoOrThrow(repoId: number): Promise<Repo> {
+  private async assertProjectAccess(projectId: number, userId: number): Promise<void> {
+    const project = await this.projectsRepo.findOne({ where: { id: projectId } });
+    if (!project || (project.isPrivate && project.ownerId !== userId)) {
+      throw new NotFoundException('Проект не найден');
+    }
+  }
+
+  private async getRepoOrThrow(repoId: number, userId: number): Promise<Repo> {
     const repo = await this.reposRepo.findOne({ where: { id: repoId } });
     if (!repo) throw new NotFoundException('Репозиторий не найден');
+    if (repo.projectId) await this.assertProjectAccess(repo.projectId, userId);
     return repo;
   }
 
@@ -293,8 +313,8 @@ export class GitService {
 
   // -------------------------------------------------------------------- ветки
 
-  async branches(repoId: number): Promise<BranchInfo[]> {
-    const repo = await this.getRepoOrThrow(repoId);
+  async branches(repoId: number, userId: number): Promise<BranchInfo[]> {
+    const repo = await this.getRepoOrThrow(repoId, userId);
     const out = await this.runGitText(repo, [
       'for-each-ref',
       '--sort=-committerdate',
@@ -312,8 +332,14 @@ export class GitService {
 
   // ------------------------------------------------------------------ коммиты
 
-  async commits(repoId: number, branch?: string, page = 1, perPage = 30): Promise<CommitInfo[]> {
-    const repo = await this.getRepoOrThrow(repoId);
+  async commits(
+    repoId: number,
+    branch: string | undefined,
+    page: number,
+    perPage: number,
+    userId: number,
+  ): Promise<CommitInfo[]> {
+    const repo = await this.getRepoOrThrow(repoId, userId);
     const ref = this.assertRef(branch, repo.defaultBranch);
     const skip = (Math.max(1, page) - 1) * perPage;
     const out = await this.runGitText(repo, [
@@ -336,8 +362,8 @@ export class GitService {
 
   // --------------------------------------------------------------- дерево файлов
 
-  async tree(repoId: number, ref?: string, path = ''): Promise<TreeEntry[]> {
-    const repo = await this.getRepoOrThrow(repoId);
+  async tree(repoId: number, ref: string | undefined, path: string, userId: number): Promise<TreeEntry[]> {
+    const repo = await this.getRepoOrThrow(repoId, userId);
     const r = this.assertRef(ref, repo.defaultBranch);
     const p = this.assertPath(path);
     const spec = p ? (p.endsWith('/') ? p : `${p}/`) : '';
@@ -372,8 +398,8 @@ export class GitService {
 
   // ------------------------------------------------------------ содержимое файла
 
-  async file(repoId: number, ref: string | undefined, path: string): Promise<FileContent> {
-    const repo = await this.getRepoOrThrow(repoId);
+  async file(repoId: number, ref: string | undefined, path: string, userId: number): Promise<FileContent> {
+    const repo = await this.getRepoOrThrow(repoId, userId);
     const r = this.assertRef(ref, repo.defaultBranch);
     const p = this.assertPath(path);
     if (!p) throw new BadRequestException('Не указан путь к файлу');
@@ -400,8 +426,8 @@ export class GitService {
   }
 
   /** Сырой блоб с MIME-типом — для показа картинок (в диффах, превью). */
-  async rawBlob(repoId: number, ref: string, path: string): Promise<{ buffer: Buffer; contentType: string }> {
-    const repo = await this.getRepoOrThrow(repoId);
+  async rawBlob(repoId: number, ref: string, path: string, userId: number): Promise<{ buffer: Buffer; contentType: string }> {
+    const repo = await this.getRepoOrThrow(repoId, userId);
     const r = this.assertRef(ref);
     const p = this.assertPath(path);
     if (!p) throw new BadRequestException('Не указан путь к файлу');
@@ -434,8 +460,8 @@ export class GitService {
   // -------------------------------------------------------------------- диффы
 
   /** Дифф коммита к его родителю (для первого коммита — к пустому дереву). */
-  async diffCommit(repoId: number, commit: string): Promise<DiffResult> {
-    const repo = await this.getRepoOrThrow(repoId);
+  async diffCommit(repoId: number, commit: string, userId: number): Promise<DiffResult> {
+    const repo = await this.getRepoOrThrow(repoId, userId);
     const c = this.assertRef(commit);
     let base = EMPTY_TREE;
     try {
@@ -449,8 +475,8 @@ export class GitService {
   }
 
   /** Дифф ветки head относительно общей базы с base (PR-стиль, A...B). */
-  async diffRange(repoId: number, baseRef: string, headRef: string): Promise<DiffResult> {
-    const repo = await this.getRepoOrThrow(repoId);
+  async diffRange(repoId: number, baseRef: string, headRef: string, userId: number): Promise<DiffResult> {
+    const repo = await this.getRepoOrThrow(repoId, userId);
     const b = this.assertRef(baseRef);
     const h = this.assertRef(headRef);
     const patch = await this.runGitText(repo, ['diff', '--no-color', '-M', `${b}...${h}`, '--']);

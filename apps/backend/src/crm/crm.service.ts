@@ -64,7 +64,7 @@ export class CrmService {
       this.db.getRepository(CrmCompanyEntity).find({ order: { name: 'ASC' } }),
       this.db.getRepository(CrmContactEntity).find({ order: { last_name: 'ASC', name: 'ASC', patronymic: 'ASC' } }),
       this.db.getRepository(Users).find({ where: { role: ROLES.admin } }),
-      this.db.getRepository(Projects).find({ order: { name: 'ASC' } }),
+      this.db.getRepository(Projects).find({ where: { isPrivate: false }, order: { name: 'ASC' } }),
       this.db
         .getRepository(CrmDealEntity)
         .createQueryBuilder('d')
@@ -347,7 +347,7 @@ export class CrmService {
       if (deal.responsible_id) await this.admin(deal.responsible_id);
       if (deal.company_id && !(await m.getRepository(CrmCompanyEntity).existsBy({ id: deal.company_id })))
         throw new BadRequestException('Компания не найдена');
-      if (deal.project_id && !(await m.getRepository(Projects).existsBy({ id: deal.project_id })))
+      if (deal.project_id && !(await m.getRepository(Projects).existsBy({ id: deal.project_id, isPrivate: false })))
         throw new BadRequestException('Проект не найден');
       if (deal.contact_ids.length !== (await m.getRepository(CrmContactEntity).countBy({ id: In(deal.contact_ids) })))
         throw new BadRequestException('Контакт не найден');

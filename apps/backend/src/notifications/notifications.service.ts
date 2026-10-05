@@ -45,7 +45,7 @@ export class NotificationsService {
     if (createNotificationDto.link) data.link = createNotificationDto.link;
     if (createNotificationDto.message) data.message = createNotificationDto.message;
     const newNotification = await this.notificationsRepository.save(data);
-    this.websocketGateway.sendNotificationAdded(newNotification);
+    this.websocketGateway.sendNotificationAdded(newNotification, recipient.id);
     void this.pushService.sendToUser(createNotificationDto.recipient_id, {
       title: createNotificationDto.name,
       body: createNotificationDto.message ?? '',
@@ -137,7 +137,7 @@ export class NotificationsService {
     const updatedNotifications = await this.notificationsRepository.save(matchedNotifications);
 
     updatedNotifications.forEach((notification) => {
-      this.websocketGateway.sendNotificationUpdated(notification);
+      this.websocketGateway.sendNotificationUpdated(notification, userId);
     });
 
     const notificationIds = updatedNotifications.map((notification) => notification.id);
@@ -156,7 +156,7 @@ export class NotificationsService {
 
     const updatedNotification = await this.notificationsRepository.save(notification);
     if (updatedNotification) {
-      this.websocketGateway.sendNotificationUpdated(updatedNotification);
+      this.websocketGateway.sendNotificationUpdated(updatedNotification, userId);
     }
     if (!wasRead && updatedNotification.is_read) {
       await this.mailboxService.moveNotificationThreadsToTrash(userId, [updatedNotification.id]);

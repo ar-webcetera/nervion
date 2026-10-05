@@ -26,6 +26,7 @@ import { ConfigService } from '@nestjs/config';
 import { FixedRevenue } from '../reportings/entities/fixed-revenue.entity';
 import { Timelogs } from '../timelogs/entities/timelog.entity';
 import { BillingReviewStatus, TaskBillingType } from '@tracker/contracts';
+import { HttpStatus } from '@nestjs/common';
 
 type QueryParamValue = string | number | boolean | null | undefined | Date | string[] | number[] | Date[];
 type QueryParams = Record<string, QueryParamValue>;
@@ -213,6 +214,20 @@ describe('TasksService', () => {
   });
 
   describe('createTask', () => {
+    it('не позволяет администратору создать задачу в чужом личном проекте', async () => {
+      mockProjectsRepository.findOne.mockResolvedValueOnce(
+        Object.assign(new Projects(), { id: 10, isPrivate: true, ownerId: 7, status: PROJECT_STATUSES.IN_PROGRESS }),
+      );
+
+      await expect(
+        service.createTask(Object.assign(new CreateTaskDto(), { title: 'Скрытая задача', project_id: 10 }), {
+          id: 8,
+          role: ROLES.admin,
+        } as AuthenticatedUser),
+      ).rejects.toMatchObject({ status: HttpStatus.NOT_FOUND });
+      expect(mockTasksRepository.save).not.toHaveBeenCalled();
+    });
+
     it('должен устанавливать closed_date при создании закрытой задачи', async () => {
       const createTaskDto = Object.assign(new CreateTaskDto(), {
         title: 'Тестовая задача',
@@ -732,6 +747,21 @@ describe('TasksService', () => {
   });
 
   describe('findTasksByFilter', () => {
+    it('скрывает от администратора чужие личные проекты', async () => {
+      const qb = createQueryBuilderMock();
+      mockTasksRepository.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findTasksByFilter(new FindTasksByFilterDto(), {
+        id: 8,
+        role: ROLES.admin,
+      } as Users);
+
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        '(task.project_id IS NULL OR project.isPrivate = false OR project.ownerId = :userId)',
+        { userId: 8 },
+      );
+    });
+
     it.each(['NRV-142', ' nrv-00142 ', 'NrV-142'])('finds an exact task code: %s', async (title) => {
       const qb = createQueryBuilderMock();
       mockTasksRepository.createQueryBuilder.mockReturnValue(qb);
