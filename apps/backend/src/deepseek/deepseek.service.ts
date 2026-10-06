@@ -90,7 +90,7 @@ export class DeepseekService {
       throw new InternalServerErrorException('OPENROUTER_API_KEY не настроен');
     }
 
-    const model = process.env.OPENROUTER_TRANSCRIBE_MODEL || 'openai/whisper-large-v3';
+    const model = process.env.OPENROUTER_TRANSCRIBE_MODEL || 'openai/whisper-large-v3-turbo';
     const format = this.resolveAudioFormat(fileName, mimeType);
 
     const response = await fetchOpenRouter('https://openrouter.ai/api/v1/audio/transcriptions', {
@@ -226,26 +226,29 @@ export class DeepseekService {
         '',
         '=== СТИЛЬ РЕДАКТИРОВАНИЯ (ОБЯЗАТЕЛЬНО) ===',
         '- Убирай вводные и пустые фразы: "в общем", "также можно будет", "в целом", "как бы", "на самом деле", "просто", "скажем так", "и т.д.", "и т.п.", "в той или иной степени", "должно получиться", "необходимо постараться".',
-        '- Убирай канцелярит и воду. Избавляйся от тавтологий и повторов.',
+        '- Удаляй нейросетевые шаблоны и метатекст: "важно отметить", "следует отметить", "таким образом", "ниже представлены", "в современном мире", "данный", "в рамках", "обеспечить возможность".',
+        '- Убирай канцелярит, рекламные оценки, воду, тавтологии и повторы. Не добавляй вступление, резюме или вывод ради структуры.',
         '- Пиши коротко, по делу, преимущественно в повелительном наклонении: "Сверстать", "Проверить", "Добавить".',
-        '- Конкретизируй расплывчатые формулировки (если возможно по контексту): вместо "быстро" → "до 200мс TTFB", вместо "красиво" → "по макету Figma".',
+        '- Конкретизируй расплывчатые формулировки только по данным из исходного текста. Не придумывай метрики, сроки, ссылки, ограничения и технические детали.',
         '- Сохраняй технические факты, цифры, параметры, пути, имена сущностей.',
+        '- Не используй длинное тире и стрелки. Ставь дефис или перестраивай фразу.',
+        '- Не используй кавычки-ёлочки и типографские кавычки. Используй только прямые двойные кавычки.',
         '',
         '=== СТРУКТУРА ОПИСАНИЯ (ОБЯЗАТЕЛЬНО) ===',
         'Описание строится из трёх обязательных секций, каждая начинается с heading level 2:',
         '',
-        '1. "Проблема" (или "Контекст") — что сейчас не так / зачем эта задача.',
-        '2. "Что нужно сделать" (или "Ожидаемое поведение") — ожидаемый результат.',
-        '3. "Критерии приёмки" — ВСЕГДА ПОСЛЕДНЯЯ СЕКЦИЯ, оформляется taskList с taskItem (attrs.checked=false).',
+        '1. "Проблема" (или "Контекст") - что сейчас не так и зачем нужна задача.',
+        '2. "Что нужно сделать" (или "Ожидаемое поведение") - ожидаемый результат.',
+        '3. "Критерии приёмки" - ВСЕГДА ПОСЛЕДНЯЯ СЕКЦИЯ, оформляется taskList с taskItem (attrs.checked=false).',
         '',
         'Опциональные секции (только если уместно): "Ограничения", "Примечание", "Материалы".',
         '',
         '=== ПРАВИЛА ФОРМАТИРОВАНИЯ ===',
-        '- Секции — heading level 2, не жирный текст.',
-        '- Перечисления — bulletList/listItem или orderedList/listItem.',
-        '- Критерии приёмки — ТОЛЬКО taskList/taskItem (не буллеты). Каждый критерий — конкретный и проверяемый.',
-        '- Если критериев не было — сгенерируй реалистичные. Минимум 2, включая "Нет регрессии в текущем сценарии".',
-        '- Если в тексте есть ссылки или упоминания файлов — сохрани их.',
+        '- Секции оформляй через heading level 2, не через жирный текст.',
+        '- Перечисления оформляй через bulletList/listItem или orderedList/listItem.',
+        '- Критерии приёмки оформляй ТОЛЬКО через taskList/taskItem. Каждый критерий должен быть конкретным и проверяемым.',
+        '- Если критериев не было, сформируй реалистичные. Минимум 2, включая "Нет регрессии в текущем сценарии".',
+        '- Сохраняй ссылки и упоминания файлов из исходного текста.',
         '- Допускай жирный/курсив/код через marks: bold/italic/code.',
         '',
         '=== ДОПУСТИМЫЕ НОДЫ/МАРКИ Tiptap ===',
@@ -286,7 +289,7 @@ export class DeepseekService {
         'Сформируй чистый JSON строго по схеме, применив правила редактуры и структурирования.',
       ].join('\n');
 
-      const model = process.env.OPENROUTER_MODEL || 'google/gemini-2.5-pro';
+      const model = process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-001';
 
       const response = await this.openrouter.chat.completions.create(
         {
@@ -295,7 +298,7 @@ export class DeepseekService {
           messages: [
             {
               role: 'system',
-              content: 'Ты — ассистент, который формирует структурированные задачи, не теряя смысл и не удаляя важные детали.',
+              content: 'Формируй структурированные задачи коротко и прямо. Сохраняй смысл и важные детали исходного текста.',
             },
             {
               role: 'user',
@@ -321,15 +324,33 @@ export class DeepseekService {
         throw new InternalServerErrorException('Модель вернула невалидный JSON');
       }
 
-      return {
-        title: (json.title || '').trim(),
-        description: json.description,
-      };
+      return this.normalizeParsedTask(json);
     } catch (e) {
       if (!(e instanceof InternalServerErrorException)) {
         this.logger.error('parseTextToTaskGpt error:', e instanceof Error ? e.message : e);
       }
       throw e;
     }
+  }
+
+  private normalizeParsedTask(task: ParsedTaskDto): ParsedTaskDto {
+    const normalizeNode = (node: ParsedTaskDto['description']['content'][number]) => {
+      if (node.text) node.text = this.normalizeGeneratedText(node.text);
+      node.content?.forEach((child) => normalizeNode(child));
+    };
+
+    task.description.content.forEach((node) => normalizeNode(node));
+
+    return {
+      title: this.normalizeGeneratedText(task.title || '').trim(),
+      description: task.description,
+    };
+  }
+
+  private normalizeGeneratedText(text: string): string {
+    return text
+      .replace(/[—–]/g, '-')
+      .replace(/[«»„“”]/g, '"')
+      .replace(/[←→⇒]/g, '-');
   }
 }

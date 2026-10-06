@@ -26,9 +26,11 @@ const props = withDefaults(
   defineProps<{
     modelValue?: boolean;
     dismissible?: boolean;
+    showClose?: boolean;
   }>(),
   {
     dismissible: true,
+    showClose: true,
   },
 );
 
@@ -71,7 +73,7 @@ defineExpose({
   <Transition name="modal">
     <div v-if="isOpen" class="base-modal__overlay" @click.self="requestClose">
       <div class="base-modal">
-        <div class="base-modal__header">
+        <div v-if="showClose" class="base-modal__header">
           <button v-if="dismissible" class="base-modal__header-close" type="button" aria-label="Закрыть" @click="requestClose">
             <IconClose />
           </button>

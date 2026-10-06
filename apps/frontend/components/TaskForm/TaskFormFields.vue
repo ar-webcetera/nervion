@@ -125,7 +125,7 @@ const generateDescription = async () => {
 <template>
   <div class="task-form-fields">
     <div class="task-form-fields__header">
-      <AudioRecorder @done="handleTranscription" />
+      <AudioRecorder text-input @done="handleTranscription" />
       <input
         v-model="newTask.title"
         type="text"
