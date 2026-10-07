@@ -110,7 +110,8 @@ onMounted(() => {
       <span v-if="isExistNotReadMessage" class="notification__icon_dot"></span>
     </button>
 
-    <div v-if="isOpenNotificationMenu" class="notification__menu">
+    <Transition name="notification-popup">
+      <div v-if="isOpenNotificationMenu" class="notification__menu">
       <div class="notification__menu-header">
         <h2>Уведомления</h2>
         <button
@@ -162,11 +163,30 @@ onMounted(() => {
           {{ !isAllRead ? 'Все прочитано' : 'Прочитать все' }}
         </div>
       </div>
-    </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <style scoped lang="scss">
+.notification-popup-enter-active {
+  transition:
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.16s ease;
+}
+
+.notification-popup-leave-active {
+  transition:
+    transform 0.14s ease,
+    opacity 0.12s ease;
+}
+
+.notification-popup-enter-from,
+.notification-popup-leave-to {
+  transform: translateY(-8px) scale(0.98);
+  opacity: 0;
+}
+
 .notification {
   @include flex(a-center);
   position: relative;
@@ -416,6 +436,13 @@ onMounted(() => {
       border-radius: 0;
       border: none;
     }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-popup-enter-active,
+  .notification-popup-leave-active {
+    transition: none;
   }
 }
 </style>

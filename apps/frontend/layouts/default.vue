@@ -50,7 +50,11 @@ const mailDetailOpen = computed(
       <button class="main__mob-error-button" @click="router.push({ name: PAGE_NAMES.home })">Вернуться к задачам</button>
     </div>
   </div>
-  <TaskSidebar v-if="taskStore.currentTaskId" :current-task-id="taskStore.currentTaskId" @close="closeSidebar" />
+  <Transition name="task-panel">
+    <div v-if="taskStore.currentTaskId" class="task-panel-host">
+      <TaskSidebar :current-task-id="taskStore.currentTaskId" @close="closeSidebar" />
+    </div>
+  </Transition>
   <ClientOnly>
     <FloatingChatWidget />
     <VoicePanel />
@@ -146,6 +150,47 @@ const mailDetailOpen = computed(
     flex: 1;
     @include flex(cn);
     gap: 4px;
+  }
+}
+
+.task-panel-enter-active {
+  :deep(.task-sidebar) {
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  :deep(.task-sidebar__wrapper) {
+    transition: opacity 0.18s ease;
+  }
+}
+
+.task-panel-leave-active {
+  :deep(.task-sidebar) {
+    transition: transform 0.16s ease;
+  }
+
+  :deep(.task-sidebar__wrapper) {
+    transition: opacity 0.14s ease;
+  }
+}
+
+.task-panel-enter-from,
+.task-panel-leave-to {
+  :deep(.task-sidebar) {
+    transform: translateX(100%);
+  }
+
+  :deep(.task-sidebar__wrapper) {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-panel-enter-active,
+  .task-panel-leave-active {
+    :deep(.task-sidebar),
+    :deep(.task-sidebar__wrapper) {
+      transition: none;
+    }
   }
 }
 </style>

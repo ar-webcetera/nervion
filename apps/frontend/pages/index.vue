@@ -930,7 +930,11 @@ useHead({
       </template>
     </div>
 
-    <CreateTaskSidebar v-if="isCreateTaskSidebarOpen" @close="closeCreateTaskSidebar" />
+    <Transition name="task-panel">
+      <div v-if="isCreateTaskSidebarOpen" class="task-panel-host">
+        <CreateTaskSidebar @close="closeCreateTaskSidebar" />
+      </div>
+    </Transition>
 
     <BaseModal v-model="isMobileSearchOpen" class="home__mobile-search-modal">
       <section class="mobile-task-search" aria-labelledby="mobile-task-search-title">
@@ -1528,6 +1532,47 @@ useHead({
     top: 0 !important;
     left: 0;
     width: 100%;
+  }
+}
+
+.task-panel-enter-active {
+  :deep(.task-sidebar) {
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  :deep(.task-sidebar__wrapper) {
+    transition: opacity 0.18s ease;
+  }
+}
+
+.task-panel-leave-active {
+  :deep(.task-sidebar) {
+    transition: transform 0.16s ease;
+  }
+
+  :deep(.task-sidebar__wrapper) {
+    transition: opacity 0.14s ease;
+  }
+}
+
+.task-panel-enter-from,
+.task-panel-leave-to {
+  :deep(.task-sidebar) {
+    transform: translateX(100%);
+  }
+
+  :deep(.task-sidebar__wrapper) {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-panel-enter-active,
+  .task-panel-leave-active {
+    :deep(.task-sidebar),
+    :deep(.task-sidebar__wrapper) {
+      transition: none;
+    }
   }
 }
 </style>

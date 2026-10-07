@@ -243,7 +243,8 @@ onBeforeUnmount(() => {
     >
       <Timer :size="20" :stroke-width="1.75" aria-hidden="true" />
     </button>
-    <div v-if="isOpen" class="tracker-modal">
+    <Transition name="tracker-popup">
+      <div v-if="isOpen" class="tracker-modal">
       <div class="tracker-modal__header">
         <h2>Тайм-трекер</h2>
         <div class="tracker-modal__header-actions">
@@ -305,7 +306,8 @@ onBeforeUnmount(() => {
         <strong>Активных таймеров пока нет</strong>
         <p>Запустите новый таймер или включите учёт времени в задаче.</p>
       </div>
-    </div>
+      </div>
+    </Transition>
 
     <teleport to="#teleports">
       <BaseModal ref="newTimerModal">
@@ -379,6 +381,24 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped lang="scss">
+.tracker-popup-enter-active {
+  transition:
+    transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.16s ease;
+}
+
+.tracker-popup-leave-active {
+  transition:
+    transform 0.14s ease,
+    opacity 0.12s ease;
+}
+
+.tracker-popup-enter-from,
+.tracker-popup-leave-to {
+  transform: translateY(-8px) scale(0.98);
+  opacity: 0;
+}
+
 .base-top-tracker {
   position: relative;
 
@@ -883,6 +903,13 @@ onBeforeUnmount(() => {
     :deep(.task__track) {
       flex: 0 0 auto;
     }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tracker-popup-enter-active,
+  .tracker-popup-leave-active {
+    transition: none;
   }
 }
 </style>
