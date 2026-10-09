@@ -4,8 +4,10 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { AI_CLIENT, AI_MODEL } from './constants/tokens';
 import { ParsedTaskDto } from './dto/parsed-task.dto';
+import { ParsedDealCompany, ParsedDealContact, ParsedMailDeal } from './dto/parsed-deal.dto';
 import { buildProxyUrlFromEnv } from '../common/utils/proxy-url';
 import { fetchOpenRouter } from '../common/utils/fetch-openrouter';
+import type { JsonObject } from '@tracker/contracts';
 
 @Injectable()
 export class DeepseekService {
@@ -349,6 +351,124 @@ export class DeepseekService {
       }
       throw e;
     }
+  }
+
+  async parseMailToDealGpt(text: string, instruction?: string, internalAddresses: string[] = []): Promise<ParsedMailDeal> {
+    try {
+      const prompt = [
+        'Ты создаёшь карточку CRM-сделки из отдельного письма или почтовой переписки.',
+        'Извлеки максимум явно указанных данных, но ничего не выдумывай.',
+        'Внутренние адреса компании не добавляй в контакты клиента.',
+        `Внутренние адреса: ${internalAddresses.join(', ') || 'не указаны'}.`,
+        'Компания должна быть указана только когда она названа в тексте, подписи или однозначно следует из корпоративного домена.',
+        'Сумму и дату закрытия указывай только если они явно относятся к этой сделке.',
+        'Контакты могут находиться в заголовках письма, подписи и теле. Разделяй имя, фамилию и отчество.',
+        'Описание сделай кратким документом Tiptap: контекст обращения, запрос клиента, важные условия и договорённости.',
+        'Не используй длинное тире, стрелки и типографские кавычки.',
+        'Верни только JSON без Markdown по схеме:',
+        '{',
+        '  "title": "краткое название сделки",',
+        '  "amount": 100000 или null,',
+        '  "expected_close": "YYYY-MM-DD" или null,',
+        '  "company": null или { "name": "", "legal_name": "", "inn": "", "website": "", "notes": "" },',
+        '  "contacts": [{ "name": "", "last_name": "", "patronymic": "", "position": "", "phone": "", "email": "", "telegram": "" }],',
+        '  "description": { "type": "doc", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "" }] }] }',
+        '}',
+        ...(instruction ? ['', 'Дополнительная инструкция:', instruction] : []),
+        '',
+        'Исходная переписка:',
+        text,
+      ].join('\n');
+
+      const model = process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-001';
+      const response = await this.openrouter.chat.completions.create(
+        {
+          model,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: 'Извлекай CRM-данные из почты строго по фактам. Возвращай только валидный JSON.',
+            },
+            { role: 'user', content: prompt },
+          ],
+        },
+        { timeout: 60000 },
+      );
+
+      const raw = response.choices?.[0]?.message?.content ?? '{}';
+      const json = JSON.parse(
+        raw
+          .replace(/^```(?:json)?\s*/i, '')
+          .replace(/\s*```$/, '')
+          .trim(),
+      ) as Partial<ParsedMailDeal>;
+      return this.normalizeParsedDeal(json, text, internalAddresses);
+    } catch (error) {
+      this.logger.error('parseMailToDealGpt error:', error instanceof Error ? error.message : error);
+      throw new InternalServerErrorException('Не удалось подготовить сделку из письма');
+    }
+  }
+
+  private normalizeParsedDeal(value: Partial<ParsedMailDeal>, source: string, internalAddresses: string[]): ParsedMailDeal {
+    const string = (field: unknown, max: number) =>
+      typeof field === 'string' ? this.normalizeGeneratedText(field).trim().slice(0, max) : '';
+    const normalizeCompany = (company: ParsedDealCompany | null | undefined): ParsedDealCompany | null => {
+      if (!company || typeof company !== 'object') return null;
+      const name = string(company.name, 200);
+      if (!name) return null;
+      return {
+        name,
+        legal_name: string(company.legal_name, 300),
+        inn: string(company.inn, 20),
+        website: string(company.website, 500),
+        notes: string(company.notes, 10000),
+      };
+    };
+    const internal = new Set(internalAddresses.map((address) => address.trim().toLocaleLowerCase()).filter(Boolean));
+    const contacts = (Array.isArray(value.contacts) ? value.contacts : [])
+      .filter((contact): contact is ParsedDealContact => Boolean(contact && typeof contact === 'object'))
+      .map((contact) => {
+        const email = string(contact.email, 254).toLocaleLowerCase();
+        return {
+          name: string(contact.name, 200) || email.split('@')[0] || 'Контакт',
+          last_name: string(contact.last_name, 200),
+          patronymic: string(contact.patronymic, 200),
+          position: string(contact.position, 200),
+          phone: string(contact.phone, 100),
+          email,
+          telegram: string(contact.telegram, 100),
+        };
+      })
+      .filter((contact) => !contact.email || !internal.has(contact.email))
+      .slice(0, 20);
+    const amount = typeof value.amount === 'number' && Number.isFinite(value.amount) && value.amount >= 0 ? value.amount : null;
+    const expectedClose = this.isIsoDate(value.expected_close) ? value.expected_close : null;
+    const description = this.isTiptapDocument(value.description)
+      ? value.description
+      : ({
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: string(source, 8000) }] }],
+        } as JsonObject);
+
+    return {
+      title: string(value.title, 200) || 'Обращение по электронной почте',
+      amount: amount !== null && amount <= 9999999999.99 ? amount : null,
+      expected_close: expectedClose,
+      company: normalizeCompany(value.company),
+      contacts,
+      description,
+    };
+  }
+
+  private isTiptapDocument(value: unknown): value is JsonObject {
+    return Boolean(value && typeof value === 'object' && !Array.isArray(value) && (value as { type?: unknown }).type === 'doc');
+  }
+
+  private isIsoDate(value: unknown): value is string {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
   }
 
   private normalizeParsedTask(task: ParsedTaskDto): ParsedTaskDto {

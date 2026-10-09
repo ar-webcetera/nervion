@@ -8,15 +8,18 @@ const props = withDefaults(
     message: MailMessage;
     retrying?: boolean;
     linksDisabled?: boolean;
+    canCreateDeal?: boolean;
   }>(),
   {
     retrying: false,
     linksDisabled: false,
+    canCreateDeal: false,
   },
 );
 
 const emit = defineEmits<{
   createTask: [message: MailMessage];
+  createDeal: [message: MailMessage];
   forward: [message: MailMessage];
   delete: [message: MailMessage];
   retry: [message: MailMessage];
@@ -121,6 +124,16 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
           @click="emit('createTask', message)"
         >
           Создать задачу
+        </button>
+        <button
+          v-if="canCreateDeal"
+          class="mail-message__action"
+          type="button"
+          aria-label="Создать сделку из письма"
+          title="Создать сделку из письма"
+          @click="emit('createDeal', message)"
+        >
+          Создать сделку
         </button>
         <button
           v-if="canRetry"

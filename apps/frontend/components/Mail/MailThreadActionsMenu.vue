@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { ClipboardPlus, Ellipsis, FolderInput, Mail, Trash2 } from '@lucide/vue';
+import { BriefcaseBusiness, ClipboardPlus, Ellipsis, FolderInput, Mail, Trash2 } from '@lucide/vue';
 import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
 
 defineProps<{
   subject: string;
   canMarkUnread: boolean;
   permanentDelete: boolean;
+  canCreateDeal?: boolean;
 }>();
 
 const emit = defineEmits<{
   markUnread: [];
   createTask: [];
+  createDeal: [];
   move: [];
   delete: [];
 }>();
@@ -53,10 +55,11 @@ const onKeydown = (event: KeyboardEvent) => {
   items[nextIndex]?.focus();
 };
 
-const activate = (action: 'markUnread' | 'createTask' | 'move' | 'delete') => {
+const activate = (action: 'markUnread' | 'createTask' | 'createDeal' | 'move' | 'delete') => {
   close(true);
   if (action === 'markUnread') emit('markUnread');
   else if (action === 'createTask') emit('createTask');
+  else if (action === 'createDeal') emit('createDeal');
   else if (action === 'move') emit('move');
   else emit('delete');
 };
@@ -128,18 +131,16 @@ watch(isOpen, async (open, _, onCleanup) => {
         <ClipboardPlus :size="17" aria-hidden="true" />
         Создать задачу
       </button>
+      <button v-if="canCreateDeal" type="button" role="menuitem" tabindex="-1" @click="activate('createDeal')">
+        <BriefcaseBusiness :size="17" aria-hidden="true" />
+        Создать сделку
+      </button>
       <button type="button" role="menuitem" tabindex="-1" @click="activate('move')">
         <FolderInput :size="17" aria-hidden="true" />
         Перенести
       </button>
       <div role="separator" class="thread-actions__separator" />
-      <button
-        type="button"
-        role="menuitem"
-        tabindex="-1"
-        class="thread-actions__danger"
-        @click="activate('delete')"
-      >
+      <button type="button" role="menuitem" tabindex="-1" class="thread-actions__danger" @click="activate('delete')">
         <Trash2 :size="17" aria-hidden="true" />
         {{ permanentDelete ? 'Удалить навсегда' : 'Удалить' }}
       </button>

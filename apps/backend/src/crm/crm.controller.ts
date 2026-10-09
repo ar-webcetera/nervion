@@ -14,6 +14,7 @@ import {
   CrmQueryDto,
   CrmTaskDto,
   CrmTaskLinkDto,
+  CreateDealFromMailDto,
   DealDto,
   UpdateCompanyDto,
   UpdateContactDto,
@@ -79,6 +80,11 @@ export class CrmController {
   @Post('deals')
   create(@Body() dto: DealDto, @Req() req: RequestWithCookies) {
     return this.crm.saveDeal(dto, req.user);
+  }
+  @ApiOperation({ summary: 'Создать сделку, компанию и контакты из почтовой переписки' })
+  @Post('deals/from-mail')
+  createFromMail(@Body() dto: CreateDealFromMailDto, @Req() req: RequestWithCookies) {
+    return this.crm.createDealFromMail(dto.text, dto.instruction, dto.internal_addresses ?? [], req.user);
   }
   @Patch('deals/:id') update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateDealDto, @Req() req: RequestWithCookies) {
     return this.crm.saveDeal(dto, req.user, id);

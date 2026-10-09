@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia';
 import { Search, X } from '@lucide/vue';
-import { MailSpamRuleScope, MailSystemFolder, type MailFolder, type MailStatsResponse } from '@tracker/contracts';
+import {
+  MailSpamRuleScope,
+  MailSystemFolder,
+  type CrmDealDetail,
+  type MailFolder,
+  type MailStatsResponse,
+} from '@tracker/contracts';
 import BaseModal from '~/components/BaseModal.vue';
 import CreateTaskSidebar from '~/components/CreateTaskSidebar.vue';
 import MailActionIcon from '~/components/Mail/MailActionIcon.vue';
@@ -30,6 +36,8 @@ const { $toast } = useNuxtApp();
 const mailStore = useMailStore();
 const aiStore = useAiStore();
 const userStore = useUserStore();
+const isAdmin = computed(() => userStore.user?.role === ROLES.admin);
+const apiBaseURL = useApiBaseUrl();
 const {
   accounts,
   threads,
@@ -604,14 +612,16 @@ let persistedSelectedAccountId = userStore.user?.selected_mail_account_id ?? 0;
 const persistSelectedAccount = (accountId: number): Promise<void> => {
   if (!accountId) return Promise.resolve();
 
-  accountSelectionSave = accountSelectionSave.catch(() => {}).then(async () => {
-    if (persistedSelectedAccountId === accountId) return;
-    const response = await mailStore.selectAccount(accountId);
-    persistedSelectedAccountId = response.selected_mail_account_id;
-    if (userStore.user) {
-      userStore.user.selected_mail_account_id = response.selected_mail_account_id;
-    }
-  });
+  accountSelectionSave = accountSelectionSave
+    .catch(() => {})
+    .then(async () => {
+      if (persistedSelectedAccountId === accountId) return;
+      const response = await mailStore.selectAccount(accountId);
+      persistedSelectedAccountId = response.selected_mail_account_id;
+      if (userStore.user) {
+        userStore.user.selected_mail_account_id = response.selected_mail_account_id;
+      }
+    });
 
   return accountSelectionSave;
 };
@@ -887,9 +897,7 @@ const htmlToPlainText = (html: string) => {
     .trim();
 };
 
-type MailTaskTarget =
-  | { scope: 'thread'; thread: MailThread }
-  | { scope: 'message'; message: MailMessage };
+type MailTaskTarget = { scope: 'thread'; thread: MailThread } | { scope: 'message'; message: MailMessage };
 
 const mailTaskTarget = ref<MailTaskTarget | null>(null);
 const mailTaskModalOpen = ref(false);
@@ -897,9 +905,19 @@ const mailTaskPending = ref(false);
 const mailTaskError = ref('');
 const preparedMailTask = ref<ParsedTask | null>(null);
 const isCreateTaskSidebarOpen = ref(false);
+const mailDealTarget = ref<MailTaskTarget | null>(null);
+const mailDealModalOpen = ref(false);
+const mailDealPending = ref(false);
+const mailDealError = ref('');
 
 const mailTaskSubject = computed(() => {
   const target = mailTaskTarget.value;
+  if (!target) return '';
+  return target.scope === 'thread' ? target.thread.subject : target.message.subject || 'Без темы';
+});
+
+const mailDealSubject = computed(() => {
+  const target = mailDealTarget.value;
   if (!target) return '';
   return target.scope === 'thread' ? target.thread.subject : target.message.subject || 'Без темы';
 });
@@ -916,11 +934,21 @@ const openMessageTaskDialog = (message: MailMessage) => {
   mailTaskModalOpen.value = true;
 };
 
+const openThreadDealDialog = (thread: MailThread) => {
+  mailDealTarget.value = { scope: 'thread', thread };
+  mailDealError.value = '';
+  mailDealModalOpen.value = true;
+};
+
+const openMessageDealDialog = (message: MailMessage) => {
+  mailDealTarget.value = { scope: 'message', message };
+  mailDealError.value = '';
+  mailDealModalOpen.value = true;
+};
+
 const formatTaskMessage = (message: MailMessage, index?: number) => {
   const body = message.text_body?.trim() || (message.html_body ? htmlToPlainText(message.html_body) : '') || '(без текста)';
-  const recipients = message.to_addresses
-    .map((item) => (item.name ? `${item.name} <${item.address}>` : item.address))
-    .join(', ');
+  const recipients = message.to_addresses.map((item) => (item.name ? `${item.name} <${item.address}>` : item.address)).join(', ');
   const attachments = (message.attachments ?? []).filter((item) => !item.is_inline).map((item) => item.filename);
   const parts = [
     index === undefined ? 'Письмо' : `Письмо ${index}`,
@@ -968,6 +996,36 @@ const prepareMailTask = async (instruction: string) => {
     mailTaskError.value = getErrorMessage(error);
   } finally {
     mailTaskPending.value = false;
+  }
+};
+
+const createMailDeal = async (instruction: string) => {
+  const target = mailDealTarget.value;
+  if (!target || mailDealPending.value) return;
+
+  mailDealPending.value = true;
+  mailDealError.value = '';
+  try {
+    const source = await getMailTaskSource(target);
+    const deal = await $fetch<CrmDealDetail>('/api/crm/deals/from-mail', {
+      baseURL: apiBaseURL,
+      credentials: 'include',
+      method: 'POST',
+      body: {
+        text: source,
+        instruction: instruction || undefined,
+        internal_addresses: accounts.value.map((account) => account.address),
+      },
+      timeout: 65000,
+    });
+    mailDealModalOpen.value = false;
+    mailDealTarget.value = null;
+    $toast.success('Сделка создана');
+    await router.push({ path: '/crm/deals', query: { deal: String(deal.id) } });
+  } catch (error) {
+    mailDealError.value = getErrorMessage(error);
+  } finally {
+    mailDealPending.value = false;
   }
 };
 
@@ -1743,8 +1801,10 @@ watch(
               :subject="thread.subject"
               :can-mark-unread="Boolean(thread.last_inbound_at) && !thread.unread_count"
               :permanent-delete="isTrashFolder"
+              :can-create-deal="isAdmin"
               @mark-unread="markThreadUnread(thread)"
               @create-task="openThreadTaskDialog(thread)"
+              @create-deal="openThreadDealDialog(thread)"
               @move="openMoveDialog([thread.id])"
               @delete="askDeleteThreadFromList(thread)"
             />
@@ -1993,7 +2053,9 @@ watch(
               :message="message"
               :retrying="retryingMessageIds.has(message.id)"
               :links-disabled="currentFolder === 'spam'"
+              :can-create-deal="isAdmin"
               @create-task="openMessageTaskDialog"
+              @create-deal="openMessageDealDialog"
               @forward="forwardMessage"
               @delete="askDeleteMessage"
               @retry="retryMessage"
@@ -2276,6 +2338,17 @@ watch(
     :pending="mailTaskPending"
     :error="mailTaskError"
     @submit="prepareMailTask"
+  />
+
+  <MailCreateTaskModal
+    v-if="mailDealTarget"
+    v-model="mailDealModalOpen"
+    kind="deal"
+    :scope="mailDealTarget.scope"
+    :subject="mailDealSubject"
+    :pending="mailDealPending"
+    :error="mailDealError"
+    @submit="createMailDeal"
   />
 
   <Transition name="task-panel">

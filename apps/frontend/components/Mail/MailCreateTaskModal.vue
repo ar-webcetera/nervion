@@ -4,6 +4,7 @@ import { X } from '@lucide/vue';
 const props = defineProps<{
   modelValue: boolean;
   scope: 'thread' | 'message';
+  kind?: 'task' | 'deal';
   subject: string;
   pending: boolean;
   error?: string;
@@ -16,6 +17,7 @@ const emit = defineEmits<{
 
 const instruction = ref('');
 const instructionInput = ref<HTMLTextAreaElement | null>(null);
+const isDeal = computed(() => props.kind === 'deal');
 
 const close = () => {
   if (props.pending) return;
@@ -30,7 +32,7 @@ watch(
       return;
     }
     await nextTick();
-    instructionInput.value?.focus();
+    instructionInput.value?.focus({ preventScroll: true });
   },
 );
 </script>
@@ -46,19 +48,19 @@ watch(
     <form class="mail-task" :aria-busy="pending" @submit.prevent="emit('submit', instruction.trim())">
       <header class="mail-task__header">
         <div class="mail-task__heading">
-          <h2 class="mail-task__title">Создать задачу из {{ scope === 'thread' ? 'переписки' : 'письма' }}</h2>
+          <h2 class="mail-task__title">
+            Создать {{ isDeal ? 'сделку' : 'задачу' }} из {{ scope === 'thread' ? 'переписки' : 'письма' }}
+          </h2>
           <p class="mail-task__description">
-            ИИ подготовит название и описание. Перед созданием задачу можно будет проверить и дополнить.
+            <template v-if="isDeal">
+              ИИ заполнит сделку, найдёт или создаст компанию и контакты. После создания откроется карточка сделки.
+            </template>
+            <template v-else
+              >ИИ подготовит название и описание. Перед созданием задачу можно будет проверить и дополнить.</template
+            >
           </p>
         </div>
-        <button
-          class="mail-task__close"
-          type="button"
-          :disabled="pending"
-          aria-label="Закрыть"
-          title="Закрыть"
-          @click="close"
-        >
+        <button class="mail-task__close" type="button" :disabled="pending" aria-label="Закрыть" title="Закрыть" @click="close">
           <X :size="20" :stroke-width="1.75" aria-hidden="true" />
         </button>
       </header>
@@ -75,7 +77,11 @@ watch(
           v-model="instruction"
           rows="5"
           :disabled="pending"
-          placeholder="Например: выдели запрос клиента и добавь критерии проверки"
+          :placeholder="
+            isDeal
+              ? 'Например: назови сделку по услуге и не добавляй получателей копии в контакты'
+              : 'Например: выдели запрос клиента и добавь критерии проверки'
+          "
         ></textarea>
       </label>
       <p class="mail-task__hint">Поле можно оставить пустым.</p>
@@ -85,7 +91,7 @@ watch(
         <button class="mail-task__cancel" type="button" :disabled="pending" @click="close">Отмена</button>
         <button class="mail-task__submit" type="submit" :disabled="pending">
           <IconsIconButtonLoader v-if="pending" class="mail-task__loader" aria-hidden="true" />
-          {{ pending ? 'Формирую...' : 'Сформировать задачу' }}
+          {{ pending ? (isDeal ? 'Создаю...' : 'Формирую...') : isDeal ? 'Создать сделку' : 'Сформировать задачу' }}
         </button>
       </div>
     </form>
@@ -144,7 +150,9 @@ watch(
     background: transparent;
     color: var(--light-text-backgroung-primary-50);
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease;
     @include flex(center);
 
     &:hover:not(:disabled) {

@@ -23,7 +23,8 @@ import { Projects } from '../projects/entities/project.entity';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { CrmCompanyEntity, CrmContactEntity, CrmDealEntity } from './entities/crm.entity';
 
-@Module({ providers: [{ provide: DeepseekService, useValue: {} }], exports: [DeepseekService] })
+const parseMailToDealGpt = jest.fn();
+@Module({ providers: [{ provide: DeepseekService, useValue: { parseMailToDealGpt } }], exports: [DeepseekService] })
 class TestAiModule {}
 @Module({
   providers: [{ provide: NotificationsService, useValue: { createWithEmail: jest.fn() } }],
@@ -259,6 +260,48 @@ integration('CRM integration (disposable PostgreSQL)', () => {
     expect(deal.responsible_id).toBe(adminId);
     expect(deal.amount).toBeNull();
     expect(deal.stage_id).toBe(1);
+  });
+  it('creates a filled deal from mail and reuses the same company and contact', async () => {
+    const suffix = Date.now();
+    const companyName = `Почтовый клиент ${suffix}`;
+    const email = `mail-client-${suffix}@example.test`;
+    parseMailToDealGpt.mockResolvedValue({
+      title: 'Разработка корпоративного сайта',
+      amount: 250000,
+      expected_close: '2026-12-01',
+      company: { name: companyName, legal_name: '', inn: '', website: 'https://example.test', notes: '' },
+      contacts: [
+        {
+          name: 'Мария',
+          last_name: 'Иванова',
+          patronymic: '',
+          position: 'Маркетолог',
+          phone: '+7 900 111-22-33',
+          email,
+          telegram: '',
+        },
+      ],
+      description: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Запрос клиента' }] }] },
+    });
+    const body = { text: 'Письмо клиента', instruction: 'Создай сделку', internal_addresses: ['team@example.test'] };
+
+    await request(server()).post('/api/crm/deals/from-mail').set('Cookie', employeeCookie).send(body).expect(403);
+    const first = await request(server()).post('/api/crm/deals/from-mail').set('Cookie', adminCookie).send(body).expect(201);
+    const second = await request(server()).post('/api/crm/deals/from-mail').set('Cookie', adminCookie).send(body).expect(201);
+    const firstDeal = first.body as CrmDealDetail;
+    const secondDeal = second.body as CrmDealDetail;
+
+    expect(firstDeal).toMatchObject({
+      title: 'Разработка корпоративного сайта',
+      amount: '250000.00',
+      source: 'Электронная почта',
+      expected_close: '2026-12-01',
+    });
+    expect(secondDeal.company_id).toBe(firstDeal.company_id);
+    expect(secondDeal.primary_contact_id).toBe(firstDeal.primary_contact_id);
+    expect(await db.getRepository(CrmCompanyEntity).countBy({ name: companyName })).toBe(1);
+    expect(await db.getRepository(CrmContactEntity).countBy({ email })).toBe(1);
+    expect(parseMailToDealGpt).toHaveBeenCalledWith('Письмо клиента', 'Создай сделку', ['team@example.test']);
   });
   it('creates shared commercial tasks and hides all non-admin access paths', async () => {
     const response = await request(server())

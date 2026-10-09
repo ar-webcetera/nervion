@@ -10,6 +10,7 @@ import { Users } from '../users/entities/users.entity';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { CrmService } from './crm.service';
 import { CrmActivityEntity, CrmContactEntity, CrmDealEntity, CrmStageEntity } from './entities/crm.entity';
+import { DeepseekService } from '../deepseek/deepseek.service';
 
 interface TransactionManagerMock {
   getRepository: jest.Mock;
@@ -72,6 +73,7 @@ describe('CrmService notifications', () => {
         { provide: WebsocketGateway, useValue: events },
         { provide: NotificationsService, useValue: notifications },
         { provide: ConfigService, useValue: config },
+        { provide: DeepseekService, useValue: {} },
       ],
     }).compile();
     service = module.get(CrmService);

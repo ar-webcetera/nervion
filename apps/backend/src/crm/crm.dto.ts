@@ -12,6 +12,7 @@ import {
   IsString,
   Length,
   Max,
+  ArrayMaxSize,
   MaxLength,
   Min,
 } from 'class-validator';
@@ -185,6 +186,26 @@ export class DealDto {
   loss_reason?: string | null;
 }
 export class UpdateDealDto extends PartialType(DealDto) {}
+export class CreateDealFromMailDto {
+  @ApiProperty({ type: String, description: 'Текст отдельного письма или всей переписки' })
+  @IsString()
+  @Length(1, 200000)
+  text: string;
+
+  @ApiPropertyOptional({ type: String, description: 'Дополнительные инструкции по заполнению сделки' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  instruction?: string;
+
+  @ApiPropertyOptional({ type: String, isArray: true, description: 'Адреса внутренних почтовых ящиков' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(254, { each: true })
+  internal_addresses?: string[];
+}
 export class CrmQueryDto {
   @ApiPropertyOptional({ type: Number })
   @IsOptional()

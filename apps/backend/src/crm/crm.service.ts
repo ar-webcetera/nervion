@@ -43,6 +43,8 @@ import { TASK_STATUSES } from '../common/enums/statuses.enum';
 import { ROLES } from '../common/enums/roles.enum';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DeepseekService } from '../deepseek/deepseek.service';
+import type { ParsedDealCompany, ParsedDealContact } from '../deepseek/dto/parsed-deal.dto';
 
 @Injectable()
 export class CrmService {
@@ -54,6 +56,7 @@ export class CrmService {
     private readonly events: WebsocketGateway,
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
+    private readonly deepseek: DeepseekService,
   ) {}
   private author(user: AuthenticatedUser): string {
     return `${user.first_name} ${user.last_name}`.trim();
@@ -399,6 +402,118 @@ export class CrmService {
       void this.notifyResponsibleAssigned(result.id, result.title, result.responsibleId);
     }
     return this.detail(result.id);
+  }
+
+  async createDealFromMail(text: string, instruction: string | undefined, internalAddresses: string[], user: AuthenticatedUser) {
+    const parsed = await this.deepseek.parseMailToDealGpt(text, instruction, internalAddresses);
+    const dealId = await this.db.transaction(async (manager) => {
+      const companyRepository = manager.getRepository(CrmCompanyEntity);
+      const contactRepository = manager.getRepository(CrmContactEntity);
+      let company: CrmCompanyEntity | null = null;
+
+      if (parsed.company) {
+        company = await companyRepository
+          .createQueryBuilder('company')
+          .where('LOWER(BTRIM(company.name)) = LOWER(BTRIM(:name))', { name: parsed.company.name })
+          .getOne();
+        if (!company && parsed.company.inn) company = await companyRepository.findOneBy({ inn: parsed.company.inn });
+        company ??= companyRepository.create({
+          name: parsed.company.name,
+          legal_name: '',
+          inn: '',
+          website: '',
+          notes: '',
+          responsible_id: user.id,
+        });
+        this.fillMissingCompanyFields(company, parsed.company);
+        company = await this.saveCompanyEntity(companyRepository, company);
+      }
+
+      const contacts: CrmContactEntity[] = [];
+      for (const parsedContact of parsed.contacts) {
+        let contact: CrmContactEntity | null = null;
+        if (parsedContact.email) {
+          contact = await contactRepository
+            .createQueryBuilder('contact')
+            .where('LOWER(BTRIM(contact.email)) = :email', { email: parsedContact.email.toLocaleLowerCase() })
+            .getOne();
+        }
+        const phone = parsedContact.phone.replace(/\D/g, '');
+        if (!contact && phone) {
+          contact = await contactRepository
+            .createQueryBuilder('contact')
+            .where("REGEXP_REPLACE(contact.phone, '[^0-9]', '', 'g') = :phone", { phone })
+            .getOne();
+        }
+        const telegram = parsedContact.telegram.replace(/^@+/, '').toLocaleLowerCase();
+        if (!contact && telegram) {
+          contact = await contactRepository
+            .createQueryBuilder('contact')
+            .where("LOWER(REGEXP_REPLACE(BTRIM(contact.telegram), '^@+', '')) = :telegram", { telegram })
+            .getOne();
+        }
+        contact ??= contactRepository.create({
+          name: parsedContact.name,
+          last_name: '',
+          patronymic: '',
+          company_id: company?.id ?? null,
+          position: '',
+          phone: '',
+          email: '',
+          telegram: '',
+        });
+        this.fillMissingContactFields(contact, parsedContact, company?.id ?? null);
+        await this.ensureContactUnique(contactRepository, contact);
+        contacts.push(await this.saveContactEntity(contactRepository, contact));
+      }
+
+      if (!company) {
+        const linkedCompanyId = contacts.find((contact) => contact.company_id)?.company_id;
+        if (linkedCompanyId) company = await companyRepository.findOneBy({ id: linkedCompanyId });
+      }
+
+      const stage = await manager.getRepository(CrmStageEntity).findOneBy({ id: 1 });
+      if (!stage) throw new BadRequestException('Начальный этап CRM не найден');
+      const deal = await manager.getRepository(CrmDealEntity).save({
+        title: parsed.title,
+        stage_id: stage.id,
+        amount: parsed.amount === null ? null : String(parsed.amount),
+        company_id: company?.id ?? null,
+        contact_ids: contacts.map((contact) => contact.id),
+        primary_contact_id: contacts[0]?.id ?? null,
+        responsible_id: user.id,
+        source: 'Электронная почта',
+        expected_close: parsed.expected_close,
+        project_id: null,
+        description: parsed.description,
+        loss_reason: null,
+      });
+      await this.activity(manager, deal.id, user, 'Создана сделка из электронной почты');
+      return deal.id;
+    });
+
+    void this.events.sendCrmChanged();
+    void this.notifyDealCreated(dealId, parsed.title, user.id);
+    return this.detail(dealId);
+  }
+
+  private fillMissingCompanyFields(company: CrmCompanyEntity, parsed: ParsedDealCompany): void {
+    company.legal_name ||= parsed.legal_name;
+    company.inn ||= parsed.inn;
+    company.website ||= parsed.website;
+    company.notes ||= parsed.notes;
+    company.responsible_id ??= null;
+  }
+
+  private fillMissingContactFields(contact: CrmContactEntity, parsed: ParsedDealContact, companyId: number | null): void {
+    contact.name ||= parsed.name;
+    contact.last_name ||= parsed.last_name;
+    contact.patronymic ||= parsed.patronymic;
+    contact.position ||= parsed.position;
+    contact.phone ||= parsed.phone;
+    contact.email ||= parsed.email;
+    contact.telegram ||= parsed.telegram;
+    contact.company_id ??= companyId;
   }
   async removeDeal(id: number): Promise<void> {
     const result = await this.db.getRepository(CrmDealEntity).delete(id);
