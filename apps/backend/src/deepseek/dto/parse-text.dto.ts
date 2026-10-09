@@ -1,13 +1,14 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsOptional, IsString } from 'class-validator';
 
 export class ParseTextDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: 'Нужно сверстать новую кнопку в шапке сайта',
     description: 'Текст для парсинга в задачу',
   })
+  @IsOptional()
   @IsString()
-  declare text: string;
+  text?: string;
 
   @ApiPropertyOptional({
     example: 'Сделай описание короче и добавь критерий по производительности',

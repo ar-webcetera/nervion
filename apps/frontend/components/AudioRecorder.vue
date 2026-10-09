@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, onBeforeUnmount } from 'vue';
-import { FilePenLine, X } from '@lucide/vue';
+import { FilePenLine, ImagePlus, X } from '@lucide/vue';
 import { RecorderState } from '~/composables/useAudioRecorder';
 import type { JSONContent } from '@tiptap/core';
 import { useAiStore } from '~/stores/aiStore';
@@ -22,6 +22,12 @@ type ParsedAudioTask = {
 };
 
 type AudioRecorderError = Error | DOMException;
+
+type TaskSourceScreenshot = {
+  id: string;
+  file: File;
+  previewUrl: string;
+};
 
 withDefaults(
   defineProps<{
@@ -51,6 +57,12 @@ const textDraft = ref('');
 const textError = ref('');
 const isParsingText = ref(false);
 const textInputRef = ref<HTMLTextAreaElement | null>(null);
+const screenshotInputRef = ref<HTMLInputElement | null>(null);
+const screenshots = ref<TaskSourceScreenshot[]>([]);
+const MAX_SCREENSHOTS = 5;
+const MAX_SCREENSHOT_SIZE = 5 * 1024 * 1024;
+const MAX_SCREENSHOTS_TOTAL_SIZE = 15 * 1024 * 1024;
+const SCREENSHOT_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 const mediaRecorder = ref<MediaRecorder | null>(null);
 const streamRef = ref<MediaStream | null>(null);
@@ -255,10 +267,92 @@ const closeTextInput = () => {
   textError.value = '';
 };
 
+const getScreenshotId = () =>
+  typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+const clearScreenshots = () => {
+  screenshots.value.forEach((screenshot) => URL.revokeObjectURL(screenshot.previewUrl));
+  screenshots.value = [];
+};
+
+const removeScreenshot = (id: string) => {
+  const screenshot = screenshots.value.find((item) => item.id === id);
+  if (screenshot) URL.revokeObjectURL(screenshot.previewUrl);
+  screenshots.value = screenshots.value.filter((item) => item.id !== id);
+  textError.value = '';
+};
+
+const addScreenshots = (files: File[]) => {
+  textError.value = '';
+  let totalSize = screenshots.value.reduce((sum, screenshot) => sum + screenshot.file.size, 0);
+
+  for (const file of files) {
+    if (screenshots.value.length >= MAX_SCREENSHOTS) {
+      textError.value = `Можно добавить не больше ${MAX_SCREENSHOTS} скриншотов.`;
+      break;
+    }
+    if (!SCREENSHOT_MIME_TYPES.has(file.type)) {
+      textError.value = 'Поддерживаются скриншоты PNG, JPEG и WebP.';
+      continue;
+    }
+    if (file.size === 0) {
+      textError.value = 'Один из скриншотов пуст. Вставьте другое изображение.';
+      continue;
+    }
+    if (file.size > MAX_SCREENSHOT_SIZE) {
+      textError.value = 'Размер одного скриншота не должен превышать 5 МБ.';
+      continue;
+    }
+    if (totalSize + file.size > MAX_SCREENSHOTS_TOTAL_SIZE) {
+      textError.value = 'Общий размер скриншотов не должен превышать 15 МБ.';
+      break;
+    }
+
+    screenshots.value.push({
+      id: getScreenshotId(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    });
+    totalSize += file.size;
+  }
+};
+
+const insertPastedText = (text: string) => {
+  if (!text) return;
+  const textarea = textInputRef.value;
+  const start = textarea?.selectionStart ?? textDraft.value.length;
+  const end = textarea?.selectionEnd ?? start;
+  textDraft.value = `${textDraft.value.slice(0, start)}${text}${textDraft.value.slice(end)}`;
+  nextTick(() => {
+    textarea?.setSelectionRange(start + text.length, start + text.length);
+  });
+};
+
+const handleTextPaste = (event: ClipboardEvent) => {
+  const imageFiles = Array.from(event.clipboardData?.items ?? [])
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => file !== null);
+
+  if (imageFiles.length === 0) return;
+
+  event.preventDefault();
+  insertPastedText(event.clipboardData?.getData('text/plain') ?? '');
+  addScreenshots(imageFiles);
+};
+
+const handleScreenshotSelect = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  addScreenshots(Array.from(input.files ?? []));
+  input.value = '';
+};
+
 const parseText = async () => {
   const text = textDraft.value.trim();
-  if (!text) {
-    textError.value = 'Введите или вставьте текст задачи.';
+  if (!text && screenshots.value.length === 0) {
+    textError.value = 'Введите текст или добавьте хотя бы один скриншот.';
     textInputRef.value?.focus();
     return;
   }
@@ -266,9 +360,14 @@ const parseText = async () => {
   textError.value = '';
   isParsingText.value = true;
   try {
-    const parsedTask = await aiStore.parseTextToTask(text);
+    const parsedTask = await aiStore.parseTextToTask(
+      text,
+      undefined,
+      screenshots.value.map((screenshot) => screenshot.file),
+    );
     emit('done', parsedTask);
     textDraft.value = '';
+    clearScreenshots();
     isTextModalOpen.value = false;
   } catch (e) {
     textError.value = getErrorMessage(e);
@@ -283,6 +382,7 @@ const isActiveState = (value: RecorderState) =>
 onBeforeUnmount(() => {
   clearTimers();
   stopAudioRecordingStream(streamRef.value);
+  clearScreenshots();
 });
 </script>
 
@@ -348,9 +448,9 @@ onBeforeUnmount(() => {
       <form class="text-task" :aria-busy="isParsingText" @submit.prevent="parseText">
         <div class="text-task__header">
           <div class="text-task__heading">
-            <h2 class="text-task__title">Сформировать задачу из текста</h2>
+            <h2 class="text-task__title">Сформировать задачу по материалам</h2>
             <p class="text-task__description">
-              Вставьте длинный текст или опишите задачу вручную. Текст будет очищен и разбит на понятные разделы.
+              Добавьте описание и скриншоты. ИИ прочитает материалы и подготовит название и структуру задачи.
             </p>
           </div>
           <button
@@ -366,7 +466,7 @@ onBeforeUnmount(() => {
         </div>
 
         <label class="text-task__field">
-          <span>Исходный текст</span>
+          <span>Описание задачи</span>
           <textarea
             ref="textInputRef"
             v-model="textDraft"
@@ -375,16 +475,63 @@ onBeforeUnmount(() => {
             :disabled="isParsingText"
             :aria-describedby="textError ? 'text-task-error' : 'text-task-hint'"
             placeholder="Вставьте переписку, заметки или свободное описание задачи"
+            @paste="handleTextPaste"
           ></textarea>
         </label>
-        <p id="text-task-hint" class="text-task__hint">Поле подходит для длинных заметок и переписки.</p>
+        <div id="text-task-hint" class="text-task__source-actions">
+          <p class="text-task__hint">Вставьте скриншот через Ctrl+V или выберите изображение.</p>
+          <button
+            class="text-task__add-screenshot"
+            type="button"
+            :disabled="isParsingText || screenshots.length >= MAX_SCREENSHOTS"
+            @click="screenshotInputRef?.click()"
+          >
+            <ImagePlus :size="18" :stroke-width="1.75" aria-hidden="true" />
+            Добавить скриншоты
+          </button>
+          <input
+            ref="screenshotInputRef"
+            class="text-task__file-input"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            multiple
+            tabindex="-1"
+            aria-hidden="true"
+            @change="handleScreenshotSelect"
+          />
+        </div>
+
+        <ul v-if="screenshots.length" class="text-task__screenshots" aria-label="Добавленные скриншоты">
+          <li v-for="(screenshot, index) in screenshots" :key="screenshot.id" class="text-task__screenshot">
+            <img
+              :src="screenshot.previewUrl"
+              :alt="`Скриншот ${index + 1}: ${screenshot.file.name}`"
+              width="160"
+              height="104"
+            />
+            <span :title="screenshot.file.name">{{ screenshot.file.name }}</span>
+            <button
+              type="button"
+              :disabled="isParsingText"
+              :aria-label="`Удалить скриншот ${index + 1}`"
+              title="Удалить скриншот"
+              @click="removeScreenshot(screenshot.id)"
+            >
+              <X :size="16" :stroke-width="1.75" aria-hidden="true" />
+            </button>
+          </li>
+        </ul>
         <p v-if="textError" id="text-task-error" class="text-task__error" role="alert">{{ textError }}</p>
 
         <div class="text-task__actions">
           <button class="text-task__cancel" type="button" :disabled="isParsingText" @click="closeTextInput">
             Отмена
           </button>
-          <button class="text-task__submit" type="submit" :disabled="isParsingText || !textDraft.trim()">
+          <button
+            class="text-task__submit"
+            type="submit"
+            :disabled="isParsingText || (!textDraft.trim() && screenshots.length === 0)"
+          >
             <IconsIconButtonLoader v-if="isParsingText" class="text-task__loader" aria-hidden="true" />
             {{ isParsingText ? 'Формирую...' : 'Сформировать задачу' }}
           </button>
@@ -576,8 +723,96 @@ onBeforeUnmount(() => {
   }
 
   &__hint {
-    margin-top: -10px;
     @extend %text-xs-regular;
+  }
+
+  &__source-actions {
+    @include flex(rn, a-center, between);
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: -10px;
+  }
+
+  &__add-screenshot {
+    @extend %ds-btn-secondary;
+    min-height: 36px;
+    padding: 8px 12px;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    &:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+  }
+
+  &__file-input {
+    display: none;
+  }
+
+  &__screenshots {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  &__screenshot {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--light-text-backgroung-primary-5);
+
+    img {
+      display: block;
+      width: 100%;
+      height: 104px;
+      object-fit: cover;
+    }
+
+    span {
+      display: block;
+      min-width: 0;
+      padding: 8px;
+      overflow: hidden;
+      color: var(--light-text-backgroung-primary-50);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      @extend %text-xs-regular;
+    }
+
+    button {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: var(--dark-text-background-primary);
+      color: var(--light-text-backgroung-primary);
+      cursor: pointer;
+      @include flex(center);
+      transition: background-color 0.15s ease, color 0.15s ease;
+
+      &:hover:not(:disabled) {
+        background: var(--danger-delete);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    }
   }
 
   &__error {
@@ -615,7 +850,7 @@ onBeforeUnmount(() => {
   }
 
   @media (max-width: $screen-mobile-l) {
-    --text-task-field-min-height: 45dvh;
+    --text-task-field-min-height: min(34dvh, 260px);
     padding: 0 16px;
 
     &__actions {
@@ -632,6 +867,25 @@ onBeforeUnmount(() => {
     &__close {
       width: 44px;
       min-height: 44px;
+    }
+
+    &__source-actions {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    &__add-screenshot {
+      width: 100%;
+      min-height: 44px;
+    }
+
+    &__screenshots {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    &__screenshot button {
+      width: 44px;
+      height: 44px;
     }
   }
 }
