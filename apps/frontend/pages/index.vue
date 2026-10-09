@@ -324,22 +324,6 @@ const isCreateTaskSidebarOpen = ref(false);
 const filterPanelRef = ref<{ clearSearch: () => void } | null>(null);
 const mobileFilterPanelRef = ref<{ clearSearch: () => void } | null>(null);
 const isMobileSearchOpen = ref(false);
-const isDesktopFilterPanelVisible = ref(false);
-let desktopFilterMediaQuery: MediaQueryList | null = null;
-
-const syncDesktopFilterPanelVisibility = () => {
-  isDesktopFilterPanelVisible.value = desktopFilterMediaQuery?.matches ?? false;
-};
-
-onMounted(() => {
-  desktopFilterMediaQuery = window.matchMedia('(min-width: 481px)');
-  syncDesktopFilterPanelVisibility();
-  desktopFilterMediaQuery.addEventListener('change', syncDesktopFilterPanelVisibility);
-});
-
-onBeforeUnmount(() => {
-  desktopFilterMediaQuery?.removeEventListener('change', syncDesktopFilterPanelVisibility);
-});
 
 const openCreateTaskSidebar = () => {
   isCreateTaskSidebarOpen.value = true;
@@ -891,7 +875,7 @@ useHead({
       <template v-else-if="viewType === ViewType.KANBAN">
         <BaseKanban
           :key="String(taskStore.filter)"
-          :quick-create-enabled="isDesktopFilterPanelVisible"
+          quick-create-enabled
           :columns="kanban"
           @click-to-card="openTaskSidebar"
           @swap-priority-task="swapPriorityTask"

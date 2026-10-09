@@ -4,6 +4,20 @@ import type { PropType } from 'vue';
 import { TASK_STATUSES, TASK_STATUS_DESCRIPTIONS } from '~/constants/task.constants';
 import { TaskType } from '~/enums/task.enums';
 
+const TASK_STATUS_DESCRIPTION_PARTS = Object.fromEntries(
+  Object.entries(TASK_STATUS_DESCRIPTIONS).map(([status, description]) => {
+    const [entry = '', exit = ''] = description.split(' Выход: ');
+
+    return [
+      status,
+      {
+        entry: entry.replace(/^Вход:\s*/, ''),
+        exit,
+      },
+    ];
+  }),
+) as Record<TASK_STATUSES, { entry: string; exit: string }>;
+
 const { resolveAwsUrl } = useResolveUrl();
 const { isDragging: isBoardDragging, onPointerDown, onPointerMove, onPointerEnd } = useHorizontalDragScroll();
 
@@ -156,6 +170,46 @@ onBeforeUnmount(() => {
 });
 
 const DEADLINE_MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const TASKS_TIME_ZONE = 'Europe/Moscow';
+const DAY_MS = 86_400_000;
+
+interface CalendarDate {
+  year: number;
+  month: number;
+  day: number;
+  dayNumber: number;
+}
+
+const calendarDateFormatter = new Intl.DateTimeFormat('en-US', {
+  timeZone: TASKS_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const createCalendarDate = (year: number, month: number, day: number): CalendarDate | null => {
+  const utcDate = new Date(Date.UTC(year, month - 1, day));
+  if (utcDate.getUTCFullYear() !== year || utcDate.getUTCMonth() !== month - 1 || utcDate.getUTCDate() !== day) return null;
+
+  return {
+    year,
+    month,
+    day,
+    dayNumber: Math.floor(utcDate.getTime() / DAY_MS),
+  };
+};
+
+const getCalendarDate = (date: Date): CalendarDate | null => {
+  if (Number.isNaN(date.getTime())) return null;
+
+  const parts = calendarDateFormatter.formatToParts(date);
+  const year = Number(parts.find((part) => part.type === 'year')?.value);
+  const month = Number(parts.find((part) => part.type === 'month')?.value);
+  const day = Number(parts.find((part) => part.type === 'day')?.value);
+  return createCalendarDate(year, month, day);
+};
+
+const currentDayNumber = getCalendarDate(new Date())?.dayNumber;
 
 const pluralDays = (n: number): string => {
   const mod10 = n % 10;
@@ -165,20 +219,17 @@ const pluralDays = (n: number): string => {
   return 'дней';
 };
 
-const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-const parseDueDate = (raw: string | Date): Date | null => {
-  if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : startOfDay(raw);
+const parseDueDate = (raw: string | Date): CalendarDate | null => {
+  if (raw instanceof Date) return getCalendarDate(raw);
 
   const s = String(raw);
   const ru = s.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
-  if (ru) return new Date(Number(ru[3]), Number(ru[2]) - 1, Number(ru[1]));
+  if (ru) return createCalendarDate(Number(ru[3]), Number(ru[2]), Number(ru[1]));
 
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  if (iso) return createCalendarDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
 
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : startOfDay(d);
+  return getCalendarDate(new Date(s));
 };
 
 const getDeadline = (card: KanbanCard): { text: string; cls: string } | null => {
@@ -187,17 +238,18 @@ const getDeadline = (card: KanbanCard): { text: string; cls: string } | null => 
   const due = parseDueDate(card.planned_date as string | Date);
   if (!due) return null;
 
-  const neutral = { text: `${due.getDate()} ${DEADLINE_MONTHS[due.getMonth()]}`, cls: 'far' };
+  const neutral = { text: `${due.day} ${DEADLINE_MONTHS[due.month - 1]}`, cls: 'far' };
 
   if (card.closed_date) {
-    const closed = new Date(card.closed_date);
-    if (Number.isNaN(closed.getTime())) return neutral;
-    return startOfDay(closed).getTime() > due.getTime() ? { text: 'Просрочено', cls: 'overdue' } : neutral;
+    const closed = getCalendarDate(new Date(card.closed_date));
+    if (!closed) return neutral;
+    return closed.dayNumber > due.dayNumber ? { text: 'Просрочено', cls: 'overdue' } : neutral;
   }
 
   if (card.status === TASK_STATUSES.closed) return neutral;
+  if (currentDayNumber == null) return neutral;
 
-  const diffDays = Math.round((due.getTime() - startOfDay(new Date()).getTime()) / 86_400_000);
+  const diffDays = due.dayNumber - currentDayNumber;
 
   if (diffDays < 0) return { text: 'Просрочено', cls: 'overdue' };
   if (diffDays === 0) return { text: 'Сегодня', cls: 'today' };
@@ -398,11 +450,18 @@ const dragend = () => {
         <span
           class="kanban__column-status"
           tabindex="0"
-          :data-status-tooltip="TASK_STATUS_DESCRIPTIONS[column.status]"
-          :aria-label="`${column.title}. ${TASK_STATUS_DESCRIPTIONS[column.status]}`"
+          :aria-describedby="`kanban-status-tooltip-${column.id}`"
         >
           <span class="kanban__column-header_dot" :class="'kanban__column-header_' + column.status"></span>
           <span class="kanban__column-header_title">{{ column.title }}</span>
+          <span :id="`kanban-status-tooltip-${column.id}`" class="kanban__status-tooltip" role="tooltip">
+            <span class="kanban__status-tooltip-section">
+              <strong>Вход:</strong> {{ TASK_STATUS_DESCRIPTION_PARTS[column.status].entry }}
+            </span>
+            <span class="kanban__status-tooltip-section">
+              <strong>Выход:</strong> {{ TASK_STATUS_DESCRIPTION_PARTS[column.status].exit }}
+            </span>
+          </span>
         </span>
         <span class="kanban__column-header_count">{{ column.total ?? column.cards.length }}</span>
         <span v-if="column.cards.some((c) => c.story_points != null)" class="kanban__column-header_sp">
@@ -436,6 +495,7 @@ const dragend = () => {
 
       <KanbanQuickCreate
         v-if="quickCreateEnabled && !column.collapsed && quickCreateStatus === column.status"
+        class="kanban__quick-create"
         :status="column.status"
         @close="closeQuickCreate"
         @created="onTaskCreated"
@@ -653,6 +713,16 @@ const dragend = () => {
       color: var(--light-text-backgroung-primary);
       background: var(--light-text-backgroung-primary-10);
     }
+
+    @media (max-width: $screen-mobile-l) {
+      display: none;
+    }
+  }
+
+  &__quick-create {
+    @media (max-width: $screen-mobile-l) {
+      display: none;
+    }
   }
 
   &__column-header {
@@ -726,36 +796,14 @@ const dragend = () => {
   &__column-status {
     position: relative;
     min-width: 0;
-    @include flex(rn a-center);
+    @include flex(rn, a-center);
     gap: 8px;
     border-radius: 6px;
     cursor: help;
     outline: none;
 
-    &::after {
-      content: attr(data-status-tooltip);
-      position: absolute;
-      z-index: 30;
-      top: calc(100% + 8px);
-      left: 0;
-      width: 272px;
-      padding: 8px 12px;
-      border: 1px solid var(--light-text-backgroung-primary-10);
-      border-radius: 8px;
-      background: var(--dark-text-background-secondary);
-      box-shadow: 0 8px 24px var(--black-40);
-      color: var(--light-text-backgroung-primary);
-      opacity: 0;
-      visibility: hidden;
-      pointer-events: none;
-      @extend %text-xs-regular;
-      transition:
-        opacity 0.15s ease,
-        visibility 0.15s ease;
-    }
-
-    &:hover::after,
-    &:focus-visible::after {
+    &:hover .kanban__status-tooltip,
+    &:focus-visible .kanban__status-tooltip {
       opacity: 1;
       visibility: visible;
     }
@@ -768,6 +816,37 @@ const dragend = () => {
     @media (pointer: coarse) {
       min-height: 44px;
     }
+  }
+
+  &__status-tooltip {
+    @include flex(cn);
+    gap: 6px;
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 8px);
+    left: 0;
+    width: 272px;
+    padding: 8px 12px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+    background: var(--dark-text-background-secondary);
+    box-shadow: 0 8px 24px var(--black-40);
+    color: var(--light-text-backgroung-primary);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    @extend %text-xs-regular;
+    transition:
+      opacity 0.15s ease,
+      visibility 0.15s ease;
+
+    strong {
+      font-weight: 600;
+    }
+  }
+
+  &__status-tooltip-section {
+    display: block;
   }
 
   &__column-header_title {

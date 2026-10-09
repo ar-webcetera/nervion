@@ -154,6 +154,8 @@ const mailDetailOpen = computed(
 }
 
 .task-panel-enter-active {
+  transition: opacity 0.18s ease;
+
   :deep(.task-sidebar) {
     transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
   }
@@ -164,17 +166,21 @@ const mailDetailOpen = computed(
 }
 
 .task-panel-leave-active {
+  transition: opacity 0.18s ease;
+
   :deep(.task-sidebar) {
-    transition: transform 0.18s cubic-bezier(0.4, 0, 1, 1);
+    transition: transform 0.2s ease;
   }
 
   :deep(.task-sidebar__wrapper) {
-    transition: opacity 0.16s ease;
+    transition: opacity 0.18s ease;
   }
 }
 
 .task-panel-enter-from,
 .task-panel-leave-to {
+  opacity: 0;
+
   :deep(.task-sidebar) {
     transform: translateX(100%);
   }
