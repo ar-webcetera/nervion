@@ -189,12 +189,13 @@ const getDeadline = (card: KanbanCard): { text: string; cls: string } | null => 
 
   const neutral = { text: `${due.getDate()} ${DEADLINE_MONTHS[due.getMonth()]}`, cls: 'far' };
 
-  if (card.status === TASK_STATUSES.closed) {
-    if (!card.closed_date) return neutral;
+  if (card.closed_date) {
     const closed = new Date(card.closed_date);
     if (Number.isNaN(closed.getTime())) return neutral;
     return startOfDay(closed).getTime() > due.getTime() ? { text: 'Просрочено', cls: 'overdue' } : neutral;
   }
+
+  if (card.status === TASK_STATUSES.closed) return neutral;
 
   const diffDays = Math.round((due.getTime() - startOfDay(new Date()).getTime()) / 86_400_000);
 

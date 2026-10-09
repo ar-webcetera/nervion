@@ -410,12 +410,26 @@ export const useTaskStore = defineStore('task', () => {
     if (updateTaskOptions.recurrence_days !== undefined) body.recurrence_days = updateTaskOptions.recurrence_days;
     if (updateTaskOptions.billing_type !== undefined) body.billing_type = updateTaskOptions.billing_type;
     if (updateTaskOptions.fixed_price !== undefined) body.fixed_price = updateTaskOptions.fixed_price;
-    await $fetch(`/api/tasks/${id}`, {
+    const updatedTask = await $fetch<Task>(`/api/tasks/${id}`, {
       method: 'PATCH',
       credentials: 'include',
       baseURL: config.public.API_URL,
       body,
     });
+
+    if (currentTask.value?.id === id) Object.assign(currentTask.value, updatedTask);
+    for (const task of [...tasks.value, ...tasksWithTimelogs.value]) {
+      if (task.id === id) Object.assign(task, updatedTask);
+    }
+    for (const column of kanban.value) {
+      const card = column.cards.find((item) => item.id === id);
+      if (!card) continue;
+      card.status = updatedTask.status;
+      card.planned_date = updatedTask.planned_date ? String(updatedTask.planned_date) : null;
+      card.closed_date = updatedTask.closed_date ? String(updatedTask.closed_date) : null;
+    }
+
+    return updatedTask;
   };
 
   const deleteTask = async (id: number) => {

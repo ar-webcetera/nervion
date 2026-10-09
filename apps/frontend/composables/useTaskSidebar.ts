@@ -264,6 +264,8 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
         projectName: task.project?.name,
         taskType: task.taskType,
         description: extractPlainText(task.description as TiptapDoc, 80),
+        planned_date: task.planned_date ? String(task.planned_date) : null,
+        closed_date: task.closed_date ? String(task.closed_date) : null,
       };
 
       const insertIndex = targetColumn.cards.findIndex((card) => card.priority < task.priority);
