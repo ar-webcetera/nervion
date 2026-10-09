@@ -14,6 +14,7 @@ interface Props {
 
 const props = defineProps<Props>();
 const emit = defineEmits(['close', 'save', 'delete']);
+const isVisible = ref(true);
 
 const form = ref({
   user_id: props.allocation?.user_id || props.prefilledUser?.id || 0,
@@ -51,14 +52,20 @@ const handleDelete = () => {
 };
 
 const handleClose = () => {
+  isVisible.value = false;
+};
+
+const handleAfterLeave = () => {
   emit('close');
 };
+
+defineExpose({ close: handleClose });
 </script>
 
 <template>
   <Teleport to="body">
-    <Transition appear name="modal">
-      <div class="allocation-modal">
+    <Transition appear name="modal" @after-leave="handleAfterLeave">
+      <div v-if="isVisible" class="allocation-modal">
         <div class="allocation-modal__overlay" @click="handleClose"></div>
       <div class="allocation-modal__content">
       <div class="allocation-modal__header">
@@ -300,19 +307,41 @@ const handleClose = () => {
   }
 }
 
-.modal-enter-active {
+.modal-enter-active,
+.modal-leave-active {
   transition: opacity 0.22s ease;
 
   .allocation-modal__content {
     transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.26s ease;
   }
 }
-.modal-enter-from {
+
+.modal-leave-active {
+  transition-duration: 0.18s;
+
+  .allocation-modal__content {
+    transition-duration: 0.18s;
+  }
+}
+
+.modal-enter-from,
+.modal-leave-to {
   opacity: 0;
 
   .allocation-modal__content {
     opacity: 0;
     transform: translateY(10px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: none;
+
+    .allocation-modal__content {
+      transition: none;
+    }
   }
 }
 </style>

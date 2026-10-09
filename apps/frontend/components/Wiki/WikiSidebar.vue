@@ -1,5 +1,10 @@
 <template>
-  <div class="wiki-sidebar">
+  <div
+    ref="sidebarElement"
+    class="wiki-sidebar"
+    :class="{ 'wiki-sidebar_resizing': isResizing }"
+    :style="sidebarStyle"
+  >
     <div class="wiki-sidebar__header">
       <div class="wiki-sidebar__title" @click="toggleDropdown">
         <div class="wiki-sidebar__title-content">
@@ -135,6 +140,19 @@
         </div>
       </div>
     </div>
+    <div
+      class="wiki-sidebar__resize-handle"
+      role="separator"
+      tabindex="0"
+      aria-label="Изменить ширину боковой панели"
+      aria-orientation="vertical"
+      :aria-valuemin="SIDEBAR_MIN_WIDTH"
+      :aria-valuemax="availableMaxWidth"
+      :aria-valuenow="sidebarWidth"
+      title="Потяните, чтобы изменить ширину"
+      @pointerdown="startResize"
+      @keydown="resizeWithKeyboard"
+    ></div>
   </div>
 </template>
 
@@ -157,6 +175,103 @@ const isDropdownOpen = ref(false);
 const isAddingLink = ref(false);
 const newLinkTitle = ref('');
 const newLinkUrl = ref('');
+const sidebarElement = ref<HTMLElement | null>(null);
+const SIDEBAR_DEFAULT_WIDTH = 300;
+const SIDEBAR_MIN_WIDTH = 240;
+const SIDEBAR_MAX_WIDTH = 520;
+const SIDEBAR_CONTENT_MIN_WIDTH = 360;
+const SIDEBAR_WIDTH_STORAGE_KEY = 'nervion:wiki-sidebar-width';
+const sidebarWidth = ref(SIDEBAR_DEFAULT_WIDTH);
+const availableMaxWidth = ref(SIDEBAR_MAX_WIDTH);
+const isResizing = ref(false);
+let resizeStartX = 0;
+let resizeStartWidth = SIDEBAR_DEFAULT_WIDTH;
+let resizeFrame: number | null = null;
+let pendingWidth = SIDEBAR_DEFAULT_WIDTH;
+let previousBodyCursor = '';
+let previousBodyUserSelect = '';
+
+const sidebarStyle = computed(() => ({
+  '--wiki-sidebar-width': `${sidebarWidth.value}px`,
+}));
+
+const clampSidebarWidth = (width: number) =>
+  Math.min(Math.max(width, SIDEBAR_MIN_WIDTH), availableMaxWidth.value);
+
+const updateAvailableMaxWidth = () => {
+  const layoutWidth = sidebarElement.value?.parentElement?.clientWidth ?? window.innerWidth;
+  availableMaxWidth.value = Math.max(
+    SIDEBAR_MIN_WIDTH,
+    Math.min(SIDEBAR_MAX_WIDTH, layoutWidth - SIDEBAR_CONTENT_MIN_WIDTH),
+  );
+  sidebarWidth.value = clampSidebarWidth(sidebarWidth.value);
+};
+
+const persistSidebarWidth = () => {
+  try {
+    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth.value));
+  } catch {
+    // localStorage может быть недоступен в приватном режиме.
+  }
+};
+
+const applyPendingWidth = () => {
+  sidebarWidth.value = clampSidebarWidth(pendingWidth);
+  resizeFrame = null;
+};
+
+const handleResizeMove = (event: PointerEvent) => {
+  pendingWidth = resizeStartWidth + event.clientX - resizeStartX;
+  if (resizeFrame === null) resizeFrame = window.requestAnimationFrame(applyPendingWidth);
+};
+
+const stopResize = () => {
+  if (!isResizing.value) return;
+  isResizing.value = false;
+  if (resizeFrame !== null) {
+    window.cancelAnimationFrame(resizeFrame);
+    applyPendingWidth();
+  }
+  document.body.style.cursor = previousBodyCursor;
+  document.body.style.userSelect = previousBodyUserSelect;
+  window.removeEventListener('pointermove', handleResizeMove);
+  window.removeEventListener('pointerup', stopResize);
+  window.removeEventListener('pointercancel', stopResize);
+  persistSidebarWidth();
+};
+
+const startResize = (event: PointerEvent) => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  updateAvailableMaxWidth();
+  isResizing.value = true;
+  resizeStartX = event.clientX;
+  resizeStartWidth = sidebarWidth.value;
+  pendingWidth = sidebarWidth.value;
+  previousBodyCursor = document.body.style.cursor;
+  previousBodyUserSelect = document.body.style.userSelect;
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  window.addEventListener('pointermove', handleResizeMove);
+  window.addEventListener('pointerup', stopResize);
+  window.addEventListener('pointercancel', stopResize);
+};
+
+const resizeWithKeyboard = (event: KeyboardEvent) => {
+  const step = event.shiftKey ? 48 : 24;
+  let width = sidebarWidth.value;
+  if (event.key === 'ArrowLeft') width -= step;
+  else if (event.key === 'ArrowRight') width += step;
+  else if (event.key === 'Home') width = SIDEBAR_MIN_WIDTH;
+  else if (event.key === 'End') width = availableMaxWidth.value;
+  else if (event.key === 'Enter' || event.key === ' ') width = SIDEBAR_DEFAULT_WIDTH;
+  else return;
+
+  event.preventDefault();
+  updateAvailableMaxWidth();
+  sidebarWidth.value = clampSidebarWidth(width);
+  persistSidebarWidth();
+};
 
 const getProjectName = computed(() => {
   if (!route.query?.project_id) return '';
@@ -254,10 +369,6 @@ const createNewPage = async () => {
   }
 };
 
-onMounted(() => {
-  document.addEventListener('click', closeDropdown);
-});
-
 const toggleAddLinkForm = () => {
   isAddingLink.value = !isAddingLink.value;
   if (!isAddingLink.value) {
@@ -318,26 +429,43 @@ const getFaviconUrl = (url: string) => {
 
 onMounted(() => {
   document.addEventListener('click', closeDropdown);
+  updateAvailableMaxWidth();
+  try {
+    const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+    if (Number.isFinite(storedWidth) && storedWidth > 0) sidebarWidth.value = clampSidebarWidth(storedWidth);
+  } catch {
+    // Используем ширину по умолчанию, если localStorage недоступен.
+  }
+  window.addEventListener('resize', updateAvailableMaxWidth);
 });
 
 onUnmounted(() => {
+  stopResize();
   document.removeEventListener('click', closeDropdown);
+  window.removeEventListener('resize', updateAvailableMaxWidth);
 });
 </script>
 
 <style scoped lang="scss">
 .wiki-sidebar {
+  position: relative;
   height: 100%;
   min-height: 0;
   flex-shrink: 0;
   padding: 16px;
-  width: 300px;
-  min-width: 300px;
-  overflow-y: auto;
+  width: var(--wiki-sidebar-width, 300px);
+  min-width: var(--wiki-sidebar-width, 300px);
+  overflow: hidden;
   @include flex(cn);
   gap: 0;
-  transition: all 0.2s ease;
+  transition:
+    width 0.16s ease,
+    min-width 0.16s ease;
   background-color: var(--dark-text-background-primary);
+
+  &_resizing {
+    transition: none;
+  }
 
   &__header {
     @include flex(cn);
@@ -349,7 +477,48 @@ onUnmounted(() => {
     @include flex(cn);
     gap: 16px;
     width: 100%;
+    min-height: 0;
+    flex: 1;
     padding-top: 16px;
+    padding-right: 4px;
+    overflow-y: auto;
+  }
+
+  &__resize-handle {
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    right: 0;
+    width: 12px;
+    height: 100%;
+    cursor: col-resize;
+    touch-action: none;
+    outline: none;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      right: 3px;
+      width: 3px;
+      height: 48px;
+      border-radius: 999px;
+      background: var(--light-text-backgroung-primary-25);
+      transform: translateY(-50%);
+      transition:
+        height 0.16s ease,
+        background 0.16s ease;
+    }
+
+    &:hover::after,
+    &:focus-visible::after {
+      height: 64px;
+      background: var(--primary);
+    }
+
+    &:focus-visible {
+      box-shadow: inset -2px 0 0 var(--primary);
+    }
   }
 
   &__title {
@@ -652,6 +821,23 @@ onUnmounted(() => {
     &:hover {
       background: var(--light-text-backgroung-primary-10);
       color: var(--light-text-backgroung-primary);
+    }
+  }
+
+  @media (max-width: $screen-tablet) {
+    width: 300px;
+    min-width: 300px;
+
+    &__resize-handle {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+
+    &__resize-handle::after {
+      transition: none;
     }
   }
 }

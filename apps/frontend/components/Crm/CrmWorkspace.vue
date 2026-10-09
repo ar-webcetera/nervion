@@ -403,6 +403,30 @@ const newDealCompanyId = ref<number | null>(null);
 const newDealContactId = ref<number | null>(null);
 const newDealDialog = ref<HTMLDialogElement>();
 const stageDialog = ref<HTMLDialogElement>();
+const DIALOG_EXIT_DURATION = 180;
+
+const openCrmDialog = (dialog?: HTMLDialogElement) => {
+  if (!dialog) return;
+  dialog.classList.remove('crm__dialog_closing');
+  dialog.showModal();
+};
+
+const closeCrmDialog = (dialog?: HTMLDialogElement): Promise<void> => {
+  if (!dialog?.open) return Promise.resolve();
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    dialog.close();
+    return Promise.resolve();
+  }
+
+  dialog.classList.add('crm__dialog_closing');
+  return new Promise((resolve) => {
+    window.setTimeout(() => {
+      dialog.classList.remove('crm__dialog_closing');
+      dialog.close();
+      resolve();
+    }, DIALOG_EXIT_DURATION);
+  });
+};
 const stageChange = ref<{ id: number; stage: number; kind: CrmStageKind } | null>(null);
 const reason = ref('');
 const projectChoice = ref(CrmProjectChoice.NONE);
@@ -601,7 +625,7 @@ const openNewDealDialog = () => {
   newTitle.value = '';
   newDealCompanyId.value = null;
   newDealContactId.value = null;
-  newDealDialog.value?.showModal();
+  openCrmDialog(newDealDialog.value);
 };
 
 const selectNewDealCompany = (value: string | number | (string | number)[] | null) => {
@@ -760,7 +784,7 @@ const createDeal = async () => {
     newTitle.value = '';
     newDealCompanyId.value = null;
     newDealContactId.value = null;
-    newDealDialog.value?.close();
+    await closeCrmDialog(newDealDialog.value);
     await refreshBoard();
     await openDeal(created.id);
   });
@@ -843,7 +867,7 @@ const changeStage = async (id: number, stageId: number) => {
     stageChange.value = { id, stage: stageId, kind: stage.kind };
     reason.value = '';
     projectChoice.value = CrmProjectChoice.NONE;
-    stageDialog.value?.showModal();
+    openCrmDialog(stageDialog.value);
     return;
   }
   await run(async () => {
@@ -873,7 +897,7 @@ const finishStage = async () => {
     if (panelId.value === change.id) savedFields = JSON.stringify(dealBody());
     if (change.kind === CrmStageKind.WON && projectChoice.value === CrmProjectChoice.NEW)
       await $fetch(`/api/crm/deals/${change.id}/project`, { ...request, method: 'POST' });
-    stageDialog.value?.close();
+    await closeCrmDialog(stageDialog.value);
     await refreshAll();
   });
 };
@@ -1260,25 +1284,28 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       </p>
     </div>
 
-    <div
-      v-if="panel === CrmPanel.DEAL && !taskStore.currentTaskId"
-      class="crm__panel-backdrop"
-      aria-hidden="true"
-      @click="closePanel"
-    ></div>
-    <aside
-      v-if="panel === CrmPanel.DEAL"
-      v-show="!taskStore.currentTaskId"
-      ref="panelElement"
-      class="crm__panel"
-      :class="{ crm__panel_expanded: expanded }"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Карточка сделки"
-      :aria-hidden="directoryPanel ? 'true' : undefined"
-      :inert="directoryPanel ? true : undefined"
-      @keydown.esc="closePanel"
-    >
+    <Transition name="crm-backdrop">
+      <div
+        v-if="panel === CrmPanel.DEAL && !taskStore.currentTaskId"
+        class="crm__panel-backdrop"
+        aria-hidden="true"
+        @click="closePanel"
+      ></div>
+    </Transition>
+    <Transition name="crm-panel">
+      <aside
+        v-if="panel === CrmPanel.DEAL"
+        v-show="!taskStore.currentTaskId"
+        ref="panelElement"
+        class="crm__panel"
+        :class="{ crm__panel_expanded: expanded }"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Карточка сделки"
+        :aria-hidden="directoryPanel ? 'true' : undefined"
+        :inert="directoryPanel ? true : undefined"
+        @keydown.esc="closePanel"
+      >
       <div v-if="isDealInitialLoading" class="loader__wrapper">
         <div class="loader" role="status" aria-label="Загрузка сделки"></div>
       </div>
@@ -1686,7 +1713,8 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
           </div>
         </div>
       </template>
-    </aside>
+      </aside>
+    </Transition>
 
     <Teleport to="body">
       <BaseModal v-model="isDeleteDealConfirmOpen" :dismissible="!busy">
@@ -1706,22 +1734,25 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       </BaseModal>
     </Teleport>
 
-    <div
-      v-if="directoryPanel && !taskStore.currentTaskId"
-      class="crm__directory-backdrop"
-      aria-hidden="true"
-      @click="closeDirectory"
-    ></div>
-    <aside
-      v-if="directoryPanel"
-      v-show="!taskStore.currentTaskId"
-      ref="directoryElement"
-      class="crm__panel crm__panel_directory"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="directoryTitle"
-      @keydown.esc="closeDirectory"
-    >
+    <Transition name="crm-backdrop">
+      <div
+        v-if="directoryPanel && !taskStore.currentTaskId"
+        class="crm__directory-backdrop"
+        aria-hidden="true"
+        @click="closeDirectory"
+      ></div>
+    </Transition>
+    <Transition name="crm-directory">
+      <aside
+        v-if="directoryPanel"
+        v-show="!taskStore.currentTaskId"
+        ref="directoryElement"
+        class="crm__panel crm__panel_directory"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="directoryTitle"
+        @keydown.esc="closeDirectory"
+      >
       <header class="crm__panel-header">
         <button v-if="returnToDeal" aria-label="Назад к сделке" title="Назад к сделке" @click="closeDirectory">
           <ChevronLeft :size="20" :stroke-width="1.75" aria-hidden="true" />
@@ -1809,7 +1840,8 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
           <p v-if="d.project_id">Проект: {{ options?.projects.find((p) => p.id === d.project_id)?.name }}</p>
         </div>
       </section>
-    </aside>
+      </aside>
+    </Transition>
     <Teleport to="body">
       <BaseModal v-model="isDeleteDirectoryConfirmOpen" :dismissible="!busy">
         <div class="crm-delete-confirm" role="alertdialog" aria-modal="true" aria-labelledby="crm-delete-directory-title">
@@ -1832,7 +1864,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
         </div>
       </BaseModal>
     </Teleport>
-    <dialog ref="newDealDialog" class="crm__dialog">
+    <dialog ref="newDealDialog" class="crm__dialog" @cancel.prevent="closeCrmDialog(newDealDialog)">
       <form @submit.prevent="createDeal">
         <h2>Новая сделка</h2>
         <label
@@ -1869,12 +1901,17 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
         /></label>
         <p v-if="error" role="alert">{{ error }}</p>
         <div class="crm__actions">
-          <button type="button" @click="newDealDialog?.close()">Отмена</button
+          <button type="button" @click="closeCrmDialog(newDealDialog)">Отмена</button
           ><button class="crm__primary" :disabled="busy || !newTitle.trim()">{{ busy ? 'Создание…' : 'Создать' }}</button>
         </div>
       </form>
     </dialog>
-    <dialog ref="stageDialog" class="crm__dialog" @close="stageChange = null">
+    <dialog
+      ref="stageDialog"
+      class="crm__dialog"
+      @cancel.prevent="closeCrmDialog(stageDialog).then(() => refreshDeal())"
+      @close="stageChange = null"
+    >
       <form @submit.prevent="finishStage">
         <h2>{{ stageChange?.kind === CrmStageKind.LOST ? 'Завершить с проигрышем' : 'Успешная сделка' }}</h2>
         <label v-if="stageChange?.kind === CrmStageKind.LOST"
@@ -1901,8 +1938,7 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
           <button
             type="button"
             @click="
-              stageDialog?.close();
-              refreshDeal();
+              closeCrmDialog(stageDialog).then(() => refreshDeal());
             "
           >
             Отмена</button
@@ -3520,9 +3556,27 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     border: 1px solid var(--light-text-backgroung-primary-25);
     border-radius: 12px;
     background: var(--dark-text-background-primary);
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition:
+      transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 0.18s ease;
+
     &::backdrop {
       background: var(--black-50);
+      opacity: 1;
+      transition: opacity 0.18s ease;
     }
+
+    &_closing {
+      opacity: 0;
+      transform: translateY(8px) scale(0.985);
+
+      &::backdrop {
+        opacity: 0;
+      }
+    }
+
     form {
       gap: 20px;
       @include flex(cn);
@@ -3719,6 +3773,63 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
   }
 }
 
+.crm-backdrop-enter-active,
+.crm-backdrop-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.crm-backdrop-enter-from,
+.crm-backdrop-leave-to {
+  opacity: 0;
+}
+
+.crm-panel-enter-active {
+  transition:
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.18s ease;
+}
+
+.crm-panel-leave-active {
+  transition:
+    transform 0.2s ease,
+    opacity 0.18s ease;
+}
+
+.crm-panel-enter-from,
+.crm-panel-leave-to {
+  opacity: 0;
+  transform: translateX(100%);
+}
+
+.crm-directory-enter-active {
+  transition:
+    transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.18s ease;
+}
+
+.crm-directory-leave-active {
+  transition:
+    transform 0.18s ease,
+    opacity 0.16s ease;
+}
+
+.crm-directory-enter-from,
+.crm-directory-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -50%) translateY(8px) scale(0.985);
+}
+
+@starting-style {
+  .crm__dialog[open] {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+
+    &::backdrop {
+      opacity: 0;
+    }
+  }
+}
+
 .crm-delete-confirm {
   padding: 0 24px;
   @include flex(cn);
@@ -3760,6 +3871,22 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
       align-items: stretch;
       flex-direction: column-reverse;
     }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crm-backdrop-enter-active,
+  .crm-backdrop-leave-active,
+  .crm-panel-enter-active,
+  .crm-panel-leave-active,
+  .crm-directory-enter-active,
+  .crm-directory-leave-active,
+  .crm__dialog {
+    transition: none;
+  }
+
+  .crm__dialog::backdrop {
+    transition: none;
   }
 }
 </style>

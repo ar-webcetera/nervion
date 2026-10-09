@@ -246,41 +246,43 @@ const save = async () => {
 <template>
   <input ref="fileInputRef" type="file" name="avatar-file" accept="image/*" style="display: none" @change="onFileChange" />
 
-  <div v-if="isOpen && img" class="avatar-cropper__overlay" @click.self="close">
-    <div class="avatar-cropper">
-      <div class="avatar-cropper__header">
-        <span class="avatar-cropper__title">Выбрать фото профиля</span>
-        <button class="avatar-cropper__close" type="button" @click="close">
-          <IconClose />
-        </button>
-      </div>
+  <Transition name="avatar-modal">
+    <div v-if="isOpen && img" class="avatar-cropper__overlay" @click.self="close">
+      <div class="avatar-cropper">
+        <div class="avatar-cropper__header">
+          <span class="avatar-cropper__title">Выбрать фото профиля</span>
+          <button class="avatar-cropper__close" type="button" @click="close">
+            <IconClose />
+          </button>
+        </div>
 
-      <div class="avatar-cropper__hint">Перетащите, чтобы выбрать область. Колесо мыши — масштаб.</div>
+        <div class="avatar-cropper__hint">Перетащите, чтобы выбрать область. Колесо мыши — масштаб.</div>
 
-      <canvas
-        ref="canvasRef"
-        :width="CANVAS_SIZE"
-        :height="CANVAS_SIZE"
-        class="avatar-cropper__canvas"
-        @mousedown="onMouseDown"
-        @mousemove="onMouseMove"
-        @mouseup="onMouseUp"
-        @mouseleave="onMouseUp"
-        @touchstart.prevent="onTouchStart"
-        @touchmove.prevent="onTouchMove"
-        @touchend="onTouchEnd"
-        @touchcancel="onTouchEnd"
-        @wheel.prevent="onWheel"
-      />
+        <canvas
+          ref="canvasRef"
+          :width="CANVAS_SIZE"
+          :height="CANVAS_SIZE"
+          class="avatar-cropper__canvas"
+          @mousedown="onMouseDown"
+          @mousemove="onMouseMove"
+          @mouseup="onMouseUp"
+          @mouseleave="onMouseUp"
+          @touchstart.prevent="onTouchStart"
+          @touchmove.prevent="onTouchMove"
+          @touchend="onTouchEnd"
+          @touchcancel="onTouchEnd"
+          @wheel.prevent="onWheel"
+        />
 
-      <div class="avatar-cropper__actions">
-        <button class="button_default" type="button" @click="close">Отмена</button>
-        <button class="button_primary" type="button" :disabled="isUploading" @click="save">
-          {{ isUploading ? 'Сохранение...' : 'Сохранить' }}
-        </button>
+        <div class="avatar-cropper__actions">
+          <button class="button_default" type="button" @click="close">Отмена</button>
+          <button class="button_primary" type="button" :disabled="isUploading" @click="save">
+            {{ isUploading ? 'Сохранение...' : 'Сохранить' }}
+          </button>
+        </div>
       </div>
     </div>
-  </div>
+  </Transition>
 </template>
 
 <style scoped lang="scss">
@@ -356,6 +358,47 @@ const save = async () => {
 
     button {
       min-width: 100px;
+    }
+  }
+}
+
+.avatar-modal-enter-active {
+  transition: opacity 0.2s ease;
+
+  .avatar-cropper {
+    transition:
+      transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 0.2s ease;
+  }
+}
+
+.avatar-modal-leave-active {
+  transition: opacity 0.18s ease;
+
+  .avatar-cropper {
+    transition:
+      transform 0.18s ease,
+      opacity 0.16s ease;
+  }
+}
+
+.avatar-modal-enter-from,
+.avatar-modal-leave-to {
+  opacity: 0;
+
+  .avatar-cropper {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-modal-enter-active,
+  .avatar-modal-leave-active {
+    transition: none;
+
+    .avatar-cropper {
+      transition: none;
     }
   }
 }

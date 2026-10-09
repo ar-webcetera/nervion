@@ -35,6 +35,7 @@ const normalizeDate = (date: Date): Date => {
 const currentWeekStart = ref(startOfWeek(normalizeDate(new Date()), { weekStartsOn: 1 }));
 const showModal = ref(false);
 const selectedAllocation = ref<Allocation | null>(null);
+const allocationModalRef = ref<{ close: () => void } | null>(null);
 const prefilledUser = ref<User | null>(null);
 const prefilledDate = ref<Date | null>(null);
 const isSummaryExpanded = ref(false);
@@ -329,10 +330,7 @@ const handleSaveAllocation = async (data: CreateAllocationDto) => {
       await allocationStore.createAllocation(data);
       $toast.success('Загрузка создана');
     }
-    showModal.value = false;
-    selectedAllocation.value = null;
-    prefilledUser.value = null;
-    prefilledDate.value = null;
+    allocationModalRef.value?.close();
     await fetchData();
   } catch (e: unknown) {
     const error = e as Error;
@@ -344,8 +342,7 @@ const handleDeleteAllocation = async (id: number) => {
   try {
     await allocationStore.deleteAllocation(id);
     $toast.success('Загрузка удалена');
-    showModal.value = false;
-    selectedAllocation.value = null;
+    allocationModalRef.value?.close();
     await fetchData();
   } catch (e: unknown) {
     const error = e as Error;
@@ -492,6 +489,7 @@ definePageMeta({
 
     <AllocationModal
       v-if="showModal"
+      ref="allocationModalRef"
       :allocation="selectedAllocation"
       :users="userStore.users"
       :projects="projectStore.projects"

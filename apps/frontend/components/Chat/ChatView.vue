@@ -303,9 +303,10 @@ const scrollToMessage = (id: string) => {
       </button>
     </div>
 
-    <div v-if="isMembersOpen" class="members-panel">
-      <div class="members-panel__overlay" @click="isMembersOpen = false" />
-      <div class="members-panel__content">
+    <Transition name="members-modal">
+      <div v-if="isMembersOpen" class="members-panel">
+        <div class="members-panel__overlay" @click="isMembersOpen = false" />
+        <div class="members-panel__content">
         <div class="members-panel__header">
           <h3>Участники группы</h3>
           <button class="members-panel__close" @click="isMembersOpen = false">✕</button>
@@ -341,8 +342,9 @@ const scrollToMessage = (id: string) => {
           </select>
           <button class="members-panel__add-btn" :disabled="addMemberUserId == null" @click="addMember">Добавить</button>
         </div>
+        </div>
       </div>
-    </div>
+    </Transition>
     <div v-if="chatId && (pendingMessageList || chatPending)" class="loader__wrapper">
       <div class="loader"></div>
     </div>
@@ -1126,6 +1128,47 @@ const scrollToMessage = (id: string) => {
     &:disabled {
       opacity: 0.4;
       cursor: not-allowed;
+    }
+  }
+}
+
+.members-modal-enter-active {
+  transition: opacity 0.2s ease;
+
+  .members-panel__content {
+    transition:
+      transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+      opacity 0.2s ease;
+  }
+}
+
+.members-modal-leave-active {
+  transition: opacity 0.18s ease;
+
+  .members-panel__content {
+    transition:
+      transform 0.18s ease,
+      opacity 0.16s ease;
+  }
+}
+
+.members-modal-enter-from,
+.members-modal-leave-to {
+  opacity: 0;
+
+  .members-panel__content {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .members-modal-enter-active,
+  .members-modal-leave-active {
+    transition: none;
+
+    .members-panel__content {
+      transition: none;
     }
   }
 }

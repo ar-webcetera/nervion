@@ -44,6 +44,7 @@ const currentUserId = computed(() => userStore.user?.id ?? null);
 
 const showModal = ref(false);
 const selectedSchedule = ref<WorkSchedule | null>(null);
+const scheduleModalRef = ref<{ close: () => void } | null>(null);
 const prefilledUserId = ref<number | null>(null);
 const prefilledDate = ref<string | null>(null);
 
@@ -149,7 +150,7 @@ const handleSave = async (data: CreateWorkScheduleDto) => {
       await store.createSchedule(data);
       $toast.success('Слот добавлен');
     }
-    closeModal();
+    scheduleModalRef.value?.close();
     await fetchData();
   } catch (e) {
     $toast.error(getErrorMessage(e));
@@ -160,7 +161,7 @@ const handleDelete = async (id: number) => {
   try {
     await store.deleteSchedule(id);
     $toast.success('Слот удалён');
-    closeModal();
+    scheduleModalRef.value?.close();
     await fetchData();
   } catch (e) {
     $toast.error(getErrorMessage(e));
@@ -299,6 +300,7 @@ const isWeekend = (date: Date) => date.getDay() === 0 || date.getDay() === 6;
 
     <WorkScheduleModal
       v-if="showModal"
+      ref="scheduleModalRef"
       :schedule="selectedSchedule"
       :users="displayedUsers"
       :is-admin="isAdmin"

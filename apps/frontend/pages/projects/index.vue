@@ -245,13 +245,16 @@ definePageMeta({
       </div>
     </div>
 
-    <ProjectSidebar
-      v-if="isProjectSidebarOpen && selectedProject"
-      :project="selectedProject"
-      @close="closeProjectSidebar"
-      @delete="deleteProject"
-      @create="createProjectFromSidebar"
-    />
+    <Transition name="side-panel">
+      <div v-if="isProjectSidebarOpen && selectedProject" class="side-panel-host">
+        <ProjectSidebar
+          :project="selectedProject"
+          @close="closeProjectSidebar"
+          @delete="deleteProject"
+          @create="createProjectFromSidebar"
+        />
+      </div>
+    </Transition>
 
     <teleport to="#teleports">
       <BaseModal ref="membersModal">
@@ -264,6 +267,43 @@ definePageMeta({
 <style scoped lang="scss">
 :deep(.base-modal__content) {
   width: auto;
+}
+
+.side-panel-enter-active {
+  transition: opacity 0.18s ease;
+
+  :deep(.project-sidebar) {
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  :deep(.project-sidebar__wrapper) {
+    transition: opacity 0.18s ease;
+  }
+}
+
+.side-panel-leave-active {
+  transition: opacity 0.18s ease;
+
+  :deep(.project-sidebar) {
+    transition: transform 0.2s ease;
+  }
+
+  :deep(.project-sidebar__wrapper) {
+    transition: opacity 0.18s ease;
+  }
+}
+
+.side-panel-enter-from,
+.side-panel-leave-to {
+  opacity: 0;
+
+  :deep(.project-sidebar) {
+    transform: translateX(100%);
+  }
+
+  :deep(.project-sidebar__wrapper) {
+    opacity: 0;
+  }
 }
 
 .project-create-project-modal {
@@ -605,6 +645,18 @@ definePageMeta({
 
     svg {
       stroke: var(--light-text-backgroung-primary);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .side-panel-enter-active,
+  .side-panel-leave-active {
+    transition: none;
+
+    :deep(.project-sidebar),
+    :deep(.project-sidebar__wrapper) {
+      transition: none;
     }
   }
 }

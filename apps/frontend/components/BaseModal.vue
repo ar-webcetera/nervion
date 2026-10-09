@@ -36,6 +36,7 @@ const props = withDefaults(
 
 const emit = defineEmits(['close', 'update:modelValue']);
 const isOpen = ref(Boolean(props.modelValue));
+const emitCloseAfterLeave = ref(false);
 
 watch(
   () => props.modelValue,
@@ -48,13 +49,21 @@ watch(
 );
 
 const open = () => {
+  emitCloseAfterLeave.value = false;
   isOpen.value = true;
   emit('update:modelValue', true);
 };
 
 const close = () => {
+  if (!isOpen.value) return;
+  emitCloseAfterLeave.value = true;
   isOpen.value = false;
   emit('update:modelValue', false);
+};
+
+const handleAfterLeave = () => {
+  if (!emitCloseAfterLeave.value) return;
+  emitCloseAfterLeave.value = false;
   emit('close');
 };
 
@@ -70,7 +79,7 @@ defineExpose({
 </script>
 
 <template>
-  <Transition name="modal">
+  <Transition name="modal" @after-leave="handleAfterLeave">
     <div v-if="isOpen" class="base-modal__overlay" @click.self="requestClose">
       <div class="base-modal">
         <div v-if="showClose" class="base-modal__header">
@@ -166,5 +175,16 @@ defineExpose({
 .modal-leave-to .base-modal {
   opacity: 0;
   transform: translateX(-50%) translateY(8px) scale(0.985);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: none;
+
+    .base-modal {
+      transition: none;
+    }
+  }
 }
 </style>

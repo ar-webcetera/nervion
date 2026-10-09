@@ -1172,12 +1172,12 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
 }
 
 .profile-popup-leave-active {
-  transition: opacity 0.14s ease;
+  transition: opacity 0.18s ease;
 
   :deep(.base-profile-popup) {
     transition:
-      transform 0.16s ease,
-      opacity 0.14s ease;
+      transform 0.2s ease,
+      opacity 0.18s ease;
   }
 
   @media (prefers-reduced-motion: reduce) {

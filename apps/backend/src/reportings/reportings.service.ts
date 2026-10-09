@@ -44,9 +44,6 @@ const TASK_STATUS_LABELS: Record<TASK_STATUSES, string> = {
   [TASK_STATUSES.to_do]: 'К выполнению',
   [TASK_STATUSES.in_progress]: 'Выполняется',
   [TASK_STATUSES.in_review]: 'На ревью',
-  [TASK_STATUSES.testing]: 'На тестировании',
-  [TASK_STATUSES.ready_for_release]: 'Готово к релизу',
-  [TASK_STATUSES.prod_check]: 'Проверка на проде',
   [TASK_STATUSES.control]: 'Контроль',
   [TASK_STATUSES.closed]: 'Закрыто',
 };

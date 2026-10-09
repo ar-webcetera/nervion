@@ -389,8 +389,8 @@ onBeforeUnmount(() => {
 
 .tracker-popup-leave-active {
   transition:
-    transform 0.14s ease,
-    opacity 0.12s ease;
+    transform 0.18s ease,
+    opacity 0.16s ease;
 }
 
 .tracker-popup-enter-from,

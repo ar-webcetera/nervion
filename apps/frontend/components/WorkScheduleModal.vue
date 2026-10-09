@@ -17,6 +17,17 @@ const emit = defineEmits<{
   save: [data: CreateWorkScheduleDto];
   delete: [id: number];
 }>();
+const isVisible = ref(true);
+
+const close = () => {
+  isVisible.value = false;
+};
+
+const handleAfterLeave = () => {
+  emit('close');
+};
+
+defineExpose({ close });
 
 const isDayOff = ref(props.schedule?.is_day_off ?? false);
 
@@ -106,16 +117,16 @@ const handleDelete = () => {
 
 <template>
   <Teleport to="body">
-    <Transition appear name="modal">
-      <div class="ws-modal">
-        <div class="ws-modal__overlay" @click="emit('close')"></div>
+    <Transition appear name="modal" @after-leave="handleAfterLeave">
+      <div v-if="isVisible" class="ws-modal">
+        <div class="ws-modal__overlay" @click="close"></div>
       <div class="ws-modal__content">
 
         <div class="ws-modal__header">
           <h2 class="ws-modal__title">
             {{ isEdit ? 'Редактировать слот' : 'Добавить слот' }}
           </h2>
-          <button class="ws-modal__close" @click="emit('close')">
+          <button class="ws-modal__close" @click="close">
             <IconsIconClose />
           </button>
         </div>
@@ -187,7 +198,7 @@ const handleDelete = () => {
             Удалить
           </button>
           <div class="ws-modal__footer-right">
-            <button class="ws-modal__button ws-modal__button_secondary" @click="emit('close')">
+            <button class="ws-modal__button ws-modal__button_secondary" @click="close">
               Отмена
             </button>
             <button class="ws-modal__button ws-modal__button_primary" @click="handleSave">
@@ -450,19 +461,41 @@ const handleDelete = () => {
   }
 }
 
-.modal-enter-active {
+.modal-enter-active,
+.modal-leave-active {
   transition: opacity 0.22s ease;
 
   .ws-modal__content {
     transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.26s ease;
   }
 }
-.modal-enter-from {
+
+.modal-leave-active {
+  transition-duration: 0.18s;
+
+  .ws-modal__content {
+    transition-duration: 0.18s;
+  }
+}
+
+.modal-enter-from,
+.modal-leave-to {
   opacity: 0;
 
   .ws-modal__content {
     opacity: 0;
     transform: translateY(10px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: none;
+
+    .ws-modal__content {
+      transition: none;
+    }
   }
 }
 </style>

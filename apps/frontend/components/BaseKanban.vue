@@ -692,30 +692,6 @@ const dragend = () => {
       background: var(--status-violet);
     }
 
-    &_testing {
-      background: var(--status-rose);
-    }
-
-    &_ready_for_release {
-      background: var(--status-emerald);
-    }
-
-    &_prod_check {
-      background: var(--status-cyan);
-    }
-
-    &_control {
-      background: var(--status-indigo);
-    }
-
-    &_ready_for_release {
-      background: var(--status-emerald);
-    }
-
-    &_prod_check {
-      background: var(--status-cyan);
-    }
-
     &_control {
       background: var(--status-indigo);
     }
