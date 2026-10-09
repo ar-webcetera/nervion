@@ -1405,7 +1405,6 @@ input {
   gap: 24px;
   z-index: 1000;
   max-width: 100%;
-  animation: task-sidebar-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
 
   @media (max-width: $screen-mobile-l) {
     gap: 0;
@@ -2110,20 +2109,6 @@ input {
 
   @media (max-width: $screen-tablet) {
     width: 100%;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    animation: none;
-  }
-}
-
-@keyframes task-sidebar-enter {
-  from {
-    transform: translateX(100%);
-  }
-
-  to {
-    transform: translateX(0);
   }
 }
 </style>

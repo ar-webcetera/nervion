@@ -13,6 +13,7 @@ import CreateTaskSidebar from '~/components/CreateTaskSidebar.vue';
 import MailActionIcon from '~/components/Mail/MailActionIcon.vue';
 import MailCreateTaskModal from '~/components/Mail/MailCreateTaskModal.vue';
 import MailDeliveryBadge from '~/components/Mail/MailDeliveryBadge.vue';
+import MailFolderActionsMenu from '~/components/Mail/MailFolderActionsMenu.vue';
 import MailMessageView from '~/components/Mail/MailMessageView.vue';
 import MailThreadActionsMenu from '~/components/Mail/MailThreadActionsMenu.vue';
 import { ROLES } from '~/types/user';
@@ -1576,8 +1577,11 @@ watch(
           >
             {{ folder.name }}
           </button>
-          <button class="mail-page__folder-action" type="button" title="Переименовать" @click="renameFolder(folder)">✎</button>
-          <button class="mail-page__folder-action" type="button" title="Удалить" @click="removeFolder(folder)">×</button>
+          <MailFolderActionsMenu
+            :folder-name="folder.name"
+            @rename="renameFolder(folder)"
+            @delete="removeFolder(folder)"
+          />
         </div>
       </div>
     </div>
@@ -2521,7 +2525,6 @@ watch(
   }
 
   &__folder-add,
-  &__folder-action,
   &__folder-save {
     border: none;
     border-radius: 6px;
@@ -2576,33 +2579,30 @@ watch(
 
   &__custom-folder-row {
     @include flex(rn, a-center);
+    position: relative;
     min-width: 0;
 
-    &:hover .mail-page__folder-action,
-    &:focus-within .mail-page__folder-action {
+    &:hover :deep(.folder-actions__trigger),
+    &:focus-within :deep(.folder-actions__trigger) {
       opacity: 1;
+    }
+
+    @media (max-width: $screen-tablet) {
+      :deep(.folder-actions__trigger) {
+        display: none;
+      }
     }
   }
 
   &__custom-folder-name {
     min-width: 0;
+    padding-right: 44px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  &__folder-action {
-    width: 26px;
-    height: 30px;
-    flex: 0 0 26px;
-    opacity: 0;
-
-    @media (hover: none) {
-      opacity: 1;
-    }
 
     @media (max-width: $screen-tablet) {
-      display: none;
+      padding-right: 12px;
     }
   }
 
