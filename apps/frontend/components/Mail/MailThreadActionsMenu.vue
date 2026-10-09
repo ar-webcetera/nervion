@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Ellipsis, FolderInput, Mail, Trash2 } from '@lucide/vue';
+import { ClipboardPlus, Ellipsis, FolderInput, Mail, Trash2 } from '@lucide/vue';
 import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
 
 defineProps<{
@@ -10,6 +10,7 @@ defineProps<{
 
 const emit = defineEmits<{
   markUnread: [];
+  createTask: [];
   move: [];
   delete: [];
 }>();
@@ -52,9 +53,10 @@ const onKeydown = (event: KeyboardEvent) => {
   items[nextIndex]?.focus();
 };
 
-const activate = (action: 'markUnread' | 'move' | 'delete') => {
+const activate = (action: 'markUnread' | 'createTask' | 'move' | 'delete') => {
   close(true);
   if (action === 'markUnread') emit('markUnread');
+  else if (action === 'createTask') emit('createTask');
   else if (action === 'move') emit('move');
   else emit('delete');
 };
@@ -121,6 +123,10 @@ watch(isOpen, async (open, _, onCleanup) => {
       <button v-if="canMarkUnread" type="button" role="menuitem" tabindex="-1" @click="activate('markUnread')">
         <Mail :size="17" aria-hidden="true" />
         Отметить непрочитанным
+      </button>
+      <button type="button" role="menuitem" tabindex="-1" @click="activate('createTask')">
+        <ClipboardPlus :size="17" aria-hidden="true" />
+        Создать задачу
       </button>
       <button type="button" role="menuitem" tabindex="-1" @click="activate('move')">
         <FolderInput :size="17" aria-hidden="true" />

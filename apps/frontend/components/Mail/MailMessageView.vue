@@ -16,6 +16,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+  createTask: [message: MailMessage];
   forward: [message: MailMessage];
   delete: [message: MailMessage];
   retry: [message: MailMessage];
@@ -112,6 +113,15 @@ const visibleAttachments = computed(() => (props.message.attachments ?? []).filt
           :click-count="message.click_count"
         />
         <span class="mail-message__date">{{ formattedDate }}</span>
+        <button
+          class="mail-message__action"
+          type="button"
+          aria-label="Создать задачу из письма"
+          title="Создать задачу из письма"
+          @click="emit('createTask', message)"
+        >
+          Создать задачу
+        </button>
         <button
           v-if="canRetry"
           class="mail-message__action mail-message__action_retry"

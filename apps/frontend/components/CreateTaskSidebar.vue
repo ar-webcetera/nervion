@@ -3,6 +3,13 @@ import { ref, computed } from 'vue';
 import { X } from '@lucide/vue';
 import TaskFormFields from '~/components/TaskForm/TaskFormFields.vue';
 
+defineProps<{
+  initialTask?: {
+    title: string;
+    description: import('@tiptap/core').JSONContent;
+  } | null;
+}>();
+
 const emit = defineEmits<{
   (e: 'close'): void;
 }>();
@@ -79,7 +86,7 @@ onUnmounted(() => {
       </button>
     </div>
     <div class="task-sidebar__content">
-      <TaskFormFields @close="emit('close')" />
+      <TaskFormFields :initial-task="initialTask" @close="emit('close')" />
     </div>
   </aside>
 </template>

@@ -11,10 +11,21 @@ import type { JSONContent } from '@tiptap/core';
 import EditorTiptap from '~/components/TipTap/EditorTiptap.vue';
 import IconClose from '~/components/Icons/IconClose.vue';
 
+const props = defineProps<{
+  initialTask?: {
+    title: string;
+    description: JSONContent;
+  } | null;
+}>();
+
 const editorKey = ref(1);
 const isGeneratingDescription = ref(false);
 
 const { newTask, isCreating, isDisabled, createTask: createTaskFn, resetForm } = useCreateTask();
+if (props.initialTask) {
+  newTask.value.title = props.initialTask.title;
+  newTask.value.description = props.initialTask.description;
+}
 const route = useRoute();
 const router = useRouter();
 const taskStore = useTaskStore();

@@ -52,7 +52,7 @@ const mailDetailOpen = computed(
   </div>
   <Transition name="task-panel">
     <div v-if="taskStore.currentTaskId" class="task-panel-host">
-      <TaskSidebar :current-task-id="taskStore.currentTaskId" @close="closeSidebar" />
+      <TaskSidebar :key="taskStore.currentTaskId" :current-task-id="taskStore.currentTaskId" @close="closeSidebar" />
     </div>
   </Transition>
   <ClientOnly>

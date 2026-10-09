@@ -260,6 +260,9 @@ export const useMailStore = defineStore('mail', () => {
     }
   };
 
+  const getThread = (threadId: number) =>
+    $fetch<ThreadDetailResponse>(`/api/mailbox/threads/${threadId}`, requestOptions());
+
   const markThreadRead = async (threadId: number) => {
     await $fetch(`/api/mailbox/threads/${threadId}/read`, { ...requestOptions(), method: 'PATCH' });
 
@@ -384,6 +387,7 @@ export const useMailStore = defineStore('mail', () => {
     selectAccount,
     fetchThreads,
     fetchThread,
+    getThread,
     markThreadRead,
     markThreadUnread,
     sendMail,

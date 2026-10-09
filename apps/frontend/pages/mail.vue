@@ -3,7 +3,9 @@ import { storeToRefs } from 'pinia';
 import { Search, X } from '@lucide/vue';
 import { MailSpamRuleScope, MailSystemFolder, type MailFolder, type MailStatsResponse } from '@tracker/contracts';
 import BaseModal from '~/components/BaseModal.vue';
+import CreateTaskSidebar from '~/components/CreateTaskSidebar.vue';
 import MailActionIcon from '~/components/Mail/MailActionIcon.vue';
+import MailCreateTaskModal from '~/components/Mail/MailCreateTaskModal.vue';
 import MailDeliveryBadge from '~/components/Mail/MailDeliveryBadge.vue';
 import MailMessageView from '~/components/Mail/MailMessageView.vue';
 import MailThreadActionsMenu from '~/components/Mail/MailThreadActionsMenu.vue';
@@ -11,6 +13,7 @@ import { ROLES } from '~/types/user';
 import { MAIL_DIRECTIONS, type MailAttachmentDescriptor, type MailMessage, type MailThread } from '~/types/mail';
 import { getErrorMessage } from '~/utils/error';
 import { useMailStore } from '~/stores/mailStore';
+import { useAiStore, type ParsedTask } from '~/stores/aiStore';
 import { useUserStore } from '~/stores/userStore';
 const MAIL_TZ = 'Europe/Moscow';
 const mskDay = (date: Date) =>
@@ -25,6 +28,7 @@ definePageMeta({
 
 const { $toast } = useNuxtApp();
 const mailStore = useMailStore();
+const aiStore = useAiStore();
 const userStore = useUserStore();
 const {
   accounts,
@@ -883,6 +887,96 @@ const htmlToPlainText = (html: string) => {
     .trim();
 };
 
+type MailTaskTarget =
+  | { scope: 'thread'; thread: MailThread }
+  | { scope: 'message'; message: MailMessage };
+
+const mailTaskTarget = ref<MailTaskTarget | null>(null);
+const mailTaskModalOpen = ref(false);
+const mailTaskPending = ref(false);
+const mailTaskError = ref('');
+const preparedMailTask = ref<ParsedTask | null>(null);
+const isCreateTaskSidebarOpen = ref(false);
+
+const mailTaskSubject = computed(() => {
+  const target = mailTaskTarget.value;
+  if (!target) return '';
+  return target.scope === 'thread' ? target.thread.subject : target.message.subject || 'Без темы';
+});
+
+const openThreadTaskDialog = (thread: MailThread) => {
+  mailTaskTarget.value = { scope: 'thread', thread };
+  mailTaskError.value = '';
+  mailTaskModalOpen.value = true;
+};
+
+const openMessageTaskDialog = (message: MailMessage) => {
+  mailTaskTarget.value = { scope: 'message', message };
+  mailTaskError.value = '';
+  mailTaskModalOpen.value = true;
+};
+
+const formatTaskMessage = (message: MailMessage, index?: number) => {
+  const body = message.text_body?.trim() || (message.html_body ? htmlToPlainText(message.html_body) : '') || '(без текста)';
+  const recipients = message.to_addresses
+    .map((item) => (item.name ? `${item.name} <${item.address}>` : item.address))
+    .join(', ');
+  const attachments = (message.attachments ?? []).filter((item) => !item.is_inline).map((item) => item.filename);
+  const parts = [
+    index === undefined ? 'Письмо' : `Письмо ${index}`,
+    `Дата: ${new Intl.DateTimeFormat('ru-RU', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(message.createdAt))}`,
+    `От: ${message.from_name ? `${message.from_name} <${message.from_address}>` : message.from_address}`,
+    `Кому: ${recipients || 'не указано'}`,
+    `Тема: ${message.subject || 'Без темы'}`,
+    ...(attachments.length ? [`Вложения: ${attachments.join(', ')}`] : []),
+    '',
+    body,
+  ];
+  return parts.join('\n');
+};
+
+const getMailTaskSource = async (target: MailTaskTarget) => {
+  if (target.scope === 'message') return formatTaskMessage(target.message);
+
+  const threadMessages =
+    currentThread.value?.id === target.thread.id ? messages.value : (await mailStore.getThread(target.thread.id)).messages;
+  const chronologicalMessages = [...threadMessages].sort((first, second) => {
+    const dateDifference = new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime();
+    return dateDifference || first.id - second.id;
+  });
+
+  return [
+    `Переписка: ${target.thread.subject || 'Без темы'}`,
+    '',
+    ...chronologicalMessages.map((message, index) => formatTaskMessage(message, index + 1)),
+  ].join('\n\n');
+};
+
+const prepareMailTask = async (instruction: string) => {
+  const target = mailTaskTarget.value;
+  if (!target || mailTaskPending.value) return;
+
+  mailTaskPending.value = true;
+  mailTaskError.value = '';
+  try {
+    const source = await getMailTaskSource(target);
+    preparedMailTask.value = await aiStore.parseTextToTask(source, instruction || undefined);
+    mailTaskModalOpen.value = false;
+    await nextTick();
+    isCreateTaskSidebarOpen.value = true;
+  } catch (error) {
+    mailTaskError.value = getErrorMessage(error);
+  } finally {
+    mailTaskPending.value = false;
+  }
+};
+
+const closeMailTaskSidebar = () => {
+  isCreateTaskSidebarOpen.value = false;
+  preparedMailTask.value = null;
+  mailTaskTarget.value = null;
+};
+
 const forwardMessage = async (message: MailMessage) => {
   await autosaveDraft();
   composeDraftId.value = null;
@@ -1650,6 +1744,7 @@ watch(
               :can-mark-unread="Boolean(thread.last_inbound_at) && !thread.unread_count"
               :permanent-delete="isTrashFolder"
               @mark-unread="markThreadUnread(thread)"
+              @create-task="openThreadTaskDialog(thread)"
               @move="openMoveDialog([thread.id])"
               @delete="askDeleteThreadFromList(thread)"
             />
@@ -1898,6 +1993,7 @@ watch(
               :message="message"
               :retrying="retryingMessageIds.has(message.id)"
               :links-disabled="currentFolder === 'spam'"
+              @create-task="openMessageTaskDialog"
               @forward="forwardMessage"
               @delete="askDeleteMessage"
               @retry="retryMessage"
@@ -2171,6 +2267,22 @@ watch(
       </div>
     </BaseModal>
   </div>
+
+  <MailCreateTaskModal
+    v-if="mailTaskTarget"
+    v-model="mailTaskModalOpen"
+    :scope="mailTaskTarget.scope"
+    :subject="mailTaskSubject"
+    :pending="mailTaskPending"
+    :error="mailTaskError"
+    @submit="prepareMailTask"
+  />
+
+  <Transition name="task-panel">
+    <div v-if="isCreateTaskSidebarOpen && preparedMailTask" class="task-panel-host">
+      <CreateTaskSidebar :initial-task="preparedMailTask" @close="closeMailTaskSidebar" />
+    </div>
+  </Transition>
 </template>
 
 <style scoped lang="scss">
@@ -3668,6 +3780,47 @@ watch(
         width: 100%;
         justify-content: center;
       }
+    }
+  }
+}
+
+.task-panel-enter-active {
+  :deep(.task-sidebar) {
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  :deep(.task-sidebar__wrapper) {
+    transition: opacity 0.18s ease;
+  }
+}
+
+.task-panel-leave-active {
+  :deep(.task-sidebar) {
+    transition: transform 0.16s ease;
+  }
+
+  :deep(.task-sidebar__wrapper) {
+    transition: opacity 0.14s ease;
+  }
+}
+
+.task-panel-enter-from,
+.task-panel-leave-to {
+  :deep(.task-sidebar) {
+    transform: translateX(100%);
+  }
+
+  :deep(.task-sidebar__wrapper) {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-panel-enter-active,
+  .task-panel-leave-active {
+    :deep(.task-sidebar),
+    :deep(.task-sidebar__wrapper) {
+      transition: none;
     }
   }
 }
