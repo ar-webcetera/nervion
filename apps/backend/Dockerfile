@@ -49,7 +49,7 @@ RUN if [ -f /vendor/mediasoup-worker ]; then \
 COPY packages packages
 COPY apps/backend apps/backend
 RUN pnpm --filter @tracker/contracts build \
- && pnpm --filter backend build:docker
+ && pnpm --filter backend build
 
 # deploy выполняется до копирования исходников. Добавляем в его результат только
 # собранный runtime-код общего workspace-пакета.
