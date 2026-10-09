@@ -16,6 +16,7 @@ import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { extractTextFromDoc } from 'src/common/utils/extractTextFromDoc';
 import { ProjectMembers, Projects } from '../projects/entities/project.entity';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { buildPublicAppUrl } from '../common/utils/public-app-url';
 
 @Injectable()
 export class CommentsService {
@@ -50,7 +51,6 @@ export class CommentsService {
     return result;
   }
   async create(createCommentDto: CreateCommentDto, currentUser: AuthenticatedUser) {
-    const domain = this.config.get<string>('APP_DOMAIN');
     let author: Users | null = null;
     if (createCommentDto.author_id) {
       author = await this.usersRepository.findOne({
@@ -114,7 +114,6 @@ export class CommentsService {
       newComment,
       parentComment,
       message: createCommentDto.message,
-      domain,
     }).catch((err) => console.error('Ошибка фоновой обработки комментария', err));
 
     void this.websocketGateway.sendCommentAdded({ ...newComment, subComments: [] });
@@ -127,14 +126,12 @@ export class CommentsService {
     newComment,
     parentComment,
     message: rawMessage,
-    domain,
   }: {
     author: Users | null;
     task: Tasks;
     newComment: Comments;
     parentComment: Comments | null;
     message: TiptapDoc;
-    domain: string | undefined;
   }) {
     if (task.business_kind === TaskBusinessKind.SALES) return;
     if (author && !task.participants.some((p) => p.id === author.id)) {
@@ -145,7 +142,7 @@ export class CommentsService {
     const authorName = `${author?.last_name || ''} ${author?.first_name || ''}`.trim();
     const message = extractTextFromDoc(rawMessage);
     const link = `?task-id=${task.id}&comment-id=${newComment.id}`;
-    const absoluteLink = `https://tracker.${domain}${link}`;
+    const absoluteLink = buildPublicAppUrl(this.config, link);
     const mentionIds = this.findMentionIds(rawMessage);
     if (task.project?.isPrivate) {
       for (const mentionId of mentionIds) {

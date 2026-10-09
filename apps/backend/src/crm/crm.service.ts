@@ -45,6 +45,7 @@ import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DeepseekService } from '../deepseek/deepseek.service';
 import type { ParsedDealCompany, ParsedDealContact } from '../deepseek/dto/parsed-deal.dto';
+import { buildPublicAppUrl } from '../common/utils/public-app-url';
 
 @Injectable()
 export class CrmService {
@@ -540,8 +541,7 @@ export class CrmService {
   }
 
   private absoluteDealLink(id: number): string {
-    const domain = this.config.get<string>('APP_DOMAIN');
-    return `https://tracker.${domain}${this.dealLink(id)}`;
+    return buildPublicAppUrl(this.config, this.dealLink(id));
   }
 
   private notificationHtml(message: string, dealId: number): string {

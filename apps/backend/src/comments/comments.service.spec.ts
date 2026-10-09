@@ -41,7 +41,7 @@ describe('CommentsService', () => {
   };
 
   const mockConfig = {
-    get: jest.fn<string | undefined, [string]>().mockReturnValue('webcetera.test'),
+    get: jest.fn<string | undefined, [string]>(),
   };
 
   const mockWebsocketGateway = {
@@ -78,7 +78,7 @@ describe('CommentsService', () => {
 
     service = module.get<CommentsService>(CommentsService);
     jest.clearAllMocks();
-    mockConfig.get.mockReturnValue('webcetera.test');
+    mockConfig.get.mockImplementation((key) => (key === 'APP_PUBLIC_ORIGIN' ? 'https://app.webcetera.test' : undefined));
     mockNotifications.createWithEmail.mockResolvedValue({} as Notifications);
   });
 
@@ -156,6 +156,35 @@ describe('CommentsService', () => {
       await expect(service.create(dto, currentUser)).rejects.toMatchObject({
         status: HttpStatus.BAD_REQUEST,
       });
+    });
+
+    it('должен отправлять актуальную ссылку на комментарий', async () => {
+      const author = { id: 7, first_name: 'Иван', last_name: 'Иванов' } as Users;
+      const responsible = { id: 8, email: 'responsible@test.com' } as Users;
+      const task = {
+        id: 12,
+        title: 'Задача',
+        participants: [author],
+        project: null,
+        responsible,
+      } as unknown as Tasks;
+      const savedComment = { id: 5, task, author, message } as unknown as Comments;
+      const dto = Object.assign(new CreateCommentDto(), {
+        author_id: 7,
+        task_id: 12,
+        message,
+      });
+
+      mockUsersRepository.findOne.mockResolvedValue(author);
+      mockTasksRepository.findOne.mockResolvedValue(task);
+      mockCommentRepository.save.mockResolvedValue(savedComment);
+
+      await service.create(dto, currentUser);
+
+      expect(mockNotifications.createWithEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ recipient_id: 8, link: '?task-id=12&comment-id=5' }),
+        expect.stringContaining('href="https://app.webcetera.test?task-id=12&comment-id=5"'),
+      );
     });
   });
 

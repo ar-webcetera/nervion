@@ -107,7 +107,9 @@ describe('TasksService', () => {
     createWithEmail: jest.fn<Promise<Notifications>, [CreateNotificationDto, string]>().mockResolvedValue({} as Notifications),
   };
   const mockConfigService = {
-    get: jest.fn<string | undefined, [string]>().mockReturnValue('webcetera.test'),
+    get: jest
+      .fn<string | undefined, [string]>()
+      .mockImplementation((key) => (key === 'APP_PUBLIC_ORIGIN' ? 'https://app.webcetera.test' : undefined)),
   };
 
   it('does not read activity when task access is denied', async () => {
@@ -320,7 +322,7 @@ describe('TasksService', () => {
           recipient_id: 5,
           link: '?task-id=1',
         },
-        expect.stringContaining('https://tracker.webcetera.test?task-id=1'),
+        expect.stringContaining('https://app.webcetera.test?task-id=1'),
       );
     });
 
@@ -539,7 +541,7 @@ describe('TasksService', () => {
           recipient_id: 42,
           link: '?task-id=1',
         },
-        expect.stringContaining('https://tracker.webcetera.test?task-id=1'),
+        expect.stringContaining('https://app.webcetera.test?task-id=1'),
       );
     });
 

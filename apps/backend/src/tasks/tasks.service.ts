@@ -34,6 +34,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ConfigService } from '@nestjs/config';
 import { FixedRevenue } from '../reportings/entities/fixed-revenue.entity';
 import { Timelogs } from '../timelogs/entities/timelog.entity';
+import { buildPublicAppUrl } from '../common/utils/public-app-url';
 
 interface TaskAuditPayload extends JsonObject {
   title: string | null;
@@ -134,8 +135,7 @@ export class TasksService {
     const subject = `Вам назначена задача: ${taskTitle}`;
     const message = `Вы назначены ответственным за задачу «${taskTitle}».`;
     const link = `?task-id=${taskId}`;
-    const domain = this.configService.get<string>('APP_DOMAIN');
-    const absoluteLink = `https://tracker.${domain}${link}`;
+    const absoluteLink = buildPublicAppUrl(this.configService, link);
 
     void this.notificationsService
       .createWithEmail(

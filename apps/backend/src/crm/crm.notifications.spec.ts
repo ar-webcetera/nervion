@@ -48,7 +48,9 @@ const dealDetail = (overrides: Partial<CrmDealDetail> = {}): CrmDealDetail => ({
 describe('CrmService notifications', () => {
   const notifications = { createWithEmail: jest.fn().mockResolvedValue({}) };
   const events = { sendCrmChanged: jest.fn() };
-  const config = { get: jest.fn().mockReturnValue('webcetera.test') };
+  const config = {
+    get: jest.fn().mockImplementation((key) => (key === 'APP_PUBLIC_ORIGIN' ? 'https://app.webcetera.test' : undefined)),
+  };
   const usersRepository = { existsBy: jest.fn().mockResolvedValue(true), findBy: jest.fn() };
   const activityRepository = { save: jest.fn() };
   const db = { transaction: jest.fn(), getRepository: jest.fn() };
@@ -57,7 +59,7 @@ describe('CrmService notifications', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     notifications.createWithEmail.mockResolvedValue({});
-    config.get.mockReturnValue('webcetera.test');
+    config.get.mockImplementation((key) => (key === 'APP_PUBLIC_ORIGIN' ? 'https://app.webcetera.test' : undefined));
     usersRepository.existsBy.mockResolvedValue(true);
     db.getRepository.mockImplementation((entity: object) => {
       if (entity === Users) return usersRepository;
@@ -108,7 +110,7 @@ describe('CrmService notifications', () => {
         recipient_id: 2,
         link: '/crm/deals?deal=41',
       }),
-      expect.stringContaining('https://tracker.webcetera.test/crm/deals?deal=41'),
+      expect.stringContaining('https://app.webcetera.test/crm/deals?deal=41'),
     );
   });
 
