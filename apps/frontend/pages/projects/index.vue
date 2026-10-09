@@ -179,8 +179,16 @@ definePageMeta({
       >
         <div class="project-item__header">
           <div class="project-item__heading">
+            <span
+              v-if="project.isPrivate"
+              class="project-item__private"
+              role="img"
+              aria-label="Личный проект"
+              title="Личный проект"
+            >
+              <Lock :size="13" :stroke-width="1.75" aria-hidden="true" />
+            </span>
             <span class="project-item__title">{{ project.name }}</span>
-            <span v-if="project.isPrivate" class="project-item__private"><Lock aria-hidden="true" /> Личный</span>
           </div>
           <IconsIconArrowRight v-if="canManageProject(project)" class="project-item__arrow" />
         </div>
@@ -365,13 +373,6 @@ definePageMeta({
     gap: 12px;
   }
 
-  &__heading {
-    min-width: 0;
-    @include flex(rn a-center);
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
   &__add-task {
     position: relative;
     cursor: pointer;
@@ -398,23 +399,6 @@ definePageMeta({
 
   &__title {
     @extend %display-xs-medium;
-  }
-
-  &__private {
-    min-height: 24px;
-    padding: 3px 7px;
-    border-radius: 999px;
-    background: var(--primary-25);
-    color: var(--light-text-backgroung-primary);
-    @extend %text-xs-medium;
-    @include flex(rn a-center);
-    gap: 4px;
-
-    svg {
-      width: 13px;
-      height: 13px;
-      stroke-width: 1.75;
-    }
   }
 
   &__items {
@@ -467,9 +451,29 @@ definePageMeta({
   &__header {
     @include flex(rn, a-center, between);
     width: 100%;
+    gap: 8px;
+  }
+
+  &__heading {
+    min-width: 0;
+    @include flex(rn, a-center);
+    gap: 6px;
+  }
+
+  &__private {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
+    border-radius: 4px;
+    color: var(--light-text-backgroung-primary-50);
+    @include flex(center);
   }
 
   &__title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     @extend %text-s-medium;
     color: var(--light-text-backgroung-primary);
   }
