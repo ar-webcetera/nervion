@@ -3,6 +3,7 @@ export enum TASK_STATUSES {
   open = "open",
   to_do = "to_do",
   in_progress = "in_progress",
+  waiting = "waiting",
   in_review = "in_review",
   control = "control",
   closed = "closed",

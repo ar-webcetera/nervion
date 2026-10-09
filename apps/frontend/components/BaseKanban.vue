@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import TaskCode from '~/components/TaskCode.vue';
 import type { PropType } from 'vue';
-import { TASK_STATUSES } from '~/constants/task.constants';
+import { TASK_STATUSES, TASK_STATUS_DESCRIPTIONS } from '~/constants/task.constants';
 import { TaskType } from '~/enums/task.enums';
 
 const { resolveAwsUrl } = useResolveUrl();
@@ -395,9 +395,16 @@ const dragend = () => {
       </div>
 
       <div v-if="!column.collapsed" class="kanban__column-header">
-        <span class="kanban__column-header_dot" :class="'kanban__column-header_' + column.status"></span>
-        <span class="kanban__column-header_title">{{ column.title }}</span>
-        <span>{{ column.total ?? column.cards.length }}</span>
+        <span
+          class="kanban__column-status"
+          tabindex="0"
+          :data-status-tooltip="TASK_STATUS_DESCRIPTIONS[column.status]"
+          :aria-label="`${column.title}. ${TASK_STATUS_DESCRIPTIONS[column.status]}`"
+        >
+          <span class="kanban__column-header_dot" :class="'kanban__column-header_' + column.status"></span>
+          <span class="kanban__column-header_title">{{ column.title }}</span>
+        </span>
+        <span class="kanban__column-header_count">{{ column.total ?? column.cards.length }}</span>
         <span v-if="column.cards.some((c) => c.story_points != null)" class="kanban__column-header_sp">
           {{ column.cards.reduce((sum, c) => sum + (Number(c.story_points) || 0), 0) }} SP
         </span>
@@ -653,10 +660,6 @@ const dragend = () => {
     min-width: 0;
     flex-shrink: 0;
 
-    &_title {
-      min-width: 0;
-      overflow-wrap: anywhere;
-    }
     @include flex(a-center);
     gap: 8px;
     border-radius: 12px;
@@ -688,6 +691,10 @@ const dragend = () => {
       background: var(--status-in-progress);
     }
 
+    &_waiting {
+      background: var(--status-waiting);
+    }
+
     &_in_review {
       background: var(--status-violet);
     }
@@ -700,17 +707,10 @@ const dragend = () => {
       background: var(--green);
     }
 
-    span {
-      &:nth-child(2) {
-        @extend %text-l-regular;
-      }
-    }
-
-    span {
-      &:nth-child(3) {
-        @extend %text-xs-light;
-        color: var(--light-text-backgroung-primary-50);
-      }
+    &_count {
+      flex-shrink: 0;
+      @extend %text-xs-light;
+      color: var(--light-text-backgroung-primary-50);
     }
 
     &_sp {
@@ -721,6 +721,59 @@ const dragend = () => {
       background: var(--primary-15);
       color: var(--primary);
     }
+  }
+
+  &__column-status {
+    position: relative;
+    min-width: 0;
+    @include flex(rn a-center);
+    gap: 8px;
+    border-radius: 6px;
+    cursor: help;
+    outline: none;
+
+    &::after {
+      content: attr(data-status-tooltip);
+      position: absolute;
+      z-index: 30;
+      top: calc(100% + 8px);
+      left: 0;
+      width: 272px;
+      padding: 8px 12px;
+      border: 1px solid var(--light-text-backgroung-primary-10);
+      border-radius: 8px;
+      background: var(--dark-text-background-secondary);
+      box-shadow: 0 8px 24px var(--black-40);
+      color: var(--light-text-backgroung-primary);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      @extend %text-xs-regular;
+      transition:
+        opacity 0.15s ease,
+        visibility 0.15s ease;
+    }
+
+    &:hover::after,
+    &:focus-visible::after {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 3px;
+    }
+
+    @media (pointer: coarse) {
+      min-height: 44px;
+    }
+  }
+
+  &__column-header_title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    @extend %text-l-regular;
   }
 
   &__column-placeholder {

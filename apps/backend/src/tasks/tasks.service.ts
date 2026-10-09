@@ -437,9 +437,10 @@ export class TasksService {
       { id: 2, title: 'Открыто', status: TASK_STATUSES.open },
       { id: 3, title: 'К выполнению', status: TASK_STATUSES.to_do },
       { id: 4, title: 'Выполняется', status: TASK_STATUSES.in_progress },
-      { id: 5, title: 'На ревью', status: TASK_STATUSES.in_review },
-      { id: 6, title: 'Контроль', status: TASK_STATUSES.control },
-      { id: 7, title: 'Закрыто', status: TASK_STATUSES.closed },
+      { id: 5, title: 'Ожидание', status: TASK_STATUSES.waiting },
+      { id: 6, title: 'На ревью', status: TASK_STATUSES.in_review },
+      { id: 7, title: 'Контроль', status: TASK_STATUSES.control },
+      { id: 8, title: 'Закрыто', status: TASK_STATUSES.closed },
     ];
 
     const columns = await Promise.all(
@@ -1447,6 +1448,7 @@ export class TasksService {
       [TASK_STATUSES.open]: 'Открыта',
       [TASK_STATUSES.to_do]: 'К выполнению',
       [TASK_STATUSES.in_progress]: 'В работе',
+      [TASK_STATUSES.waiting]: 'Ожидание',
       [TASK_STATUSES.in_review]: 'На проверке',
       [TASK_STATUSES.control]: 'Контроль',
       [TASK_STATUSES.closed]: 'Закрыта',
