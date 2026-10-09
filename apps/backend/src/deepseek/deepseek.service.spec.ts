@@ -53,6 +53,7 @@ describe('DeepseekService', () => {
 
     expect(options).toEqual({ timeout: 90000 });
     expect(textPart?.text).toContain('Исправить форму');
+    expect(textPart?.text).toContain('Никогда не добавляй в title название компании, клиента или бренда');
     expect(imagePart).toEqual({
       type: 'image_url',
       image_url: {
