@@ -2,6 +2,8 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const hasSentryAuthToken = Boolean(process.env.SENTRY_AUTH_TOKEN);
+const isProduction = process.env.NODE_ENV === 'production';
+const shouldTypeCheck = process.env.NUXT_TYPECHECK !== 'false';
 
 export default defineNuxtConfig({
   pwa: {
@@ -40,11 +42,11 @@ export default defineNuxtConfig({
     },
   },
   devtools: {
-    enabled: true,
+    enabled: !isProduction,
   },
 
   typescript: {
-    typeCheck: true,
+    typeCheck: shouldTypeCheck,
   },
 
   runtimeConfig: {
