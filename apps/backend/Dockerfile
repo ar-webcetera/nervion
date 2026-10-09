@@ -51,21 +51,20 @@ COPY apps/backend apps/backend
 RUN pnpm --filter @tracker/contracts build \
  && pnpm --filter backend build
 
-# deploy выполняется до копирования исходников. Добавляем в его результат только
-# собранный runtime-код общего workspace-пакета.
-FROM production-dependencies AS release-dependencies
-COPY --from=build /app/packages/contracts/dist /contracts-dist
-RUN test -L /out/node_modules/@tracker/contracts \
- && mkdir -p /out/node_modules/@tracker/contracts/dist \
- && cp -a /contracts-dist/. /out/node_modules/@tracker/contracts/dist/
-
 # ---------- runtime ----------
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 # git нужен для self-hosted раздела, ffmpeg для обработки медиа, ca-certificates для HTTPS.
 # Транскрипция работает через внешний API, локальный whisper/PyTorch не нужен.
 RUN apt-get update && apt-get install -y --no-install-recommends git ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=release-dependencies /out/node_modules ./node_modules
+COPY --from=production-dependencies /out/node_modules ./node_modules
+# Общий workspace-пакет меняется вместе с исходниками. Накладываем его маленьким
+# отдельным слоем, не пересобирая 600 МБ production-зависимостей.
+COPY --from=build /app/packages/contracts/dist /contracts-dist
+RUN test -L /app/node_modules/@tracker/contracts \
+ && mkdir -p /app/node_modules/@tracker/contracts/dist \
+ && cp -a /contracts-dist/. /app/node_modules/@tracker/contracts/dist/ \
+ && rm -rf /contracts-dist
 COPY --from=build /app/apps/backend/dist ./dist
 # prebuilt mediasoup-воркер (вне node_modules, чтобы не потерялся при pnpm deploy)
 COPY --from=build /mediasoup-worker /usr/local/bin/mediasoup-worker
