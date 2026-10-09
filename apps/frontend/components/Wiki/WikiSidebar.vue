@@ -180,8 +180,18 @@ const SIDEBAR_DEFAULT_WIDTH = 300;
 const SIDEBAR_MIN_WIDTH = 240;
 const SIDEBAR_MAX_WIDTH = 520;
 const SIDEBAR_CONTENT_MIN_WIDTH = 360;
-const SIDEBAR_WIDTH_STORAGE_KEY = 'nervion:wiki-sidebar-width';
-const sidebarWidth = ref(SIDEBAR_DEFAULT_WIDTH);
+const SIDEBAR_WIDTH_COOKIE_NAME = 'wiki-sidebar-width';
+const sidebarWidthCookie = useCookie<number>(SIDEBAR_WIDTH_COOKIE_NAME, {
+  maxAge: 365 * 24 * 60 * 60,
+  path: '/',
+  sameSite: 'lax',
+});
+const storedSidebarWidth = Number(sidebarWidthCookie.value);
+const sidebarWidth = ref(
+  Number.isFinite(storedSidebarWidth)
+    ? Math.min(Math.max(storedSidebarWidth, SIDEBAR_MIN_WIDTH), SIDEBAR_MAX_WIDTH)
+    : SIDEBAR_DEFAULT_WIDTH,
+);
 const availableMaxWidth = ref(SIDEBAR_MAX_WIDTH);
 const isResizing = ref(false);
 let resizeStartX = 0;
@@ -208,11 +218,7 @@ const updateAvailableMaxWidth = () => {
 };
 
 const persistSidebarWidth = () => {
-  try {
-    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(sidebarWidth.value));
-  } catch {
-    // localStorage может быть недоступен в приватном режиме.
-  }
+  sidebarWidthCookie.value = sidebarWidth.value;
 };
 
 const applyPendingWidth = () => {
@@ -430,12 +436,6 @@ const getFaviconUrl = (url: string) => {
 onMounted(() => {
   document.addEventListener('click', closeDropdown);
   updateAvailableMaxWidth();
-  try {
-    const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
-    if (Number.isFinite(storedWidth) && storedWidth > 0) sidebarWidth.value = clampSidebarWidth(storedWidth);
-  } catch {
-    // Используем ширину по умолчанию, если localStorage недоступен.
-  }
   window.addEventListener('resize', updateAvailableMaxWidth);
 });
 
