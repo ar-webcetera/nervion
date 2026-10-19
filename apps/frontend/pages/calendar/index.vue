@@ -29,6 +29,7 @@ const EVENT_COLORS = ['#cb7d58', '#4f8f84', '#6f82b8', '#a26f9c', '#9a8148', '#5
 
 interface PositionedEvent {
   event: CalendarEvent;
+  durationMinutes: number;
   top: number;
   height: number;
   left: number;
@@ -137,14 +138,19 @@ const getEventsForDay = (day: Date): PositionedEvent[] => {
   });
   const columnCount = Math.max(columnEnds.length, 1);
 
-  return positioned.map(({ event, start, end, column }) => ({
-    event,
-    top: (differenceInMinutes(start, viewStart) / TOTAL_MINUTES) * 100,
-    height: Math.max((differenceInMinutes(end, start) / TOTAL_MINUTES) * 100, 2.5),
-    left: (column / columnCount) * 100,
-    width: 100 / columnCount,
-    color: EVENT_COLORS[event.id % EVENT_COLORS.length]!,
-  }));
+  return positioned.map(({ event, start, end, column }) => {
+    const durationMinutes = differenceInMinutes(end, start);
+
+    return {
+      event,
+      durationMinutes,
+      top: (differenceInMinutes(start, viewStart) / TOTAL_MINUTES) * 100,
+      height: Math.max((durationMinutes / TOTAL_MINUTES) * 100, 2.5),
+      left: (column / columnCount) * 100,
+      width: 100 / columnCount,
+      color: EVENT_COLORS[event.id % EVENT_COLORS.length]!,
+    };
+  });
 };
 
 const getEventStyle = (positioned: PositionedEvent) => ({
@@ -154,6 +160,8 @@ const getEventStyle = (positioned: PositionedEvent) => ({
   width: `calc(${positioned.width}% - 6px)`,
   '--event-color': positioned.color,
 });
+
+const eventStartTime = (event: CalendarEvent) => format(parseISO(event.start_at), 'HH:mm');
 
 const getDragPreviewStyle = (preview: DragPreview) => ({
   top: `${preview.top}%`,
@@ -556,6 +564,7 @@ onBeforeUnmount(() => mediaQuery?.removeEventListener('change', syncMobile));
                 :class="{
                   'calendar-page__event_draggable': !isMobile && canManageEvent(positioned.event),
                   'calendar-page__event_manageable': canManageEvent(positioned.event),
+                  'calendar-page__event_compact': positioned.durationMinutes <= 30,
                   'calendar-page__event_dragging': draggingEvent?.id === positioned.event.id,
                   'calendar-page__event_moving': movingEventId === positioned.event.id,
                 }"
@@ -579,14 +588,19 @@ onBeforeUnmount(() => mediaQuery?.removeEventListener('change', syncMobile));
                   :stroke-width="1.75"
                   aria-hidden="true"
                 />
-                <strong>{{ positioned.event.title }}</strong>
-                <span><Clock3 :size="13" aria-hidden="true" />{{ eventTime(positioned.event) }}</span>
-                <span v-if="positioned.event.participants.length">
+                <strong class="calendar-page__event-title">{{ positioned.event.title }}</strong>
+                <span class="calendar-page__event-time">
+                  <Clock3 :size="13" aria-hidden="true" />
+                  <span class="calendar-page__event-time-full">{{ eventTime(positioned.event) }}</span>
+                  <span class="calendar-page__event-time-short">{{ eventStartTime(positioned.event) }}</span>
+                </span>
+                <span v-if="positioned.event.participants.length" class="calendar-page__event-participants">
                   <Users :size="13" aria-hidden="true" />{{ positioned.event.participants.length }}
                 </span>
                 <CalendarEventActions
                   v-if="canManageEvent(positioned.event)"
                   :event="positioned.event"
+                  :compact="positioned.durationMinutes <= 30"
                   @edit="openEventEditor(positioned.event)"
                 />
               </div>
@@ -879,6 +893,62 @@ onBeforeUnmount(() => mediaQuery?.removeEventListener('change', syncMobile));
       font-variant-numeric: tabular-nums;
       @extend %text-xs-regular;
     }
+
+    &-time-short {
+      display: none;
+    }
+
+    &_compact {
+      container-type: inline-size;
+      min-height: 28px;
+      padding: 3px 6px;
+      flex-direction: row;
+      align-items: center;
+      gap: 5px;
+
+      &.calendar-page__event_draggable {
+        padding-left: 6px;
+      }
+
+      &.calendar-page__event_manageable {
+        padding-right: 26px;
+      }
+
+      .calendar-page__event-title {
+        min-width: 0;
+        flex: 1;
+        line-height: 16px;
+      }
+
+      .calendar-page__event-time {
+        flex: none;
+        gap: 0;
+        line-height: 16px;
+
+        > svg,
+        &-full {
+          display: none;
+        }
+
+        &-short {
+          display: inline;
+        }
+      }
+
+      .calendar-page__event-participants {
+        display: none;
+      }
+
+      > .calendar-page__event-grip {
+        display: none;
+      }
+    }
+  }
+
+  @container (max-width: 160px) {
+    &__event_compact &__event-time {
+      display: none;
+    }
   }
 
   &__event-grip {
@@ -1086,6 +1156,14 @@ onBeforeUnmount(() => mediaQuery?.removeEventListener('change', syncMobile));
 
     &__event {
       padding: 6px 8px;
+
+      &_compact {
+        padding: 3px 6px;
+
+        &.calendar-page__event_manageable {
+          padding-right: 30px;
+        }
+      }
     }
   }
 

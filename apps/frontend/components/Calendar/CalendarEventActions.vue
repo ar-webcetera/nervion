@@ -3,7 +3,7 @@ import type { CalendarEvent } from '@tracker/contracts';
 import { Ellipsis, Pencil } from '@lucide/vue';
 import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
 
-defineProps<{ event: CalendarEvent }>();
+defineProps<{ event: CalendarEvent; compact?: boolean }>();
 const emit = defineEmits<{ edit: [] }>();
 
 const isOpen = ref(false);
@@ -60,7 +60,7 @@ watch(isOpen, async (open, _, onCleanup) => {
 </script>
 
 <template>
-  <div class="calendar-event-actions" @click.stop @pointerdown.stop>
+  <div class="calendar-event-actions" :class="{ 'calendar-event-actions_compact': compact }" @click.stop @pointerdown.stop>
     <button
       ref="trigger"
       type="button"
@@ -157,21 +157,32 @@ watch(isOpen, async (open, _, onCleanup) => {
       }
     }
   }
+
+  &_compact {
+    top: 2px;
+    right: 2px;
+
+    .calendar-event-actions__trigger {
+      width: 22px;
+      height: 22px;
+    }
+  }
 }
 
 @media (pointer: coarse) {
-  .calendar-event-actions {
+  .calendar-event-actions:not(.calendar-event-actions_compact) {
     top: 0;
     right: 0;
 
-    &__trigger {
+    .calendar-event-actions__trigger {
       width: 36px;
       height: 36px;
     }
 
-    &__menu button {
-      min-height: 44px;
-    }
+  }
+
+  .calendar-event-actions__menu button {
+    min-height: 44px;
   }
 }
 </style>
