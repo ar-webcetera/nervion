@@ -5,7 +5,7 @@ import { useUserStore } from '~/stores/userStore';
 import { PROJECT_STATUSES } from '~/constants/project.constants';
 
 export const useProjectStore = defineStore('project', () => {
-  const config = useRuntimeConfig();
+  const apiBaseUrl = useApiBaseUrl();
   const requestHeaders = useRequestHeaders(['cookie']);
   const projects = ref<Project[]>([]);
   const revision = ref(0);
@@ -51,7 +51,7 @@ export const useProjectStore = defineStore('project', () => {
   const fetchProjectList = async (endpoint: string): Promise<Project[]> => {
     const cookies = requestHeaders;
     const response = await $fetch<Project[]>(endpoint, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       credentials: 'include',
       method: 'GET',
       headers: {
@@ -80,7 +80,7 @@ export const useProjectStore = defineStore('project', () => {
   const createProject = async (projectData: CreateProjectPayload) => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<Project>('/api/projects', {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       credentials: 'include',
       method: 'POST',
       headers,
@@ -96,7 +96,7 @@ export const useProjectStore = defineStore('project', () => {
   const updateProject = async (projectId: number, data: Partial<Project>) => {
     const headers = useRequestHeaders(['cookie']);
     const updatedProject = await $fetch<Project>(`/api/projects/${projectId}`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       credentials: 'include',
       method: 'PATCH',
       headers,
@@ -114,7 +114,7 @@ export const useProjectStore = defineStore('project', () => {
   const deleteProject = async (projectId: number) => {
     const headers = useRequestHeaders(['cookie']);
     await $fetch(`/api/projects/${projectId}`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       credentials: 'include',
       method: 'DELETE',
       headers,

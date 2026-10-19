@@ -3,7 +3,7 @@ import type { ReadNotificationContextRequest, ReadNotificationContextResponse } 
 import type { Notification } from '~/types/notification';
 
 export const useNotificationStore = defineStore('notification', () => {
-  const config = useRuntimeConfig();
+  const apiBaseUrl = useApiBaseUrl();
   const notifications = ref<Notification[]>([]);
   const selectedMailAccountId = useState<number>('mail-selected-account-id', () => 0);
 
@@ -18,7 +18,7 @@ export const useNotificationStore = defineStore('notification', () => {
     notifications.value = await $fetch<Notification[]>(`/api/notifications/`, {
       headers,
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
     });
 
     notifications.value.sort((a, b) => {
@@ -49,7 +49,7 @@ export const useNotificationStore = defineStore('notification', () => {
     await $fetch(`/api/notifications/${id}/`, {
       method: 'PATCH',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       body,
     });
 
@@ -63,7 +63,7 @@ export const useNotificationStore = defineStore('notification', () => {
     const response = await $fetch<ReadNotificationContextResponse>(`/api/notifications/read-context`, {
       method: 'PATCH',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       body: context,
     });
 
@@ -81,7 +81,7 @@ export const useNotificationStore = defineStore('notification', () => {
     await $fetch(`/api/notifications/mark-all-read`, {
       method: 'PATCH',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
     });
     await syncMailUnreadCount();
   };
