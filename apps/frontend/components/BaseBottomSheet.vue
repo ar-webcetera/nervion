@@ -275,30 +275,27 @@ const trapFocus = (event: KeyboardEvent) => {
       right: 0;
       bottom: 0;
       left: 0;
-      width: 100%;
-      max-height: calc(100dvh - 16px);
+      width: 100vw;
+      max-width: none;
+      max-height: calc(100dvh - 48px);
       margin: 0;
-      border-right: 0;
-      border-bottom: 0;
-      border-left: 0;
+      border: 0;
+      border-top: 1px solid var(--light-text-backgroung-primary-10);
       border-radius: 16px 16px 0 0;
       box-shadow: 0 -12px 32px var(--black-50);
       transform: none;
     }
 
-    &__backdrop {
-      backdrop-filter: blur(4px);
-    }
-  }
-
-  @media (max-width: $screen-mobile-l) {
     &__header {
-      padding-right: 8px;
-      padding-left: 16px;
+      padding: 12px;
     }
 
     &__content {
-      padding-top: 20px;
+      padding: 16px 0 max(16px, env(safe-area-inset-bottom));
+    }
+
+    &__backdrop {
+      backdrop-filter: blur(4px);
     }
   }
 }
