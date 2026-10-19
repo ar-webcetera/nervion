@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { CalendarEvent } from '@tracker/contracts';
-import { Ellipsis, Pencil } from '@lucide/vue';
+import { Ellipsis, Pencil, Trash2 } from '@lucide/vue';
 import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
 
 defineProps<{ event: CalendarEvent; compact?: boolean }>();
-const emit = defineEmits<{ edit: [] }>();
+const emit = defineEmits<{ edit: []; delete: [] }>();
 
 const isOpen = ref(false);
 const trigger = ref<HTMLButtonElement | null>(null);
@@ -20,6 +20,11 @@ const close = (restoreFocus = false) => {
 const edit = () => {
   close();
   emit('edit');
+};
+
+const remove = () => {
+  close();
+  emit('delete');
 };
 
 const onKeydown = (event: KeyboardEvent) => {
@@ -91,6 +96,10 @@ watch(isOpen, async (open, _, onCleanup) => {
           <Pencil :size="16" :stroke-width="1.75" aria-hidden="true" />
           Изменить
         </button>
+        <button class="calendar-event-actions__delete" type="button" role="menuitem" tabindex="-1" @click="remove">
+          <Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" />
+          Удалить
+        </button>
       </div>
     </Teleport>
   </div>
@@ -154,6 +163,15 @@ watch(isOpen, async (open, _, onCleanup) => {
       &:focus-visible {
         background: var(--light-text-backgroung-primary-10);
         outline: none;
+      }
+    }
+
+    .calendar-event-actions__delete {
+      color: #ff9a9a;
+
+      &:hover,
+      &:focus-visible {
+        background: color-mix(in srgb, #e25b5b 14%, transparent);
       }
     }
   }

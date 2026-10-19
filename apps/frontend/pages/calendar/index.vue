@@ -66,6 +66,7 @@ const scrollArea = ref<HTMLElement | null>(null);
 const draggingEvent = ref<CalendarEvent | null>(null);
 const dragPreview = ref<DragPreview | null>(null);
 const movingEventId = ref<number | null>(null);
+const deletingEventId = ref<number | null>(null);
 const acceptingEventId = ref<number | null>(null);
 let dragGrabOffsetMinutes = 0;
 let draggedEventId: number | null = null;
@@ -407,17 +408,26 @@ const saveEvent = async (data: CreateCalendarEventRequest) => {
   }
 };
 
-const deleteEvent = async () => {
-  if (!selectedEvent.value) return;
-  if (!window.confirm(`Удалить встречу "${selectedEvent.value.title}"? Участники больше не получат напоминание.`)) return;
-  modalRef.value?.setSaving(true);
+const deleteEvent = async (event = selectedEvent.value) => {
+  if (!event || deletingEventId.value !== null) return;
+  if (!window.confirm(`Удалить встречу "${event.title}"? Участники больше не получат напоминание.`)) return;
+
+  const isEditorDelete = editorOpen.value && selectedEvent.value?.id === event.id;
+  deletingEventId.value = event.id;
+  if (isEditorDelete) modalRef.value?.setSaving(true);
   try {
-    await calendarStore.deleteEvent(selectedEvent.value.id);
-    closeEventDialogs();
+    await calendarStore.deleteEvent(event.id);
+    if (selectedEvent.value?.id === event.id) closeEventDialogs();
     $toast.success('Встреча удалена');
   } catch (error) {
-    modalRef.value?.setSaving(false);
-    modalRef.value?.setError(getErrorMessage(error));
+    if (isEditorDelete) {
+      modalRef.value?.setSaving(false);
+      modalRef.value?.setError(getErrorMessage(error));
+    } else {
+      $toast.error(getErrorMessage(error));
+    }
+  } finally {
+    deletingEventId.value = null;
   }
 };
 
@@ -567,13 +577,14 @@ onBeforeUnmount(() => mediaQuery?.removeEventListener('change', syncMobile));
                   'calendar-page__event_compact': positioned.durationMinutes <= 30,
                   'calendar-page__event_dragging': draggingEvent?.id === positioned.event.id,
                   'calendar-page__event_moving': movingEventId === positioned.event.id,
+                  'calendar-page__event_deleting': deletingEventId === positioned.event.id,
                 }"
                 :style="getEventStyle(positioned)"
                 role="button"
                 tabindex="0"
                 :aria-label="`${positioned.event.title}, ${eventTime(positioned.event)}`"
-                :aria-disabled="movingEventId === positioned.event.id"
-                :draggable="!isMobile && canManageEvent(positioned.event) && movingEventId === null"
+                :aria-disabled="movingEventId === positioned.event.id || deletingEventId === positioned.event.id"
+                :draggable="!isMobile && canManageEvent(positioned.event) && movingEventId === null && deletingEventId === null"
                 :title="!isMobile && canManageEvent(positioned.event) ? 'Перетащите, чтобы изменить день или время' : undefined"
                 @click.stop="handleEventClick(positioned.event)"
                 @keydown.enter.stop="handleEventClick(positioned.event)"
@@ -602,6 +613,7 @@ onBeforeUnmount(() => mediaQuery?.removeEventListener('change', syncMobile));
                   :event="positioned.event"
                   :compact="positioned.durationMinutes <= 30"
                   @edit="openEventEditor(positioned.event)"
+                  @delete="deleteEvent(positioned.event)"
                 />
               </div>
               <div
@@ -861,7 +873,8 @@ onBeforeUnmount(() => mediaQuery?.removeEventListener('change', syncMobile));
       opacity: 0.3;
     }
 
-    &_moving {
+    &_moving,
+    &_deleting {
       opacity: 0.55;
       cursor: wait;
     }
