@@ -165,16 +165,11 @@ const canAccept = computed(
             <span>Push и письмо для всех участников</span>
           </div>
         </div>
-        <div class="event-details__actions">
-          <button v-if="canAccept" type="button" class="event-details__accept" :disabled="accepting" @click="emit('accept')">
-            <LoaderCircle v-if="accepting" class="event-details__loader" :size="17" aria-hidden="true" />
-            <Check v-else :size="17" :stroke-width="2" aria-hidden="true" />
-            {{ accepting ? 'Подтверждаем' : 'Подтвердить участие' }}
-          </button>
-          <button type="button" class="event-details__close" :disabled="accepting" @click="emit('update:modelValue', false)">
-            Закрыть
-          </button>
-        </div>
+        <button v-if="canAccept" type="button" class="event-details__accept" :disabled="accepting" @click="emit('accept')">
+          <LoaderCircle v-if="accepting" class="event-details__loader" :size="17" aria-hidden="true" />
+          <Check v-else :size="17" :stroke-width="2" aria-hidden="true" />
+          {{ accepting ? 'Подтверждаем' : 'Подтвердить участие' }}
+        </button>
       </footer>
     </article>
   </BaseModal>
@@ -405,18 +400,8 @@ const canAccept = computed(
     }
   }
 
-  &__close {
-    background: var(--light-text-backgroung-primary-5);
-    color: var(--light-text-backgroung-primary);
-  }
-
-  &__actions {
-    flex-shrink: 0;
-    @include flex(rn, a-center);
-    gap: 8px;
-  }
-
   &__accept {
+    flex-shrink: 0;
     background: var(--primary);
     color: white;
     @include flex(rn, center);
@@ -473,12 +458,8 @@ const canAccept = computed(
       gap: 20px;
     }
 
-    &__actions {
-      flex-direction: column;
-
-      button {
-        width: 100%;
-      }
+    &__accept {
+      width: 100%;
     }
 
     &__role {
