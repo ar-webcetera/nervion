@@ -1,13 +1,13 @@
 import type { CalendarEvent, CalendarUser, CreateCalendarEventRequest, UpdateCalendarEventRequest } from '@tracker/contracts';
 
 export const useCalendarStore = defineStore('calendar', () => {
-  const config = useRuntimeConfig();
+  const apiBaseUrl = useApiBaseUrl();
   const events = ref<CalendarEvent[]>([]);
   const users = ref<CalendarUser[]>([]);
   const loading = ref(false);
 
   const requestOptions = () => ({
-    baseURL: config.public.API_URL,
+    baseURL: apiBaseUrl,
     credentials: 'include' as const,
     headers: useRequestHeaders(['cookie']),
   });

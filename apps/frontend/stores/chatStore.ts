@@ -33,7 +33,7 @@ export interface CreateMessageDto {
 }
 
 export const useChatStore = defineStore('chat', () => {
-  const config = useRuntimeConfig();
+  const apiBaseUrl = useApiBaseUrl();
   const chatList = ref<ChatListItem[]>([]);
   const pendingMessageList = ref(true);
   const chatMeta = ref({
@@ -49,7 +49,7 @@ export const useChatStore = defineStore('chat', () => {
   const fetchChatList = async () => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<ChatListItem[]>(`/api/chats`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -69,7 +69,7 @@ export const useChatStore = defineStore('chat', () => {
 
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<ChatMessageResonse>(`/api/chats/${chatId}/messages`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -90,7 +90,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!chatId || messagesCache.value.has(chatId)) return;
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<ChatMessageResonse>(`/api/chats/${chatId}/messages`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -131,7 +131,7 @@ export const useChatStore = defineStore('chat', () => {
     const offset = currentMessages.length;
 
     const response = await $fetch<ChatMessageResonse>(`/api/chats/${chatId}/messages`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -156,7 +156,7 @@ export const useChatStore = defineStore('chat', () => {
       await $fetch(`/api/chats/${chatId}/read`, {
         method: 'POST',
         credentials: 'include',
-        baseURL: config.public.API_URL,
+        baseURL: apiBaseUrl,
         headers,
       });
       const chat = chatList.value.find((c) => c.chatId === chatId);
@@ -171,7 +171,7 @@ export const useChatStore = defineStore('chat', () => {
   const createChat = async (memberId: number) => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<Chat>(`/api/chats`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'POST',
       credentials: 'include',
       headers,
@@ -183,7 +183,7 @@ export const useChatStore = defineStore('chat', () => {
   const fetchChatMembers = async (chatId: string) => {
     const headers = useRequestHeaders(['cookie']);
     return $fetch<{ id: number; first_name: string; last_name: string; photo_url: string }[]>(`/api/chats/${chatId}/members`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -193,7 +193,7 @@ export const useChatStore = defineStore('chat', () => {
   const createGroupChat = async (name: string, memberIds: number[]) => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<Chat>(`/api/chats/group`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'POST',
       credentials: 'include',
       headers,
@@ -205,7 +205,7 @@ export const useChatStore = defineStore('chat', () => {
   const addChatMember = async (chatId: string, userId: number) => {
     const headers = useRequestHeaders(['cookie']);
     await $fetch(`/api/chats/${chatId}/members`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'POST',
       credentials: 'include',
       headers,
@@ -216,7 +216,7 @@ export const useChatStore = defineStore('chat', () => {
   const removeChatMember = async (chatId: string, userId: number) => {
     const headers = useRequestHeaders(['cookie']);
     await $fetch(`/api/chats/${chatId}/members/${userId}`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'DELETE',
       credentials: 'include',
       headers,
@@ -237,7 +237,7 @@ export const useChatStore = defineStore('chat', () => {
   const deleteChat = async (chatId: string) => {
     const headers = useRequestHeaders(['cookie']);
     await $fetch(`/api/chats/${chatId}`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'DELETE',
       credentials: 'include',
       headers,
@@ -253,7 +253,7 @@ export const useChatStore = defineStore('chat', () => {
   ) => {
     const headers = useRequestHeaders(['cookie']);
     const response = await $fetch<ChatMessage>(`/api/chats/${chatId}/messages`, {
-      baseURL: config.public.API_URL,
+      baseURL: apiBaseUrl,
       method: 'POST',
       credentials: 'include',
       headers,
