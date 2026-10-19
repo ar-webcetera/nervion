@@ -16,6 +16,8 @@ export interface PostboxSendParams {
   inReplyTo?: string | null;
   references?: string | null;
   attachments?: Attachment[];
+  messageId?: string;
+  headers?: Record<string, string>;
 }
 
 export interface PostboxSendResult {
@@ -72,7 +74,7 @@ export class PostboxService {
 
   async send(params: PostboxSendParams): Promise<PostboxSendResult> {
     const client = this.getClient();
-    const messageId = this.generateMessageId();
+    const messageId = (params.messageId || this.generateMessageId()).replace(/^<|>$/g, '').trim();
     const configurationSetName = this.configService.get<string>('POSTBOX_CONFIGURATION_SET')?.trim() || undefined;
 
     const composer = new MailComposer({
@@ -85,6 +87,7 @@ export class PostboxService {
       inReplyTo: params.inReplyTo ? `<${params.inReplyTo}>` : undefined,
       references: params.references || undefined,
       messageId: `<${messageId}>`,
+      headers: params.headers,
       attachments: params.attachments,
     });
 

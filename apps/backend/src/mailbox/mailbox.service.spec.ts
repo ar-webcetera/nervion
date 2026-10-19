@@ -430,8 +430,21 @@ describe('MailboxService', () => {
 
   describe('storeNotificationEmail', () => {
     it('должен сразу сохранять письмо уведомления во встроенном ящике без второго push', async () => {
+      const recipientAccount = {
+        id: 1,
+        address: 'user@webcetera.test',
+        user_id: 10,
+        allowedUsers: [{ id: 10 }],
+      };
+      const senderAccount = {
+        id: 2,
+        address: 'notifications@webcetera.test',
+        display_name: 'Nervion',
+        type: 'service',
+        is_active: true,
+      };
+      mockAccountsRepository.findOne.mockResolvedValueOnce(recipientAccount).mockResolvedValueOnce(senderAccount);
       mockMessagesRepository.findOne.mockResolvedValue(null);
-      mockConfigService.get.mockImplementation((key: string) => (key === 'MAIL_USER' ? 'robot@webcetera.test' : undefined));
       notificationsQueryBuilder.getOne.mockResolvedValue({
         id: 15,
         is_read: false,
@@ -450,8 +463,8 @@ describe('MailboxService', () => {
       expect(mockMessagesRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({
           notification_id: 15,
-          message_id: '<nervion-notification-15@nervion.local>',
-          from_address: 'robot@webcetera.test',
+          message_id: 'nervion-notification-15@nervion.local',
+          from_address: 'notifications@webcetera.test',
           subject: 'Скоро встреча',
         }),
       );
@@ -474,6 +487,40 @@ describe('MailboxService', () => {
     });
   });
 
+  describe('sendNotificationEmail', () => {
+    it('должен отправлять уведомление через служебный ящик и Postbox', async () => {
+      mockAccountsRepository.findOne.mockResolvedValue({
+        id: 2,
+        address: 'notifications@webcetera.test',
+        display_name: 'Nervion',
+        type: 'service',
+        is_active: true,
+      });
+      mockPostboxService.send.mockResolvedValue({
+        messageId: 'nervion-notification-15@nervion.local',
+        providerMessageId: 'provider-15',
+      });
+
+      await service.sendNotificationEmail({
+        notificationId: 15,
+        recipientEmail: 'user@webcetera.test',
+        subject: 'Скоро встреча',
+        text: 'Через 15 минут',
+        html: '<p>Через 15 минут</p>',
+      });
+
+      expect(mockPostboxService.send).toHaveBeenCalledWith({
+        from: { address: 'notifications@webcetera.test', name: 'Nervion' },
+        to: ['user@webcetera.test'],
+        subject: 'Скоро встреча',
+        text: 'Через 15 минут',
+        html: '<p>Через 15 минут</p>',
+        messageId: 'nervion-notification-15@nervion.local',
+        headers: { 'X-Nervion-Notification-Id': '15' },
+      });
+    });
+  });
+
   describe('moveNotificationThreadsToTrash', () => {
     it('должен помечать inbound письма прочитанными и переносить треды в корзину', async () => {
       messagesQueryBuilder.getRawMany.mockResolvedValue([{ thread_id: 3 }, { thread_id: '4' }]);
@@ -481,6 +528,9 @@ describe('MailboxService', () => {
       const threadIds = await service.moveNotificationThreadsToTrash(10, [15, 16]);
 
       expect(threadIds).toEqual([3, 4]);
+      expect(messagesQueryBuilder.andWhere).toHaveBeenCalledWith('message.direction = :direction', {
+        direction: MAIL_DIRECTIONS.inbound,
+      });
       expect(mockMessagesRepository.update).toHaveBeenCalledWith(
         {
           thread_id: In([3, 4]),

@@ -8,7 +8,6 @@ import { CreateNotificationDto } from './dto/create-notification.dto';
 import { UpdateNotificationDto } from './dto/update-notification.dto';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { PushService } from '../push/push.service';
-import { MailService } from '../mail/mail.service';
 import { MailboxService } from '../mailbox/mailbox.service';
 import { ReadNotificationContextDto } from './dto/read-notification-context.dto';
 
@@ -54,10 +53,8 @@ describe('NotificationsService', () => {
   const mockPushService = {
     sendToUser: jest.fn<Promise<void>, [number, object]>().mockResolvedValue(),
   };
-  const mockMailService = {
-    sendMail: jest.fn<Promise<void>, [string, string, string, { notificationId: number }]>().mockResolvedValue(),
-  };
   const mockMailboxService = {
+    sendNotificationEmail: jest.fn<Promise<void>, [object]>().mockResolvedValue(),
     storeNotificationEmail: jest.fn<Promise<number | null>, [object]>().mockResolvedValue(9),
     moveNotificationThreadsToTrash: jest.fn<Promise<number[]>, [number, number[]]>().mockResolvedValue([]),
   };
@@ -71,7 +68,6 @@ describe('NotificationsService', () => {
         { provide: getRepositoryToken(Users), useValue: mockUsersRepository },
         { provide: WebsocketGateway, useValue: mockWebsocketGateway },
         { provide: PushService, useValue: mockPushService },
-        { provide: MailService, useValue: mockMailService },
         { provide: MailboxService, useValue: mockMailboxService },
       ],
     }).compile();
@@ -79,7 +75,7 @@ describe('NotificationsService', () => {
     service = module.get<NotificationsService>(NotificationsService);
     jest.clearAllMocks();
     mockPushService.sendToUser.mockResolvedValue();
-    mockMailService.sendMail.mockResolvedValue();
+    mockMailboxService.sendNotificationEmail.mockResolvedValue();
     mockMailboxService.storeNotificationEmail.mockResolvedValue(9);
     mockMailboxService.moveNotificationThreadsToTrash.mockResolvedValue([]);
     mockNotificationsRepository.createQueryBuilder.mockReturnValue(updateQueryBuilder);
@@ -139,7 +135,7 @@ describe('NotificationsService', () => {
   });
 
   describe('createWithEmail', () => {
-    it('должен отправлять email с X-Nervion-Notification-Id через notificationId', async () => {
+    it('должен отправлять email через встроенный почтовый сервис', async () => {
       const recipient = { id: 4, email: 'user@webcetera.test' } as Users;
       const saved = { id: 42, is_read: false, name: 'Вам назначена задача' } as Notifications;
 
@@ -156,8 +152,12 @@ describe('NotificationsService', () => {
         '<p>HTML</p>',
       );
 
-      expect(mockMailService.sendMail).toHaveBeenCalledWith('user@webcetera.test', 'Вам назначена задача', '<p>HTML</p>', {
+      expect(mockMailboxService.sendNotificationEmail).toHaveBeenCalledWith({
         notificationId: 42,
+        recipientEmail: 'user@webcetera.test',
+        subject: 'Вам назначена задача',
+        text: 'Текст',
+        html: '<p>HTML</p>',
       });
       expect(mockMailboxService.storeNotificationEmail).toHaveBeenCalledWith({
         notificationId: 42,
@@ -185,7 +185,7 @@ describe('NotificationsService', () => {
         '<p>HTML</p>',
       );
 
-      expect(mockMailService.sendMail).not.toHaveBeenCalled();
+      expect(mockMailboxService.sendNotificationEmail).not.toHaveBeenCalled();
       expect(mockMailboxService.storeNotificationEmail).not.toHaveBeenCalled();
     });
   });

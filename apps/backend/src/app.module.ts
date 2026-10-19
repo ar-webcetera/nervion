@@ -16,7 +16,6 @@ import { FilesModule } from './files/files.module';
 import { CommentsModule } from './comments/comments.module';
 import { WikiPagesModule } from './wiki-pages/wiki-pages.module';
 import { NotificationsModule } from './notifications/notifications.module';
-import { MailModule } from './mail/mail.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { ChatsModule } from './chats/chats.module';
 import { AllocationsModule } from './allocations/allocations.module';
@@ -69,7 +68,6 @@ import { CalendarModule } from './calendar/calendar.module';
     CommentsModule,
     WikiPagesModule,
     AuditLogsModule,
-    MailModule,
     NotificationsModule,
     WebsocketModule,
     ChatsModule,

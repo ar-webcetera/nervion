@@ -8,6 +8,7 @@ import {
   Logger,
   NotFoundException,
   PayloadTooLargeException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -387,7 +388,8 @@ export class MailboxService {
     });
     if (existing) return existing.id;
 
-    const senderAddress = this.configService.get<string>('MAIL_USER')?.trim() || 'notifications@nervion.local';
+    const senderAccount = await this.findTaskAliasAccount();
+    const senderAddress = senderAccount?.address ?? 'notifications@nervion.local';
     const message = await this.ingestInbound(
       account,
       {
@@ -409,6 +411,25 @@ export class MailboxService {
     );
 
     return message?.id ?? null;
+  }
+
+  async sendNotificationEmail(data: NotificationEmailData): Promise<void> {
+    const senderAccount = await this.findTaskAliasAccount();
+    if (!senderAccount) {
+      throw new ServiceUnavailableException('Не настроен служебный почтовый ящик Nervion');
+    }
+
+    await this.postboxService.send({
+      from: { address: senderAccount.address, name: senderAccount.display_name ?? 'Nervion' },
+      to: [data.recipientEmail],
+      subject: data.subject,
+      text: data.text,
+      html: data.html,
+      messageId: buildNotificationMessageId(data.notificationId),
+      headers: {
+        'X-Nervion-Notification-Id': String(data.notificationId),
+      },
+    });
   }
 
   private senderDomain(address: string): string | null {
@@ -445,6 +466,7 @@ export class MailboxService {
       .innerJoin(Notifications, 'notification', 'notification.id = message.notification_id')
       .innerJoin('notification.recipient', 'recipient')
       .where('message.notification_id IN (:...notificationIds)', { notificationIds })
+      .andWhere('message.direction = :direction', { direction: MAIL_DIRECTIONS.inbound })
       .andWhere('recipient.id = :userId', { userId })
       .getRawMany<{ thread_id: number | string }>();
     const threadIds = rows.map((row) => Number(row.thread_id)).filter((id) => Number.isInteger(id) && id > 0);

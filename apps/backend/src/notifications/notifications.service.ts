@@ -9,7 +9,6 @@ import { Notifications } from './entities/notification.entity';
 import { Users } from '../users/entities/users.entity';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { PushService } from '../push/push.service';
-import { MailService } from '../mail/mail.service';
 import { MailboxService } from '../mailbox/mailbox.service';
 
 @Injectable()
@@ -23,7 +22,6 @@ export class NotificationsService {
     private readonly usersRepository: Repository<Users>,
     private readonly websocketGateway: WebsocketGateway,
     private readonly pushService: PushService,
-    private readonly mailService: MailService,
     private readonly mailboxService: MailboxService,
   ) {}
   async create(createNotificationDto: CreateNotificationDto) {
@@ -65,8 +63,12 @@ export class NotificationsService {
     const text = createNotificationDto.message ?? '';
 
     try {
-      await this.mailService.sendMail(recipientEmail, subject, html, {
+      await this.mailboxService.sendNotificationEmail({
         notificationId: notification.id,
+        recipientEmail,
+        subject,
+        text,
+        html,
       });
     } catch (error) {
       this.logger.error(`Не удалось отправить email для уведомления ${notification.id}: ${String(error)}`);

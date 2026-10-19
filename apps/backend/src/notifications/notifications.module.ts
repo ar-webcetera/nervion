@@ -7,11 +7,10 @@ import { Notifications } from './entities/notification.entity';
 import { NotificationsGateway } from './notifications.gateway';
 import { WebsocketModule } from '../websocket/websocket.module';
 import { PushModule } from '../push/push.module';
-import { MailModule } from '../mail/mail.module';
 import { MailboxCoreModule } from '../mailbox/mailbox-core.module';
 
 @Module({
-  imports: [WebsocketModule, TypeOrmModule.forFeature([Notifications, Users]), PushModule, MailModule, MailboxCoreModule],
+  imports: [WebsocketModule, TypeOrmModule.forFeature([Notifications, Users]), PushModule, MailboxCoreModule],
   controllers: [NotificationsController],
   providers: [NotificationsService, NotificationsGateway],
   exports: [NotificationsService],
