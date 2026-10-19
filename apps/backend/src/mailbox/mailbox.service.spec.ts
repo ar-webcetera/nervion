@@ -428,6 +428,52 @@ describe('MailboxService', () => {
     });
   });
 
+  describe('storeNotificationEmail', () => {
+    it('должен сразу сохранять письмо уведомления во встроенном ящике без второго push', async () => {
+      mockMessagesRepository.findOne.mockResolvedValue(null);
+      mockConfigService.get.mockImplementation((key: string) => (key === 'MAIL_USER' ? 'robot@webcetera.test' : undefined));
+      notificationsQueryBuilder.getOne.mockResolvedValue({
+        id: 15,
+        is_read: false,
+        recipient: { id: 10, email: 'user@webcetera.test' },
+      });
+
+      const messageId = await service.storeNotificationEmail({
+        notificationId: 15,
+        recipientEmail: 'user@webcetera.test',
+        subject: 'Скоро встреча',
+        text: 'Через 15 минут',
+        html: '<p>Через 15 минут</p>',
+      });
+
+      expect(messageId).toBe(9);
+      expect(mockMessagesRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          notification_id: 15,
+          message_id: '<nervion-notification-15@nervion.local>',
+          from_address: 'robot@webcetera.test',
+          subject: 'Скоро встреча',
+        }),
+      );
+      expect(mockPushService.sendToUser).not.toHaveBeenCalled();
+    });
+
+    it('не должен создавать дубликат уже сохранённого письма уведомления', async () => {
+      mockMessagesRepository.findOne.mockResolvedValue({ id: 27 });
+
+      const messageId = await service.storeNotificationEmail({
+        notificationId: 15,
+        recipientEmail: 'user@webcetera.test',
+        subject: 'Скоро встреча',
+        text: 'Через 15 минут',
+        html: '<p>Через 15 минут</p>',
+      });
+
+      expect(messageId).toBe(27);
+      expect(mockMessagesRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
   describe('moveNotificationThreadsToTrash', () => {
     it('должен помечать inbound письма прочитанными и переносить треды в корзину', async () => {
       messagesQueryBuilder.getRawMany.mockResolvedValue([{ thread_id: 3 }, { thread_id: '4' }]);

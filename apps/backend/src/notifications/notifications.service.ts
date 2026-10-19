@@ -45,6 +45,7 @@ export class NotificationsService {
     if (createNotificationDto.link) data.link = createNotificationDto.link;
     if (createNotificationDto.message) data.message = createNotificationDto.message;
     const newNotification = await this.notificationsRepository.save(data);
+    newNotification.recipient = recipient;
     this.websocketGateway.sendNotificationAdded(newNotification, recipient.id);
     void this.pushService.sendToUser(createNotificationDto.recipient_id, {
       title: createNotificationDto.name,
@@ -60,13 +61,27 @@ export class NotificationsService {
     const recipientEmail = notification.recipient?.email;
 
     if (!recipientEmail) return notification;
+    const subject = createNotificationDto.name;
+    const text = createNotificationDto.message ?? '';
 
     try {
-      await this.mailService.sendMail(recipientEmail, notification.name, html, {
+      await this.mailService.sendMail(recipientEmail, subject, html, {
         notificationId: notification.id,
       });
     } catch (error) {
       this.logger.error(`Не удалось отправить email для уведомления ${notification.id}: ${String(error)}`);
+    }
+
+    try {
+      await this.mailboxService.storeNotificationEmail({
+        notificationId: notification.id,
+        recipientEmail,
+        subject,
+        text,
+        html,
+      });
+    } catch (error) {
+      this.logger.error(`Не удалось сохранить письмо уведомления ${notification.id} во встроенной почте: ${String(error)}`);
     }
 
     return notification;
@@ -123,9 +138,7 @@ export class NotificationsService {
     const unreadNotifications = await this.notificationsRepository.find({
       where: { recipient: { id: userId }, is_read: false },
     });
-    const matchedNotifications = unreadNotifications.filter((notification) =>
-      this.matchesContext(notification.link, dto.task_id, dto.comment_id),
-    );
+    const matchedNotifications = unreadNotifications.filter((notification) => this.matchesContext(notification.link, dto));
 
     if (matchedNotifications.length === 0) {
       return { notification_ids: [] };
@@ -164,14 +177,15 @@ export class NotificationsService {
     return updatedNotification;
   }
 
-  private matchesContext(link: string, taskId: number, commentId?: number): boolean {
+  private matchesContext(link: string, dto: ReadNotificationContextDto): boolean {
     const query = link.includes('?') ? link.slice(link.indexOf('?') + 1) : link;
     const params = new URLSearchParams(query);
 
-    if (params.get('task-id') !== String(taskId)) return false;
+    if (dto.event_id !== undefined) return params.get('event-id') === String(dto.event_id);
+    if (dto.task_id === undefined || params.get('task-id') !== String(dto.task_id)) return false;
 
     const linkedCommentId = params.get('comment-id');
-    return commentId === undefined ? linkedCommentId === null : linkedCommentId === String(commentId);
+    return dto.comment_id === undefined ? linkedCommentId === null : linkedCommentId === String(dto.comment_id);
   }
 
   async removeForUser(id: number, userId: number): Promise<DeleteResult> {

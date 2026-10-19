@@ -56,7 +56,7 @@ export class NotificationsController {
   }
 
   @Patch('/read-context')
-  @ApiOperation({ summary: 'Отметить уведомления прочитанными по открытой задаче или просмотренному комментарию' })
+  @ApiOperation({ summary: 'Отметить уведомления прочитанными по открытой задаче, комментарию или встрече' })
   @ApiResponse({ status: 200, description: 'Подходящие уведомления отмечены прочитанными' })
   @ApiResponse({ status: 401, description: 'Пользователь не авторизован' })
   markContextAsRead(@Req() req: RequestWithCookies, @Body() dto: ReadNotificationContextDto) {

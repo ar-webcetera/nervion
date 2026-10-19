@@ -46,6 +46,7 @@ interface DragPreview {
 }
 
 const calendarStore = useCalendarStore();
+const notificationStore = useNotificationStore();
 const userStore = useUserStore();
 const route = useRoute();
 const router = useRouter();
@@ -308,6 +309,9 @@ const showEventDetails = (event: CalendarEvent) => {
   initialEnd.value = null;
   editorOpen.value = false;
   detailsOpen.value = true;
+  void notificationStore.markContextAsRead({ event_id: event.id }).catch((error) => {
+    console.error('Не удалось отметить уведомления встречи прочитанными:', error);
+  });
 };
 
 const getRouteEventId = (value: string | (string | null)[] | null | undefined): number | null => {
@@ -349,6 +353,9 @@ const openEventEditor = (event: CalendarEvent) => {
   initialEnd.value = null;
   detailsOpen.value = false;
   editorOpen.value = true;
+  void notificationStore.markContextAsRead({ event_id: event.id }).catch((error) => {
+    console.error('Не удалось отметить уведомления встречи прочитанными:', error);
+  });
   if (getRouteEventId(route.query['event-id']) !== event.id) {
     void router.replace({ query: { ...route.query, 'event-id': String(event.id) } });
   }

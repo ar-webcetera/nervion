@@ -24,3 +24,11 @@ export interface InboundMailData {
   authResults: MailAuthResults | null;
   attachments: InboundAttachment[];
 }
+
+export interface NotificationEmailData {
+  notificationId: number;
+  recipientEmail: string;
+  subject: string;
+  text: string;
+  html: string;
+}

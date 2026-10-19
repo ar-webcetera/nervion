@@ -21,6 +21,7 @@ import {
 import { Brackets, ILike, In, IsNull, Repository } from 'typeorm';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { Notifications } from '../notifications/entities/notification.entity';
+import { buildNotificationMessageId } from '../mail/notification-mail';
 import { PushService } from '../push/push.service';
 import { StorageService } from '../storage/storage.service';
 import { CreateMailAccountDto } from './dto/create-mail-account.dto';
@@ -36,7 +37,7 @@ import { MailSpamRules } from './entities/mail-spam-rule.entity';
 import { MailMessages, MAIL_DIRECTIONS, MAIL_MESSAGE_STATUSES } from './entities/mail-message.entity';
 import { MailThreads, MAIL_FOLDERS } from './entities/mail-thread.entity';
 import { Users } from '../users/entities/users.entity';
-import { InboundMailData } from './mailbox.types';
+import { InboundMailData, NotificationEmailData } from './mailbox.types';
 import { buildReferencesHeader, canAccessAccount, extractReferencedIds, parseTaskIdFromAddress } from './mailbox.utils';
 import { MailDeliveryService } from './mail-delivery.service';
 import { MailSpamService } from './mail-spam.service';
@@ -293,7 +294,7 @@ export class MailboxService {
     return account;
   }
 
-  async ingestInbound(account: MailAccounts, data: InboundMailData): Promise<MailMessages | null> {
+  async ingestInbound(account: MailAccounts, data: InboundMailData, notifyUser = true): Promise<MailMessages | null> {
     if (data.messageId) {
       const duplicate = await this.messagesRepository
         .createQueryBuilder('message')
@@ -370,11 +371,44 @@ export class MailboxService {
     }
     await this.threadsRepository.save(thread);
 
-    if (!spam.isSpam && !notificationAlreadyRead) {
+    if (notifyUser && !spam.isSpam && !notificationAlreadyRead) {
       await this.notifyInboundMessage(account.id, thread, message.id, data);
     }
 
     return message;
+  }
+
+  async storeNotificationEmail(data: NotificationEmailData): Promise<number | null> {
+    const account = await this.findAccountByAddress(data.recipientEmail);
+    if (!account) return null;
+
+    const existing = await this.messagesRepository.findOne({
+      where: { notification_id: data.notificationId, thread: { account_id: account.id } },
+    });
+    if (existing) return existing.id;
+
+    const senderAddress = this.configService.get<string>('MAIL_USER')?.trim() || 'notifications@nervion.local';
+    const message = await this.ingestInbound(
+      account,
+      {
+        messageId: buildNotificationMessageId(data.notificationId),
+        notificationId: data.notificationId,
+        inReplyTo: null,
+        referencesHeader: null,
+        from: { address: senderAddress, name: 'Nervion' },
+        to: [{ address: data.recipientEmail }],
+        cc: [],
+        subject: data.subject,
+        text: data.text,
+        html: data.html,
+        rawS3Key: null,
+        authResults: null,
+        attachments: [],
+      },
+      false,
+    );
+
+    return message?.id ?? null;
   }
 
   private senderDomain(address: string): string | null {
