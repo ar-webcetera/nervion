@@ -18,6 +18,7 @@ export interface CalendarEvent {
   id: number;
   title: string;
   notes: string | null;
+  meeting_url: string | null;
   start_at: string;
   end_at: string;
   timezone: string;
@@ -32,6 +33,7 @@ export interface CalendarEvent {
 export interface CreateCalendarEventRequest {
   title: string;
   notes?: string | null;
+  meeting_url?: string | null;
   start_at: string;
   end_at: string;
   timezone: string;

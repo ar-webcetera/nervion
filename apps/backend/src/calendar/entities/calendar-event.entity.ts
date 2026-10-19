@@ -23,6 +23,9 @@ export class CalendarEventEntity {
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
+  @Column({ type: 'varchar', length: 2000, nullable: true })
+  meeting_url: string | null;
+
   @Column({ type: 'timestamptz' })
   start_at: Date;
 

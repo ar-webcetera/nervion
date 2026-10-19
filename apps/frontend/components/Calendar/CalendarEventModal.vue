@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { CalendarEvent, CalendarUser, CreateCalendarEventRequest } from '@tracker/contracts';
 import { format } from 'date-fns';
-import { Bell, Mail, Trash2 } from '@lucide/vue';
+import { Bell, Link2, Mail, Trash2 } from '@lucide/vue';
 import type { SelectOption } from '~/types/select';
 
 const props = defineProps<{
@@ -30,7 +30,9 @@ const reminderOptions: SelectOption[] = [
 ];
 
 const timeOptions: SelectOption[] = Array.from({ length: 96 }, (_, index) => {
-  const hours = Math.floor(index / 4).toString().padStart(2, '0');
+  const hours = Math.floor(index / 4)
+    .toString()
+    .padStart(2, '0');
   const minutes = ((index % 4) * 15).toString().padStart(2, '0');
   const value = `${hours}:${minutes}`;
   return { value, label: value };
@@ -39,6 +41,7 @@ const timeOptions: SelectOption[] = Array.from({ length: 96 }, (_, index) => {
 const form = reactive({
   title: '',
   notes: '',
+  meetingUrl: '',
   date: null as Date | string | null,
   startTime: '10:00',
   endTime: '11:00',
@@ -73,10 +76,11 @@ const reminderValue = computed<string | number | null>({
 const toTime = (date: Date) => format(date, 'HH:mm');
 
 const resetForm = () => {
-  const start = props.event ? new Date(props.event.start_at) : props.initialStart ?? new Date();
-  const end = props.event ? new Date(props.event.end_at) : props.initialEnd ?? new Date(start.getTime() + 60 * 60 * 1000);
+  const start = props.event ? new Date(props.event.start_at) : (props.initialStart ?? new Date());
+  const end = props.event ? new Date(props.event.end_at) : (props.initialEnd ?? new Date(start.getTime() + 60 * 60 * 1000));
   form.title = props.event?.title ?? '';
   form.notes = props.event?.notes ?? '';
+  form.meetingUrl = props.event?.meeting_url ?? '';
   form.date = start;
   form.startTime = toTime(start);
   form.endTime = toTime(end);
@@ -118,6 +122,15 @@ const submit = async () => {
   const end = new Date(`${date ?? ''}T${form.endTime}:00`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return showError('Укажите дату и время встречи.');
   if (end <= start) return showError('Время окончания должно быть позже времени начала.');
+  const meetingUrl = form.meetingUrl.trim();
+  if (meetingUrl) {
+    try {
+      const url = new URL(meetingUrl);
+      if (!['http:', 'https:'].includes(url.protocol)) return showError('Ссылка должна начинаться с http:// или https://.');
+    } catch {
+      return showError('Укажите корректную ссылку на встречу.');
+    }
+  }
 
   errorMessage.value = '';
   saving.value = true;
@@ -125,6 +138,7 @@ const submit = async () => {
   emit('save', {
     title,
     notes: form.notes.trim() || null,
+    meeting_url: meetingUrl || null,
     start_at: start.toISOString(),
     end_at: end.toISOString(),
     timezone,
@@ -143,11 +157,7 @@ defineExpose({ setSaving, setError });
 </script>
 
 <template>
-  <BaseModal
-    :model-value="modelValue"
-    @update:model-value="emit('update:modelValue', $event)"
-    @close="emit('close')"
-  >
+  <BaseModal :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" @close="emit('close')">
     <form class="event-form" @submit.prevent="submit">
       <div class="event-form__heading">
         <div>
@@ -202,6 +212,22 @@ defineExpose({ setSaving, setError });
         </div>
       </div>
 
+      <label class="event-form__field">
+        <span>Ссылка на встречу</span>
+        <span class="event-form__url-input">
+          <Link2 :size="18" :stroke-width="1.75" aria-hidden="true" />
+          <input
+            v-model="form.meetingUrl"
+            name="meeting-url"
+            type="url"
+            maxlength="2000"
+            placeholder="https://meet.google.com/..."
+            autocomplete="url"
+            :disabled="!editable || saving"
+          />
+        </span>
+      </label>
+
       <fieldset class="event-form__participants" :disabled="!editable || saving">
         <legend>Участники</legend>
         <div class="event-form__participant-list">
@@ -249,13 +275,7 @@ defineExpose({ setSaving, setError });
       </label>
 
       <div class="event-form__actions">
-        <button
-          v-if="isEditing && editable"
-          class="event-form__delete"
-          type="button"
-          :disabled="saving"
-          @click="emit('delete')"
-        >
+        <button v-if="isEditing && editable" class="event-form__delete" type="button" :disabled="saving" @click="emit('delete')">
           <Trash2 :size="17" :stroke-width="1.75" aria-hidden="true" />
           Удалить
         </button>
@@ -358,6 +378,25 @@ defineExpose({ setSaving, setError });
   &__date-picker,
   &__select {
     width: 100%;
+  }
+
+  &__url-input {
+    position: relative;
+    display: block;
+    color: var(--light-text-backgroung-primary-50);
+
+    svg {
+      position: absolute;
+      z-index: 1;
+      top: 50%;
+      left: 12px;
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+
+    input {
+      padding-left: 40px;
+    }
   }
 
   &__date-picker {

@@ -7,6 +7,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUrl,
   Length,
   Max,
   MaxLength,
@@ -24,6 +25,12 @@ export class CreateCalendarEventDto {
   @IsString()
   @MaxLength(10000)
   notes?: string | null;
+
+  @ApiProperty({ required: false, nullable: true, example: 'https://meet.google.com/abc-defg-hij' })
+  @IsOptional()
+  @IsUrl({ protocols: ['http', 'https'], require_protocol: true, require_tld: false })
+  @MaxLength(2000)
+  meeting_url?: string | null;
 
   @ApiProperty({ example: '2026-10-19T07:00:00.000Z' })
   @IsDateString()

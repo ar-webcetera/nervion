@@ -94,6 +94,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       const event = manager.create(CalendarEventEntity, {
         title: input.title,
         notes: input.notes,
+        meeting_url: input.meetingUrl,
         start_at: input.startAt,
         end_at: input.endAt,
         timezone: input.timezone,
@@ -144,6 +145,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     const input = this.validateInput({
       title: dto.title ?? existing.title,
       notes: dto.notes === undefined ? existing.notes : dto.notes,
+      meeting_url: dto.meeting_url === undefined ? existing.meeting_url : dto.meeting_url,
       start_at: dto.start_at ?? existing.start_at.toISOString(),
       end_at: dto.end_at ?? existing.end_at.toISOString(),
       timezone: dto.timezone ?? existing.timezone,
@@ -161,6 +163,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       await manager.update(CalendarEventEntity, id, {
         title: input.title,
         notes: input.notes,
+        meeting_url: input.meetingUrl,
         start_at: input.startAt,
         end_at: input.endAt,
         timezone: input.timezone,
@@ -257,6 +260,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     return {
       title,
       notes: dto.notes?.trim() || null,
+      meetingUrl: dto.meeting_url?.trim() || null,
       startAt,
       endAt,
       timezone: dto.timezone,
@@ -299,6 +303,7 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
       id: event.id,
       title: event.title,
       notes: event.notes,
+      meeting_url: event.meeting_url,
       start_at: event.start_at.toISOString(),
       end_at: event.end_at.toISOString(),
       timezone: event.timezone,

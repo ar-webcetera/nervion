@@ -22,6 +22,7 @@ describe('CalendarService', () => {
       id: 17,
       title: 'Планерка',
       notes: null,
+      meeting_url: 'https://meet.google.com/abc-defg-hij',
       start_at: new Date('2026-10-20T08:00:00.000Z'),
       end_at: new Date('2026-10-20T09:00:00.000Z'),
       timezone: 'Europe/Samara',
@@ -70,6 +71,7 @@ describe('CalendarService', () => {
       {
         title: 'Планерка',
         notes: null,
+        meeting_url: 'https://meet.google.com/abc-defg-hij',
         start_at: '2026-10-20T08:00:00.000Z',
         end_at: '2026-10-20T09:00:00.000Z',
         timezone: 'Europe/Samara',
@@ -77,6 +79,11 @@ describe('CalendarService', () => {
         participant_ids: [participant.id],
       },
       creator as never,
+    );
+
+    expect(manager.create).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({ meeting_url: 'https://meet.google.com/abc-defg-hij' }),
     );
 
     expect(manager.insert).toHaveBeenCalledWith(

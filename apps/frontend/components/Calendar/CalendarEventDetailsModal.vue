@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { CalendarParticipationStatus, type CalendarEvent, type CalendarParticipant, type CalendarUser } from '@tracker/contracts';
-import { Bell, CalendarDays, Check, CircleCheck, Clock3, LoaderCircle } from '@lucide/vue';
+import { Bell, CalendarDays, Check, CircleCheck, Clock3, ExternalLink, Link2, LoaderCircle } from '@lucide/vue';
 
 const props = withDefaults(
   defineProps<{
@@ -98,6 +98,16 @@ const canAccept = computed(
           <div>
             <strong>{{ formatTime(event) }}</strong>
             <span>Время встречи</span>
+          </div>
+        </div>
+        <div v-if="event.meeting_url" class="event-details__schedule-row">
+          <Link2 :size="19" :stroke-width="1.75" aria-hidden="true" />
+          <div>
+            <a class="event-details__meeting-link" :href="event.meeting_url" target="_blank" rel="noopener noreferrer">
+              Открыть встречу
+              <ExternalLink :size="15" :stroke-width="1.75" aria-hidden="true" />
+            </a>
+            <span>Ссылка на встречу</span>
           </div>
         </div>
       </div>
@@ -242,6 +252,25 @@ const canAccept = computed(
 
   &__date::first-letter {
     text-transform: uppercase;
+  }
+
+  &__meeting-link {
+    width: fit-content;
+    color: color-mix(in srgb, var(--primary) 72%, white);
+    text-decoration: none;
+    @include flex(rn, a-center);
+    gap: 6px;
+    @extend %text-m-medium;
+
+    &:hover {
+      text-decoration: underline;
+    }
+
+    &:focus-visible {
+      border-radius: 4px;
+      outline: 2px solid var(--primary);
+      outline-offset: 3px;
+    }
   }
 
   &__section {
