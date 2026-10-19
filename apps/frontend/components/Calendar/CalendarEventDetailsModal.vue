@@ -67,6 +67,10 @@ const attendees = computed(() => {
   });
 });
 const currentParticipation = computed(() => attendees.value.find((attendee) => attendee.user.id === props.currentUserId));
+const participantCountLabel = computed(() => {
+  const count = attendees.value.length;
+  return `${count} ${count === 1 ? 'участник' : count < 5 ? 'участника' : 'участников'}`;
+});
 const canAccept = computed(
   () =>
     currentParticipation.value &&
@@ -76,15 +80,15 @@ const canAccept = computed(
 </script>
 
 <template>
-  <BaseModal :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" @close="emit('close')">
+  <BaseBottomSheet
+    :model-value="modelValue"
+    :title="event?.title || 'Встреча'"
+    :subtitle="participantCountLabel"
+    size="compact"
+    @update:model-value="emit('update:modelValue', $event)"
+    @close="emit('close')"
+  >
     <article v-if="event" class="event-details">
-      <header class="event-details__header">
-        <h2>{{ event.title }}</h2>
-        <p>
-          {{ attendees.length }} {{ attendees.length === 1 ? 'участник' : attendees.length < 5 ? 'участника' : 'участников' }}
-        </p>
-      </header>
-
       <div class="event-details__schedule">
         <div class="event-details__schedule-row">
           <CalendarDays :size="19" :stroke-width="1.75" aria-hidden="true" />
@@ -172,43 +176,18 @@ const canAccept = computed(
         </button>
       </footer>
     </article>
-  </BaseModal>
+  </BaseBottomSheet>
 </template>
 
 <style scoped lang="scss">
-:deep(.base-modal__content) {
-  width: min(580px, calc(100vw - 32px));
-}
-
 .event-details {
   width: 100%;
   padding: 0 28px;
   color: var(--light-text-backgroung-primary);
   @include flex(cn);
 
-  &__header {
-    min-width: 0;
-    padding: 2px 0 22px;
-
-    p,
-    h2 {
-      margin: 0;
-    }
-
-    p {
-      margin-top: 6px;
-      color: var(--light-text-backgroung-primary-50);
-      @extend %text-s-regular;
-    }
-
-    h2 {
-      overflow-wrap: anywhere;
-      @extend %display-xs-medium;
-    }
-  }
-
   &__schedule {
-    padding: 20px 0 24px;
+    padding: 0 0 24px;
     border-bottom: 1px solid var(--light-text-backgroung-primary-10);
     @include flex(cn);
     gap: 16px;

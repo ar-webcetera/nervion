@@ -157,15 +157,14 @@ defineExpose({ setSaving, setError });
 </script>
 
 <template>
-  <BaseModal :model-value="modelValue" @update:model-value="emit('update:modelValue', $event)" @close="emit('close')">
+  <BaseBottomSheet
+    :model-value="modelValue"
+    :title="isEditing ? 'Изменить встречу' : 'Добавить встречу'"
+    :subtitle="isEditing ? event?.title : 'Укажите время, участников и напоминание'"
+    @update:model-value="emit('update:modelValue', $event)"
+    @close="emit('close')"
+  >
     <form class="event-form" @submit.prevent="submit">
-      <div class="event-form__heading">
-        <div>
-          <p class="event-form__eyebrow">{{ isEditing ? 'Встреча' : 'Новая встреча' }}</p>
-          <h2>{{ isEditing ? event?.title : 'Добавить встречу' }}</h2>
-        </div>
-      </div>
-
       <div v-if="errorMessage" ref="errorSummary" class="event-form__error" tabindex="-1" role="alert">
         {{ errorMessage }}
       </div>
@@ -288,39 +287,16 @@ defineExpose({ setSaving, setError });
         </button>
       </div>
     </form>
-  </BaseModal>
+  </BaseBottomSheet>
 </template>
 
 <style scoped lang="scss">
-:deep(.base-modal__content) {
-  width: min(668px, calc(100vw - 32px));
-}
-
 .event-form {
-  width: min(620px, calc(100vw - 64px));
+  width: 100%;
   padding: 0 24px;
   color: var(--light-text-backgroung-primary);
   @include flex(cn);
   gap: 18px;
-
-  &__heading {
-    @include flex(rn, a-center);
-    justify-content: space-between;
-    min-width: 0;
-
-    h2 {
-      margin: 2px 0 0;
-      max-width: 22ch;
-      overflow-wrap: anywhere;
-      @extend %display-xs-medium;
-    }
-  }
-
-  &__eyebrow {
-    margin: 0;
-    color: var(--light-text-backgroung-primary-50);
-    @extend %text-xs-medium;
-  }
 
   &__error {
     padding: 12px 14px;
@@ -595,7 +571,6 @@ defineExpose({ setSaving, setError });
   }
 
   @media (max-width: $screen-mobile-l) {
-    width: calc(100vw - 48px);
     padding: 0 16px;
     gap: 16px;
 
