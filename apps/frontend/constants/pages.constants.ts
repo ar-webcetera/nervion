@@ -16,6 +16,7 @@ export enum PAGE_NAMES {
   AUDIT_LOGS = 'audit-logs',
   HEALTHCHECKS = 'healthchecks',
   SCHEDULE = 'schedule',
+  CALENDAR = 'calendar',
   MAIL = 'mail',
   MAIL_ACCOUNTS = 'mail-accounts',
   GIT = 'git',

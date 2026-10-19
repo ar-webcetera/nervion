@@ -6,6 +6,7 @@ export * from "./notifications";
 export * from "./notifications/push.types";
 export * from "./mailbox";
 export * from "./billing";
+export * from "./calendar";
 
 export * from "./project-realtime-event.enum";
 export * from "./crm/crm.constants";

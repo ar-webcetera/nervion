@@ -55,9 +55,11 @@ const emit = defineEmits<{
 
 const isOpen = ref(false);
 const search = ref('');
+const root = ref<HTMLElement>();
 const searchInput = ref<HTMLInputElement>();
+const dropdown = ref<HTMLElement>();
 const selectedValues = computed(() =>
-  Array.isArray(props.modelValue) ? props.modelValue : props.modelValue ? [props.modelValue] : [],
+  Array.isArray(props.modelValue) ? props.modelValue : props.modelValue !== null ? [props.modelValue] : [],
 );
 
 const tempValue = ref<string | number | null>(null);
@@ -84,11 +86,17 @@ const filteredOptions = computed(() => {
 const toggleDropdown = async () => {
   if (!props.options.length && !props.actionLabel) return;
   if (!props.disabled) {
-    isOpen.value = !isOpen.value;
+    const nextIsOpen = !isOpen.value;
+    if (nextIsOpen) window.dispatchEvent(new CustomEvent('base-select:open', { detail: root.value }));
+    isOpen.value = nextIsOpen;
     search.value = '';
     if (isOpen.value && props.searchable) {
       await nextTick();
       searchInput.value?.focus();
+    }
+    if (isOpen.value && !props.searchable) {
+      await nextTick();
+      dropdown.value?.querySelector<HTMLElement>('.selected')?.scrollIntoView({ block: 'nearest' });
     }
   }
 };
@@ -103,6 +111,13 @@ const handleClickOutside = () => {
     closeDropdown();
   }
 };
+
+const handleOtherSelectOpen = (event: Event) => {
+  if (event instanceof CustomEvent && event.detail !== root.value) closeDropdown();
+};
+
+onMounted(() => window.addEventListener('base-select:open', handleOtherSelectOpen));
+onBeforeUnmount(() => window.removeEventListener('base-select:open', handleOtherSelectOpen));
 
 const selectOption = (option: SelectOption) => {
   tempValue.value = option.value;
@@ -130,7 +145,7 @@ const triggerAction = () => {
 </script>
 
 <template>
-  <div v-click-outside="handleClickOutside" class="home-select" :class="{ 'home-select_disabled': disabled }">
+  <div ref="root" v-click-outside="handleClickOutside" class="home-select" :class="{ 'home-select_disabled': disabled }">
     <div v-if="pending" class="home-select__input home-select_disabled">
       <span class="home-select__placeholder">
         {{ props.placeholder }}
@@ -165,6 +180,7 @@ const triggerAction = () => {
     </div>
     <div
       v-if="isOpen"
+      ref="dropdown"
       v-click-outside="closeDropdown"
       :class="['home-select__dropdown', { 'home-select__dropdown_large': large, 'home-select__dropdown_small': small }]"
     >

@@ -17,6 +17,7 @@ export const MENU_ITEMS: MenuItemMeta[] = [
   { key: 'wiki', label: 'Вики', page: PAGE_NAMES.wiki },
   { key: 'chat', label: 'Чаты', page: PAGE_NAMES.CHAT },
   { key: 'mail', label: 'Почта', page: PAGE_NAMES.MAIL, employeePlus: true },
+  { key: 'calendar', label: 'Календарь', page: PAGE_NAMES.CALENDAR, employeePlus: true },
   { key: 'planning', label: 'Планирование', page: PAGE_NAMES.planning, employeePlus: true },
   { key: 'schedule', label: 'График работы', page: PAGE_NAMES.SCHEDULE },
   { key: 'report', label: 'Отчёты', page: PAGE_NAMES.report, adminOnly: true },

@@ -80,3 +80,6 @@ apps/desktop-tracker/
 
 # вендорный prebuilt mediasoup-воркера (кладётся оператором вне git)
 apps/backend/vendor/mediasoup-worker
+
+# Local private backups
+/backup/

@@ -16,6 +16,7 @@ const mobileReadyRouteNames = new Set<string>([
   PAGE_NAMES.report,
   PAGE_NAMES.AUDIT_LOGS,
   PAGE_NAMES.MAIL_ACCOUNTS,
+  PAGE_NAMES.CALENDAR,
 ]);
 
 const closeSidebar = () => {

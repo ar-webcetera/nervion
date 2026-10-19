@@ -29,6 +29,7 @@ import { WorkSchedulesModule } from './work-schedules/work-schedules.module';
 import { VoiceModule } from './voice/voice.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { MailboxModule } from './mailbox/mailbox.module';
+import { CalendarModule } from './calendar/calendar.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { MailboxModule } from './mailbox/mailbox.module';
     WorkSchedulesModule,
     VoiceModule,
     MailboxModule,
+    CalendarModule,
   ],
 
   controllers: [],

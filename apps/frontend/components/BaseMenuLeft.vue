@@ -17,6 +17,7 @@ import {
   MessagesSquare,
   Mail,
   CalendarDays,
+  CalendarRange,
   CalendarClock,
   ChartNoAxesCombined,
   Users,
@@ -81,6 +82,7 @@ const mobileNavigationIcons: Record<string, Component> = {
   crm: Funnel,
   wiki: BookOpen,
   planning: CalendarDays,
+  calendar: CalendarRange,
   schedule: CalendarClock,
   report: ChartNoAxesCombined,
   'users-management': Users,
@@ -301,6 +303,16 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
           >
             <div v-if="mailInboxUnreadCount > 0" class="chat-unread-badge">{{ mailInboxUnreadCount }}</div>
             <Mail v-bind="mainNavigationIconProps" />
+          </NuxtLink>
+          <NuxtLink
+            v-if="(userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee) && isMenuVisible('calendar')"
+            aria-label="Календарь"
+            :data-tooltip="'Календарь'"
+            :to="{ name: PAGE_NAMES.CALENDAR }"
+            class="base-menu-left__item"
+            active-class="base-menu-left__item_active"
+          >
+            <CalendarRange v-bind="mainNavigationIconProps" />
           </NuxtLink>
           <NuxtLink
             v-if="(userStore.user?.role === ROLES.admin || userStore.user?.role === ROLES.employee) && isMenuVisible('planning')"
