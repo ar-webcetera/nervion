@@ -198,10 +198,7 @@ await useAsyncData('audit-logs-init', async () => {
 <template>
   <div class="audit-page">
     <header class="audit-page__header">
-      <div>
-        <h1>Журнал действий</h1>
-        <p class="audit-page__subtitle">Кто, что и когда изменял в системе.</p>
-      </div>
+      <h1>Журнал действий</h1>
       <div class="audit-page__counter">{{ total }} событий</div>
     </header>
     <hr />
@@ -418,12 +415,6 @@ await useAsyncData('audit-logs-init', async () => {
     @media (max-width: $screen-tablet) {
       flex-direction: column;
     }
-  }
-
-  &__subtitle {
-    margin: 6px 0 0;
-    color: var(--light-text-backgroung-primary-50);
-    @extend %text-s-regular;
   }
 
   &__counter {
