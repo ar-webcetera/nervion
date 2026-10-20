@@ -20,48 +20,6 @@ interface User {
 const chatStore = useChatStore();
 const fileStore = useFilesStore();
 const userStore = useUserStore();
-const projectStore = useProjectStore();
-const { $webSocket } = useNuxtApp();
-
-interface VoiceRoomState {
-  projectId: number;
-  participants: { userId: number; displayName: string; photoUrl: string | null }[];
-}
-
-const voiceRoomsMap = ref<Map<number, VoiceRoomState>>(new Map());
-const { activeProjectId: voiceActiveProjectId, participants: voiceParticipants } = useVoiceRoom();
-
-const voiceRooms = computed(() =>
-  projectStore.projects.map((p) => ({
-    projectId: p.id,
-    projectName: p.name,
-    participants: voiceRoomsMap.value.get(p.id)?.participants ?? [],
-  })),
-);
-
-const handleWsEvent = (payload: { type: string; data: VoiceRoomState }) => {
-  if (payload.type !== 'voice_room_updated') return;
-  const { projectId, participants } = payload.data;
-  if (participants.length === 0) {
-    voiceRoomsMap.value.delete(projectId);
-  } else {
-    voiceRoomsMap.value.set(projectId, { projectId, participants });
-  }
-};
-
-onMounted(() => {
-  if (voiceActiveProjectId.value !== null) {
-    voiceRoomsMap.value.set(voiceActiveProjectId.value, {
-      projectId: voiceActiveProjectId.value,
-      participants: [...voiceParticipants.value],
-    });
-  }
-  $webSocket.on('event', handleWsEvent);
-});
-
-onUnmounted(() => {
-  $webSocket.off('event', handleWsEvent);
-});
 const { onlineUserIds } = storeToRefs(userStore);
 const { chatList } = storeToRefs(chatStore);
 const { fetchChatMessages, readChatMessages, fetchChatList } = chatStore;
@@ -288,7 +246,6 @@ const vImgReveal = {
 
 <template>
   <div class="chat-sidebar">
-    <VoiceRoomSection :rooms="voiceRooms" />
     <div class="chat-list__header">
       <span>Чаты</span>
       <div class="chat-list__actions">
@@ -360,6 +317,8 @@ const vImgReveal = {
         </li>
       </ul>
     </div>
+
+    <VoiceRoomSection />
 
     <template v-if="chatMenu">
       <div class="chat-ctx__backdrop" @click="closeChatMenu" @touchstart.passive="closeChatMenu"></div>
@@ -500,7 +459,7 @@ const vImgReveal = {
   gap: 16px;
 
   @media (max-width: $screen-mobile-l) {
-    padding: 16px var(--mobile-page-gutter) 20px;
+    padding: 16px var(--mobile-page-gutter) calc(12px + var(--mobile-nav-h));
     gap: 0;
   }
 
@@ -588,11 +547,7 @@ const vImgReveal = {
     margin: 0;
 
     @include flex(cn);
-    gap: 12px;
-
-    @media (max-width: $screen-mobile-l) {
-      padding-bottom: var(--mobile-nav-h);
-    }
+    gap: 0;
 
     @media (hover: none) and (pointer: coarse) {
       user-select: none;
@@ -642,7 +597,6 @@ const vImgReveal = {
   &:hover,
   &_active {
     background-color: var(--light-text-backgroung-primary-5);
-    border-radius: 8px;
   }
 
   &__avatar {

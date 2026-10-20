@@ -9,6 +9,7 @@ import { useMailStore } from '~/stores/mailStore';
 import BaseTopTracker from '~/components/BaseTopTracker.vue';
 import { MENU_ITEMS, isMenuItemAllowedForRole } from '~/constants/menu.constants';
 import { computed, type Component } from 'vue';
+import { useShortName } from '~/composables/useShortName';
 import {
   ListTodo,
   FolderKanban,

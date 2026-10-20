@@ -12,29 +12,29 @@ import { Server, Socket } from 'socket.io';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { VoiceService, ICE_SERVERS, ProducerAppData, ProducerSource } from './voice.service';
+import { VoiceRoomsService } from './voice-rooms.service';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
-import { ProjectMembers } from '../projects/entities/project.entity';
 import { Users } from '../users/entities/users.entity';
 import type { DtlsParameters, MediaKind, RtpCapabilities, RtpParameters } from 'mediasoup/node/lib/types';
-import { ROLES } from '../common/enums/roles.enum';
+import { JwtAuthService } from '../auth/jwt.service';
 
 interface JoinRoomBody {
-  projectId: number;
+  roomId: number;
 }
 
 interface CreateTransportBody {
-  projectId: number;
+  roomId: number;
   direction: 'send' | 'recv';
 }
 
 interface ConnectTransportBody {
-  projectId: number;
+  roomId: number;
   transportId: string;
   dtlsParameters: DtlsParameters;
 }
 
 interface ProduceBody {
-  projectId: number;
+  roomId: number;
   transportId: string;
   kind: MediaKind;
   rtpParameters: RtpParameters;
@@ -42,28 +42,28 @@ interface ProduceBody {
 }
 
 interface ConsumeBody {
-  projectId: number;
+  roomId: number;
   producerId: string;
   rtpCapabilities: RtpCapabilities;
 }
 
 interface ResumeConsumerBody {
-  projectId: number;
+  roomId: number;
   consumerId: string;
 }
 
 interface SetMuteBody {
-  projectId: number;
+  roomId: number;
   muted: boolean;
 }
 
 interface StopScreenShareBody {
-  projectId: number;
+  roomId: number;
   producerId: string;
 }
 
 interface LeaveRoomBody {
-  projectId: number;
+  roomId: number;
 }
 
 @WebSocketGateway({ namespace: '/voice', cors: true })
@@ -75,9 +75,9 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(
     private readonly voiceService: VoiceService,
+    private readonly voiceRoomsService: VoiceRoomsService,
     private readonly wsGateway: WebsocketGateway,
-    @InjectRepository(ProjectMembers)
-    private readonly projectMemberRepository: Repository<ProjectMembers>,
+    private readonly jwtAuthService: JwtAuthService,
     @InjectRepository(Users)
     private readonly userRepository: Repository<Users>,
   ) {}
@@ -90,16 +90,16 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const found = this.voiceService.findParticipantBySocket(client.id);
     if (!found) return;
 
-    const { projectId, userId } = found;
-    const closedProducers = this.voiceService.removeParticipant(projectId, userId);
+    const { roomId, userId } = found;
+    const closedProducers = this.voiceService.removeParticipant(roomId, userId);
 
     for (const { producerId, kind } of closedProducers) {
-      this.server.to(`project:${projectId}`).emit('producer-closed', { producerId, userId, kind });
+      this.server.to(`voice-room:${roomId}`).emit('producer-closed', { producerId, userId, kind });
     }
 
-    await client.leave(`project:${projectId}`);
-    this.emitRoomUpdate(projectId);
-    this.logger.log(`User ${userId} disconnected from project ${projectId}`);
+    await client.leave(`voice-room:${roomId}`);
+    this.emitRoomUpdate(roomId);
+    this.logger.log(`User ${userId} disconnected from room ${roomId}`);
   }
 
   @SubscribeMessage('join-room')
@@ -107,42 +107,36 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.getUserId(client);
     if (!userId) return { error: 'Unauthorized' };
 
-    const { projectId } = data;
+    const { roomId } = data;
 
-    const isMember = await this.checkProjectMembership(userId, projectId);
+    const isMember = await this.voiceRoomsService.canJoin(roomId, userId);
     if (!isMember) return { error: 'Access denied' };
 
     const user = await this.userRepository.findOneBy({ id: userId });
     if (!user) return { error: 'User not found' };
 
-    await this.voiceService.getOrCreateRoom(projectId);
-    this.voiceService.addParticipant(
-      projectId,
-      userId,
-      client.id,
-      `${user.first_name} ${user.last_name}`,
-      user.photo_url ?? null,
-    );
+    await this.voiceService.getOrCreateRoom(roomId);
+    this.voiceService.addParticipant(roomId, userId, client.id, `${user.first_name} ${user.last_name}`, user.photo_url ?? null);
 
-    await client.join(`project:${projectId}`);
+    await client.join(`voice-room:${roomId}`);
 
-    const rtpCapabilities = this.voiceService.getRouterRtpCapabilities(projectId);
-    const existingProducers = this.voiceService.getExistingProducers(projectId, userId);
-    const participants = this.voiceService.getRoomParticipants(projectId).map((p) => ({
+    const rtpCapabilities = this.voiceService.getRouterRtpCapabilities(roomId);
+    const existingProducers = this.voiceService.getExistingProducers(roomId, userId);
+    const participants = this.voiceService.getRoomParticipants(roomId).map((p) => ({
       userId: p.userId,
       displayName: p.displayName,
       photoUrl: p.photoUrl,
     }));
 
-    this.server.to(`project:${projectId}`).emit('participant-joined', {
+    this.server.to(`voice-room:${roomId}`).emit('participant-joined', {
       userId,
       displayName: `${user.first_name} ${user.last_name}`,
       photoUrl: user.photo_url ?? null,
     });
 
-    this.emitRoomUpdate(projectId);
+    this.emitRoomUpdate(roomId);
 
-    this.logger.log(`User ${userId} joined room for project ${projectId}`);
+    this.logger.log(`User ${userId} joined voice room ${roomId}`);
 
     return { rtpCapabilities, existingProducers, participants };
   }
@@ -152,15 +146,15 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.getUserId(client);
     if (!userId) return;
 
-    const { projectId } = data;
-    const closedProducers = this.voiceService.removeParticipant(projectId, userId);
+    const { roomId } = data;
+    const closedProducers = this.voiceService.removeParticipant(roomId, userId);
 
     for (const { producerId, kind } of closedProducers) {
-      this.server.to(`project:${projectId}`).emit('producer-closed', { producerId, userId, kind });
+      this.server.to(`voice-room:${roomId}`).emit('producer-closed', { producerId, userId, kind });
     }
 
-    await client.leave(`project:${projectId}`);
-    this.emitRoomUpdate(projectId);
+    await client.leave(`voice-room:${roomId}`);
+    this.emitRoomUpdate(roomId);
   }
 
   @SubscribeMessage('create-transport')
@@ -168,13 +162,13 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.getUserId(client);
     if (!userId) return { error: 'Unauthorized' };
 
-    const { projectId, direction } = data;
-    const transport = await this.voiceService.createTransport(projectId);
+    const { roomId, direction } = data;
+    const transport = await this.voiceService.createTransport(roomId);
 
     if (direction === 'send') {
-      this.voiceService.registerSendTransport(projectId, userId, transport);
+      this.voiceService.registerSendTransport(roomId, userId, transport);
     } else {
-      this.voiceService.registerRecvTransport(projectId, userId, transport);
+      this.voiceService.registerRecvTransport(roomId, userId, transport);
     }
 
     return {
@@ -191,9 +185,9 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.getUserId(client);
     if (!userId) return { error: 'Unauthorized' };
 
-    const { projectId, transportId, dtlsParameters } = data;
+    const { roomId, transportId, dtlsParameters } = data;
     try {
-      await this.voiceService.connectTransport(projectId, transportId, dtlsParameters);
+      await this.voiceService.connectTransport(roomId, transportId, dtlsParameters);
       return { connected: true };
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Connect transport failed';
@@ -207,18 +201,18 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.getUserId(client);
     if (!userId) return { error: 'Unauthorized' };
 
-    const { projectId, transportId, kind, rtpParameters, appData } = data;
+    const { roomId, transportId, kind, rtpParameters, appData } = data;
 
     try {
       if (kind === 'video') {
-        const closed = this.voiceService.closeVideoProducers(projectId, userId);
+        const closed = this.voiceService.closeVideoProducers(roomId, userId);
         for (const { producerId, userId: closedUserId } of closed) {
-          this.server.to(`project:${projectId}`).emit('producer-closed', { producerId, userId: closedUserId, kind: 'video' });
+          this.server.to(`voice-room:${roomId}`).emit('producer-closed', { producerId, userId: closedUserId, kind: 'video' });
         }
       }
 
       const producer = await this.voiceService.produce(
-        projectId,
+        roomId,
         userId,
         transportId,
         kind,
@@ -226,7 +220,7 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
         appData ?? { source: ProducerSource.Microphone },
       );
 
-      this.server.to(`project:${projectId}`).except(client.id).emit('new-producer', {
+      this.server.to(`voice-room:${roomId}`).except(client.id).emit('new-producer', {
         producerId: producer.id,
         userId,
         kind: producer.kind,
@@ -245,10 +239,10 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.getUserId(client);
     if (!userId) return { error: 'Unauthorized' };
 
-    const { projectId, producerId, rtpCapabilities } = data;
+    const { roomId, producerId, rtpCapabilities } = data;
 
     try {
-      const consumer = await this.voiceService.consume(projectId, userId, producerId, rtpCapabilities);
+      const consumer = await this.voiceService.consume(roomId, userId, producerId, rtpCapabilities);
       return {
         id: consumer.id,
         producerId,
@@ -268,7 +262,7 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!userId) return { error: 'Unauthorized' };
 
     try {
-      await this.voiceService.resumeConsumer(data.projectId, userId, data.consumerId);
+      await this.voiceService.resumeConsumer(data.roomId, userId, data.consumerId);
     } catch (e) {
       this.logger.error(`onResumeConsumer error for user ${userId}: ${e instanceof Error ? e.message : e}`);
     }
@@ -280,15 +274,15 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.getUserId(client);
     if (!userId) return;
 
-    const { projectId, muted } = data;
+    const { roomId, muted } = data;
 
     if (muted) {
-      await this.voiceService.pauseProducer(projectId, userId);
+      await this.voiceService.pauseProducer(roomId, userId);
     } else {
-      await this.voiceService.resumeProducer(projectId, userId);
+      await this.voiceService.resumeProducer(roomId, userId);
     }
 
-    this.server.to(`project:${projectId}`).emit('participant-muted', { userId, muted });
+    this.server.to(`voice-room:${roomId}`).emit('participant-muted', { userId, muted });
   }
 
   @SubscribeMessage('stop-screen-share')
@@ -296,38 +290,37 @@ export class VoiceGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const userId = this.getUserId(client);
     if (!userId) return { error: 'Unauthorized' };
 
-    const { projectId, producerId } = data;
-    const closed = this.voiceService.closeProducer(projectId, userId, producerId);
+    const { roomId, producerId } = data;
+    const closed = this.voiceService.closeProducer(roomId, userId, producerId);
 
     if (closed) {
-      this.server.to(`project:${projectId}`).emit('producer-closed', { producerId, userId, kind: closed.kind });
+      this.server.to(`voice-room:${roomId}`).emit('producer-closed', { producerId, userId, kind: closed.kind });
     }
 
     return { stopped: true };
   }
 
-  private emitRoomUpdate(projectId: number) {
-    const participants = this.voiceService.getRoomParticipants(projectId).map((p) => ({
+  private emitRoomUpdate(roomId: number) {
+    const participants = this.voiceService.getRoomParticipants(roomId).map((p) => ({
       userId: p.userId,
       displayName: p.displayName,
       photoUrl: p.photoUrl,
     }));
-    void this.wsGateway.sendVoiceRoomUpdate(projectId, participants);
+    void this.wsGateway.sendVoiceRoomUpdate(roomId, participants);
   }
 
   private getUserId(client: Socket): number | null {
-    const id = client.handshake.auth['user_id'] as string | undefined;
-    if (!id) return null;
-    return Number(id);
-  }
-
-  private async checkProjectMembership(userId: number, projectId: number): Promise<boolean> {
-    const user = await this.userRepository.findOneBy({ id: userId });
-    if (user?.role === ROLES.admin) return true;
-
-    const member = await this.projectMemberRepository.findOne({
-      where: { user: { id: userId }, project: { id: projectId } },
-    });
-    return !!member;
+    const rawToken = client.handshake.headers.cookie
+      ?.split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith('authToken='))
+      ?.slice(10);
+    if (!rawToken) return null;
+    try {
+      const payload = this.jwtAuthService.verifyToken(decodeURIComponent(rawToken));
+      return Number(payload.id ?? payload.userId) || null;
+    } catch {
+      return null;
+    }
   }
 }

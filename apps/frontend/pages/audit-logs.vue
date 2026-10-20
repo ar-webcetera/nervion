@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AuditActionType, AuditEntityType, AuditLogItem, JsonObject, JsonValue } from '@tracker/contracts';
 import { format, isAfter, isBefore, isValid, parseISO } from 'date-fns';
+import { ListFilter } from '@lucide/vue';
 import { storeToRefs } from 'pinia';
 import DatePickerType from '~/enums/datepicker.enums';
 import type { SelectOption } from '~/types/select';
@@ -26,6 +27,10 @@ const userStore = useUserStore();
 
 const { items, total, pending, currentItem, page, limit } = storeToRefs(auditLogStore);
 const listBodyRef = ref<HTMLElement | null>(null);
+const isMobile = ref(false);
+const filtersOpen = ref(false);
+const detailsOpen = ref(false);
+let mediaQuery: MediaQueryList | null = null;
 
 const filters = reactive({
   search: '',
@@ -95,6 +100,9 @@ const disableToDates = (date: Date) => {
 };
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / limit.value)));
+const activeFiltersCount = computed(
+  () => Object.values(filters).filter((value) => String(value).trim().length > 0).length,
+);
 
 const diffEntries = computed(() => {
   if (!currentItem.value?.diff_payload) return [];
@@ -137,6 +145,7 @@ const scrollListToTop = () => {
 const applyFilters = async () => {
   await loadLogs(1);
   scrollListToTop();
+  if (isMobile.value) filtersOpen.value = false;
 };
 
 const resetFilters = async () => {
@@ -150,10 +159,20 @@ const resetFilters = async () => {
   filters.to = '';
   await loadLogs(1);
   scrollListToTop();
+  if (isMobile.value) filtersOpen.value = false;
 };
 
 const selectLog = (item: AuditLogItem) => {
   auditLogStore.selectItem(item);
+  if (isMobile.value) detailsOpen.value = true;
+};
+
+const syncMobile = () => {
+  isMobile.value = Boolean(mediaQuery?.matches);
+  if (!isMobile.value) {
+    filtersOpen.value = false;
+    detailsOpen.value = false;
+  }
 };
 
 const changePage = async (nextPage: number) => {
@@ -193,18 +212,33 @@ await useAsyncData('audit-logs-init', async () => {
   await Promise.all([userStore.fetchUsers(), loadLogs(1)]);
   return true;
 });
+
+onMounted(() => {
+  mediaQuery = window.matchMedia('(max-width: 767px)');
+  syncMobile();
+  mediaQuery.addEventListener('change', syncMobile);
+});
+
+onBeforeUnmount(() => mediaQuery?.removeEventListener('change', syncMobile));
 </script>
 
 <template>
   <div class="audit-page">
     <header class="audit-page__header">
       <h1>Журнал действий</h1>
-      <div class="audit-page__counter">{{ total }} событий</div>
+      <div class="audit-page__header-actions">
+        <div class="audit-page__counter">{{ total }} событий</div>
+        <button type="button" class="audit-page__filter-button" @click="filtersOpen = true">
+          <ListFilter :size="18" :stroke-width="1.75" aria-hidden="true" />
+          <span>Фильтры</span>
+          <span v-if="activeFiltersCount" class="audit-page__filter-count">{{ activeFiltersCount }}</span>
+        </button>
+      </div>
     </header>
     <hr />
 
     <div class="audit-page__container">
-      <form class="audit-filters" @submit.prevent="applyFilters">
+      <form class="audit-filters audit-filters_desktop" @submit.prevent="applyFilters">
         <div class="audit-filters__grid">
           <label class="audit-field audit-field_wide">
             <span>Поиск</span>
@@ -377,6 +411,142 @@ await useAsyncData('audit-logs-init', async () => {
         </aside>
       </div>
     </div>
+
+    <BaseBottomSheet v-model="filtersOpen" title="Фильтры" subtitle="Настройте список событий" size="wide">
+      <form class="audit-filters audit-filters_sheet" @submit.prevent="applyFilters">
+        <div class="audit-filters__grid">
+          <label class="audit-field audit-field_wide">
+            <span>Поиск</span>
+            <input v-model="filters.search" type="text" placeholder="Задача, пользователь, событие или ID" />
+          </label>
+          <label class="audit-field">
+            <span>Пользователь</span>
+            <BaseSelect v-model="filters.actor_id" :options="actorFilterOptions" placeholder="Все" large arrow />
+          </label>
+          <label class="audit-field">
+            <span>Действие</span>
+            <BaseSelect v-model="filters.action_type" :options="actionFilterOptions" placeholder="Все" large arrow />
+          </label>
+          <label class="audit-field">
+            <span>Сущность</span>
+            <BaseSelect v-model="filters.entity_type" :options="entityFilterOptions" placeholder="Все" large arrow />
+          </label>
+          <label class="audit-field">
+            <span>Project ID</span>
+            <input v-model="filters.project_id" type="number" min="1" inputmode="numeric" placeholder="Например, 14" />
+          </label>
+          <label class="audit-field">
+            <span>Task ID</span>
+            <input v-model="filters.task_id" type="number" min="1" inputmode="numeric" placeholder="Например, 1046" />
+          </label>
+          <label class="audit-field">
+            <span>С даты</span>
+            <BaseDatePicker
+              v-model="fromDateValue"
+              :type="DatePickerType.filter"
+              format-date="dd.MM.yyyy"
+              placeholder="Выберите дату"
+              :disabled-dates="disableFromDates"
+            />
+          </label>
+          <label class="audit-field">
+            <span>По дату</span>
+            <BaseDatePicker
+              v-model="toDateValue"
+              :type="DatePickerType.filter"
+              format-date="dd.MM.yyyy"
+              placeholder="Выберите дату"
+              :disabled-dates="disableToDates"
+            />
+          </label>
+        </div>
+        <div class="audit-filters__actions">
+          <button class="button" type="submit" :disabled="pending">Применить</button>
+          <button class="button_secondary" type="button" :disabled="pending" @click="resetFilters">Сбросить</button>
+        </div>
+      </form>
+    </BaseBottomSheet>
+
+    <BaseBottomSheet
+      v-model="detailsOpen"
+      title="Детали события"
+      :subtitle="currentItem ? formatDateTime(currentItem.created_at) : ''"
+      size="wide"
+    >
+      <div v-if="currentItem" class="audit-card audit-card_sheet">
+        <header class="audit-card__header">
+          <h2>{{ currentItem.summary }}</h2>
+          <div class="audit-card__badges">
+            <span class="audit-badge audit-badge_entity">{{ AUDIT_ENTITY_LABELS[currentItem.entity_type] }}</span>
+            <span class="audit-badge audit-badge_action">{{ AUDIT_ACTION_LABELS[currentItem.action_type] }}</span>
+          </div>
+        </header>
+        <div class="audit-info">
+          <div class="audit-info__item">
+            <span>Когда</span>
+            <strong>{{ formatDateTime(currentItem.created_at) }}</strong>
+          </div>
+          <div class="audit-info__item">
+            <span>Кто</span>
+            <strong>{{ formatActor(currentItem) }}</strong>
+          </div>
+          <div class="audit-info__item">
+            <span>Источник</span>
+            <strong>{{ AUDIT_SOURCE_LABELS[currentItem.source_type] }}</strong>
+          </div>
+          <div class="audit-info__item">
+            <span>Сущность</span>
+            <strong>{{ formatEntity(currentItem) }}</strong>
+          </div>
+          <div class="audit-info__item">
+            <span>Request</span>
+            <strong>{{ currentItem.request_method || '-' }} {{ currentItem.request_path || '' }}</strong>
+          </div>
+          <div class="audit-info__item">
+            <span>Request ID</span>
+            <strong>{{ currentItem.request_id || '-' }}</strong>
+          </div>
+          <div class="audit-info__item">
+            <span>IP</span>
+            <strong>{{ currentItem.ip_address || '-' }}</strong>
+          </div>
+          <div class="audit-info__item">
+            <span>User-Agent</span>
+            <strong class="audit-info__wrap">{{ currentItem.user_agent || '-' }}</strong>
+          </div>
+        </div>
+        <section v-if="diffEntries.length" class="audit-section">
+          <h3>Изменения</h3>
+          <div class="audit-diff">
+            <div v-for="entry in diffEntries" :key="entry.field" class="audit-diff__row">
+              <div class="audit-diff__field">{{ entry.field }}</div>
+              <div class="audit-diff__values">
+                <div class="audit-diff__value">
+                  <span>Было</span>
+                  <pre>{{ stringifyValue(entry.before) }}</pre>
+                </div>
+                <div class="audit-diff__value">
+                  <span>Стало</span>
+                  <pre>{{ stringifyValue(entry.after) }}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <section v-if="currentItem.before_payload" class="audit-section">
+          <h3>Снимок до изменения</h3>
+          <pre class="audit-json">{{ prettyPayload(currentItem.before_payload) }}</pre>
+        </section>
+        <section v-if="currentItem.after_payload" class="audit-section">
+          <h3>Снимок после изменения</h3>
+          <pre class="audit-json">{{ prettyPayload(currentItem.after_payload) }}</pre>
+        </section>
+        <section v-if="currentItem.metadata_payload" class="audit-section">
+          <h3>Метаданные</h3>
+          <pre class="audit-json">{{ prettyPayload(currentItem.metadata_payload) }}</pre>
+        </section>
+      </div>
+    </BaseBottomSheet>
   </div>
 </template>
 
@@ -413,8 +583,14 @@ await useAsyncData('audit-logs-init', async () => {
     align-items: flex-start;
 
     @media (max-width: $screen-tablet) {
-      flex-direction: column;
+      align-items: center;
     }
+  }
+
+  &__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   &__counter {
@@ -424,6 +600,57 @@ await useAsyncData('audit-logs-init', async () => {
     background: var(--light-text-backgroung-primary-5);
     color: var(--light-text-backgroung-primary);
     @extend %text-s-medium;
+  }
+
+  &__filter-button {
+    display: none;
+    min-height: 44px;
+    padding: 10px 12px;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+    background: var(--light-text-backgroung-primary-5);
+    color: var(--light-text-backgroung-primary);
+    cursor: pointer;
+    @extend %text-s-medium;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
+
+    @media (max-width: $screen-tablet) {
+      display: flex;
+    }
+  }
+
+  &__filter-count {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--primary);
+    color: var(--light-text-backgroung-primary);
+    @include flex(center);
+    @extend %text-xs-medium;
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    padding: 12px;
+    gap: 12px;
+
+    &__header {
+      gap: 12px;
+    }
+
+    &__counter {
+      display: none;
+    }
+
+    &__filter-button {
+      padding: 10px;
+    }
   }
 }
 
@@ -437,6 +664,29 @@ await useAsyncData('audit-logs-init', async () => {
 
 .audit-filters {
   padding: 16px;
+
+  &_desktop {
+    @media (max-width: $screen-tablet) {
+      display: none;
+    }
+  }
+
+  &_sheet {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+
+    .audit-filters__actions {
+      position: sticky;
+      bottom: 0;
+      padding-top: 12px;
+      background: var(--dark-text-background-primary);
+    }
+
+    @media (max-width: $screen-tablet) {
+      padding: 0 16px;
+    }
+  }
 
   &__grid {
     display: grid;
@@ -456,6 +706,16 @@ await useAsyncData('audit-logs-init', async () => {
     margin-top: 14px;
     display: flex;
     gap: 10px;
+
+    button {
+      min-height: 44px;
+    }
+
+    @media (max-width: $screen-tablet) {
+      button {
+        flex: 1;
+      }
+    }
   }
 }
 
@@ -562,6 +822,11 @@ await useAsyncData('audit-logs-init', async () => {
     grid-template-columns: 1fr;
     overflow: visible;
   }
+
+  @media (max-width: $screen-tablet) {
+    display: block;
+    overflow: visible;
+  }
 }
 
 .audit-list {
@@ -574,6 +839,13 @@ await useAsyncData('audit-logs-init', async () => {
 
   @media (max-width: $screen-tablet) {
     min-height: 300px;
+    height: auto;
+    padding: 0;
+    gap: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
   }
 
   &__header {
@@ -581,6 +853,10 @@ await useAsyncData('audit-logs-init', async () => {
     justify-content: space-between;
     gap: 12px;
     align-items: center;
+
+    @media (max-width: $screen-tablet) {
+      padding: 4px 0 10px;
+    }
   }
 
   &__title {
@@ -601,6 +877,12 @@ await useAsyncData('audit-logs-init', async () => {
     @include flex(cn);
     gap: 12px;
     padding-right: 4px;
+
+    @media (max-width: $screen-tablet) {
+      gap: 0;
+      padding-right: 0;
+      overflow: visible;
+    }
   }
 }
 
@@ -650,6 +932,30 @@ await useAsyncData('audit-logs-init', async () => {
     color: var(--light-text-backgroung-primary-50);
     @extend %text-s-regular;
   }
+
+  @media (max-width: $screen-tablet) {
+    min-height: 44px;
+    padding: 14px 0;
+    gap: 8px;
+    align-items: flex-start;
+    border-width: 0 0 1px;
+    border-radius: 0;
+
+    &:hover,
+    &_active {
+      border-color: var(--light-text-backgroung-primary-10);
+      background: transparent;
+    }
+
+    &__top,
+    &__summary,
+    &__meta,
+    &__footer {
+      width: 100%;
+      justify-content: flex-start;
+      text-align: left;
+    }
+  }
 }
 
 .audit-badge {
@@ -682,7 +988,12 @@ await useAsyncData('audit-logs-init', async () => {
   @extend %text-s-regular;
 
   @media (max-width: $screen-mobile-l) {
-    flex-direction: column;
+    gap: 8px;
+
+    button {
+      min-height: 44px;
+      padding-inline: 12px;
+    }
   }
 }
 
@@ -691,7 +1002,7 @@ await useAsyncData('audit-logs-init', async () => {
   overflow: hidden;
 
   @media (max-width: $screen-tablet) {
-    min-height: 300px;
+    display: none;
   }
 }
 
@@ -707,6 +1018,24 @@ await useAsyncData('audit-logs-init', async () => {
     min-height: 220px;
     color: var(--light-text-backgroung-primary-50);
     @extend %text-m-regular;
+  }
+
+  &_sheet {
+    height: auto;
+    padding: 0 16px;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+
+    .audit-card__header {
+      margin-bottom: 16px;
+
+      h2 {
+        margin: 0;
+        @extend %text-l-medium;
+      }
+    }
   }
 
   &__header {

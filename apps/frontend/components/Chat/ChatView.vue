@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useShortName } from '~/composables/useShortName';
 import MessageContent from '~/components/Chat/MessageContent.vue';
 import ChatEditor from '~/components/Chat/ChatEditor.vue';
 import VoiceRecorder from '~/components/Chat/VoiceRecorder.vue';

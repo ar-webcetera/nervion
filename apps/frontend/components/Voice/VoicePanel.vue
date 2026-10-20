@@ -3,15 +3,15 @@ import IconMic from '~/components/Icons/IconMic.vue';
 import IconClose from '~/components/Icons/IconClose.vue';
 import IconScreenShare from '~/components/Icons/IconScreenShare.vue';
 
-const { leaveRoom, toggleMute, startScreenShare, stopScreenShare, activeProjectId, participants, isConnecting, isConnected, isMuted, isScreenSharing, screenShareStreams, ownScreenStream, error } =
+const { leaveRoom, toggleMute, startScreenShare, stopScreenShare, activeRoomId, participants, isConnecting, isConnected, isMuted, isScreenSharing, screenShareStreams, ownScreenStream, error } =
   useVoiceRoom();
-const projectStore = useProjectStore();
+const voiceRoomStore = useVoiceRoomStore();
 
-const isVisible = computed(() => activeProjectId.value !== null);
+const isVisible = computed(() => activeRoomId.value !== null);
 
-const projectName = computed(() => {
-  if (!activeProjectId.value) return '';
-  return projectStore.projects.find((p) => p.id === activeProjectId.value)?.name ?? `Проект ${activeProjectId.value}`;
+const roomName = computed(() => {
+  if (!activeRoomId.value) return '';
+  return voiceRoomStore.rooms.find((room) => room.id === activeRoomId.value)?.name ?? `Комната ${activeRoomId.value}`;
 });
 
 const getInitials = (name: string) => {
@@ -184,7 +184,7 @@ onUnmounted(() => {
               <template v-else-if="isConnecting">Подключение…</template>
               <template v-else>На связи</template>
             </span>
-            <span class="vp__name">{{ projectName }}</span>
+            <span class="vp__name">{{ roomName }}</span>
           </div>
         </div>
 

@@ -98,7 +98,7 @@ const consumers = ref<Map<string, Consumer>>(new Map());
 const audioElements = new Map<string, HTMLAudioElement>();
 const screenShareStreams = ref<Map<string, MediaStream>>(new Map());
 
-const activeProjectId = ref<number | null>(null);
+const activeRoomId = ref<number | null>(null);
 const participants = ref<VoiceParticipant[]>([]);
 const isConnected = ref(false);
 const isConnecting = ref(false);
@@ -106,7 +106,7 @@ const isMuted = ref(false);
 const isScreenSharing = ref(false);
 const error = ref<string | null>(null);
 
-const pendingProducers: Array<{ projectId: number; producerId: string }> = [];
+const pendingProducers: Array<{ roomId: number; producerId: string }> = [];
 
 type SocketAck<T> = T & { error?: string };
 
@@ -123,14 +123,14 @@ const emit = <TResponse, TData extends object = object>(event: string, data?: TD
   });
 };
 
-const consumeProducer = async (projectId: number, producerId: string) => {
+const consumeProducer = async (roomId: number, producerId: string) => {
   if (!device.value || !recvTransport.value) return;
   if (consumers.value.has(producerId)) return;
 
   const rtpCapabilities = device.value.rtpCapabilities;
 
   try {
-    const consumerParams = await emit<ConsumeParams>('consume', { projectId, producerId, rtpCapabilities });
+    const consumerParams = await emit<ConsumeParams>('consume', { roomId, producerId, rtpCapabilities });
 
     const consumer = await recvTransport.value.consume({
       id: consumerParams.id,
@@ -141,7 +141,7 @@ const consumeProducer = async (projectId: number, producerId: string) => {
 
     consumers.value.set(producerId, consumer);
 
-    await emit('resume-consumer', { projectId, consumerId: consumer.id });
+    await emit('resume-consumer', { roomId, consumerId: consumer.id });
 
     if (consumerParams.kind === 'video') {
       const stream = new MediaStream([consumer.track]);
@@ -181,10 +181,10 @@ export const useVoiceRoom = () => {
   const config = useRuntimeConfig();
   const userStore = useUserStore();
 
-  const joinRoom = async (projectId: number) => {
+  const joinRoom = async (roomId: number) => {
     if (isConnecting.value || isConnected.value) return;
     isConnecting.value = true;
-    activeProjectId.value = projectId;
+    activeRoomId.value = roomId;
     error.value = null;
 
     try {
@@ -195,12 +195,12 @@ export const useVoiceRoom = () => {
         });
 
         socket.value.on('new-producer', async ({ producerId }: NewProducerEvent) => {
-          if (!activeProjectId.value) return;
+          if (!activeRoomId.value) return;
           if (!recvTransport.value) {
-            pendingProducers.push({ projectId: activeProjectId.value, producerId });
+            pendingProducers.push({ roomId: activeRoomId.value, producerId });
             return;
           }
-          await consumeProducer(activeProjectId.value, producerId);
+          await consumeProducer(activeRoomId.value, producerId);
         });
 
         socket.value.on('producer-closed', ({ producerId, userId, kind }: ProducerClosedEvent) => {
@@ -255,16 +255,16 @@ export const useVoiceRoom = () => {
           device.value = null;
 
           isConnected.value = false;
-          activeProjectId.value = null;
+          activeRoomId.value = null;
           participants.value = [];
           screenShareStreams.value = new Map();
           isMuted.value = false;
         });
       }
 
-      const joinResult = await emit<JoinRoomResponse>('join-room', { projectId });
+      const joinResult = await emit<JoinRoomResponse>('join-room', { roomId });
 
-      activeProjectId.value = projectId;
+      activeRoomId.value = roomId;
       participants.value = joinResult.participants.map((p) => ({ ...p, muted: false }));
 
       const { Device: DeviceClass } = await import('mediasoup-client');
@@ -273,7 +273,7 @@ export const useVoiceRoom = () => {
       device.value = newDevice;
 
       // --- Send transport ---
-      const sendParams = await emit<TransportParams>('create-transport', { projectId, direction: 'send' });
+      const sendParams = await emit<TransportParams>('create-transport', { roomId, direction: 'send' });
 
       const st = newDevice.createSendTransport({
         id: sendParams.id,
@@ -284,7 +284,7 @@ export const useVoiceRoom = () => {
       });
 
       st.on('connect', ({ dtlsParameters: dtls }, callback, errback) => {
-        emit('connect-transport', { projectId, transportId: st.id, dtlsParameters: dtls })
+        emit('connect-transport', { roomId, transportId: st.id, dtlsParameters: dtls })
           .then(() => callback())
           .catch(errback);
       });
@@ -293,14 +293,14 @@ export const useVoiceRoom = () => {
         const typedAppData: ProducerAppData = {
           source: (appData as ProducerAppData).source ?? ProducerSource.Microphone,
         };
-        emit<ProduceIdResponse>('produce', { projectId, transportId: st.id, kind, rtpParameters, appData: typedAppData })
+        emit<ProduceIdResponse>('produce', { roomId, transportId: st.id, kind, rtpParameters, appData: typedAppData })
           .then(({ producerId: id }) => callback({ id }))
           .catch(errback);
       });
 
       sendTransport.value = st;
 
-      const recvParams = await emit<TransportParams>('create-transport', { projectId, direction: 'recv' });
+      const recvParams = await emit<TransportParams>('create-transport', { roomId, direction: 'recv' });
 
       const rt = newDevice.createRecvTransport({
         id: recvParams.id,
@@ -311,7 +311,7 @@ export const useVoiceRoom = () => {
       });
 
       rt.on('connect', ({ dtlsParameters: dtls }, callback, errback) => {
-        emit('connect-transport', { projectId, transportId: rt.id, dtlsParameters: dtls })
+        emit('connect-transport', { roomId, transportId: rt.id, dtlsParameters: dtls })
           .then(() => callback())
           .catch(errback);
       });
@@ -320,7 +320,7 @@ export const useVoiceRoom = () => {
 
       const queued = pendingProducers.splice(0);
       for (const { producerId } of queued) {
-        await consumeProducer(projectId, producerId);
+        await consumeProducer(roomId, producerId);
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -340,7 +340,7 @@ export const useVoiceRoom = () => {
       producer.value = prod;
 
       for (const { producerId } of joinResult.existingProducers) {
-        await consumeProducer(projectId, producerId);
+        await consumeProducer(roomId, producerId);
       }
 
       isConnected.value = true;
@@ -355,8 +355,8 @@ export const useVoiceRoom = () => {
   };
 
   const leaveRoom = async () => {
-    if (activeProjectId.value !== null && socket.value) {
-      socket.value.emit('leave-room', { projectId: activeProjectId.value });
+    if (activeRoomId.value !== null && socket.value) {
+      socket.value.emit('leave-room', { roomId: activeRoomId.value });
     }
 
     screenProducer.value?.close();
@@ -385,23 +385,23 @@ export const useVoiceRoom = () => {
     socket.value = null;
 
     pendingProducers.splice(0);
-    activeProjectId.value = null;
+    activeRoomId.value = null;
     participants.value = [];
     isConnected.value = false;
     isMuted.value = false;
   };
 
   const toggleMute = async () => {
-    if (!activeProjectId.value || !socket.value) return;
+    if (!activeRoomId.value || !socket.value) return;
     isMuted.value = !isMuted.value;
-    socket.value.emit('set-mute', { projectId: activeProjectId.value, muted: isMuted.value });
+    socket.value.emit('set-mute', { roomId: activeRoomId.value, muted: isMuted.value });
 
     const myParticipant = participants.value.find((p) => p.userId === userStore.user?.id);
     if (myParticipant) myParticipant.muted = isMuted.value;
   };
 
   const startScreenShare = async () => {
-    if (!sendTransport.value || !activeProjectId.value || isScreenSharing.value) return;
+    if (!sendTransport.value || !activeRoomId.value || isScreenSharing.value) return;
 
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
@@ -431,7 +431,7 @@ export const useVoiceRoom = () => {
   };
 
   const stopScreenShare = async () => {
-    if (!screenProducer.value || !activeProjectId.value) return;
+    if (!screenProducer.value || !activeRoomId.value) return;
 
     const producerId = screenProducer.value.id;
     screenProducer.value.close();
@@ -439,7 +439,7 @@ export const useVoiceRoom = () => {
     ownScreenStream.value = null;
     isScreenSharing.value = false;
 
-    await emit('stop-screen-share', { projectId: activeProjectId.value, producerId });
+    await emit('stop-screen-share', { roomId: activeRoomId.value, producerId });
   };
 
   return {
@@ -448,7 +448,7 @@ export const useVoiceRoom = () => {
     toggleMute,
     startScreenShare,
     stopScreenShare,
-    activeProjectId: readonly(activeProjectId),
+    activeRoomId: readonly(activeRoomId),
     participants: readonly(participants),
     isConnected: readonly(isConnected),
     isConnecting: readonly(isConnecting),

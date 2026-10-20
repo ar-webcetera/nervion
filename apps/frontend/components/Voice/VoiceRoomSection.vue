@@ -1,303 +1,801 @@
 <script setup lang="ts">
+import type { VoiceRoom } from '@tracker/contracts';
+import { Check, Ellipsis, Mic, MicOff, Pencil, Plus, Trash2 } from '@lucide/vue';
+import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
+import { ROLES } from '~/types/user';
 import type { VoiceParticipant } from '~/composables/useVoiceRoom';
-import { MicOff } from '@lucide/vue';
 
-interface VoiceRoom {
-  projectId: number;
-  projectName: string;
-  participants: Pick<VoiceParticipant, 'userId' | 'displayName' | 'photoUrl'>[];
+interface VoiceRoomPresenceEvent {
+  roomId: number;
+  participants: Omit<VoiceParticipant, 'muted'>[];
 }
 
-const props = defineProps<{
-  rooms: VoiceRoom[];
-}>();
+const voiceRoomStore = useVoiceRoomStore();
+const userStore = useUserStore();
+const { rooms, loading } = storeToRefs(voiceRoomStore);
+const { users } = storeToRefs(userStore);
+const { $toast, $webSocket } = useNuxtApp();
+const { joinRoom, leaveRoom, activeRoomId, participants: activeParticipants, isConnecting, error } = useVoiceRoom();
 
-const { joinRoom, leaveRoom, activeProjectId, isConnecting } = useVoiceRoom();
+const presenceByRoom = ref<Map<number, Omit<VoiceParticipant, 'muted'>[]>>(new Map());
+const menuRoomId = ref<number | null>(null);
+const menuTrigger = ref<HTMLButtonElement | null>(null);
+const menuElement = ref<HTMLElement | null>(null);
+const menuPosition = ref({ left: '0px', top: '0px' });
+const editorOpen = ref(false);
+const deleteOpen = ref(false);
+const editingRoom = ref<VoiceRoom | null>(null);
+const roomPendingDelete = ref<VoiceRoom | null>(null);
+const name = ref('');
+const selectedMemberIds = ref<number[]>([]);
+const saving = ref(false);
+const deleting = ref(false);
 
-const activeCount = computed(() => props.rooms.filter((room) => room.participants.length > 0).length);
-const orderedRooms = computed(() => [...props.rooms].sort((a, b) => b.participants.length - a.participants.length));
-const isExpanded = ref(false);
+const availableUsers = computed(() =>
+  users.value
+    .filter((user) => user.role === ROLES.admin || user.role === ROLES.employee)
+    .slice()
+    .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, 'ru')),
+);
 
-const getInitials = (name: string) => {
-  const parts = name.split(' ').filter(Boolean);
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  return name.charAt(0).toUpperCase();
+const roomRows = computed(() =>
+  rooms.value.map((room) => ({
+    ...room,
+    activeParticipants: presenceByRoom.value.has(room.id)
+      ? presenceByRoom.value.get(room.id) ?? []
+      : room.active_participants,
+  })),
+);
+const menuRoom = computed(() => roomRows.value.find((room) => room.id === menuRoomId.value) ?? null);
+
+await useAsyncData('voice-room-sidebar', async () => {
+  await Promise.all([voiceRoomStore.fetchRooms(), users.value.length ? Promise.resolve() : userStore.fetchUsers()]);
+  return true;
+});
+
+const setPresence = (roomId: number, participants: Omit<VoiceParticipant, 'muted'>[]) => {
+  const next = new Map(presenceByRoom.value);
+  next.set(roomId, participants);
+  presenceByRoom.value = next;
 };
 
-const handleClick = async (projectId: number) => {
+const handleWsEvent = (payload: { type: string; data: VoiceRoomPresenceEvent }) => {
+  if (payload.type === 'voice_room_updated') {
+    setPresence(payload.data.roomId, payload.data.participants);
+    return;
+  }
+  if (payload.type === 'voice_rooms_changed') {
+    void voiceRoomStore.fetchRooms().catch((cause: unknown) => $toast.error(getErrorMessage(cause)));
+  }
+};
+
+onMounted(() => {
+  if (activeRoomId.value !== null) setPresence(activeRoomId.value, [...activeParticipants.value]);
+  $webSocket.on('event', handleWsEvent);
+});
+
+onUnmounted(() => {
+  $webSocket.off('event', handleWsEvent);
+});
+
+watch(
+  rooms,
+  (nextRooms) => {
+    if (activeRoomId.value !== null && !nextRooms.some((room) => room.id === activeRoomId.value)) {
+      void leaveRoom();
+    }
+  },
+  { deep: true },
+);
+
+const getInitials = (firstName: string, lastName = '') => `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+
+const getParticipantInitials = (name: string) => {
+  const [firstName = '', lastName = ''] = name.split(' ').filter(Boolean);
+  return getInitials(firstName, lastName);
+};
+
+const formatMembersCount = (count: number) => {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+  let noun = 'участников';
+  if (mod100 < 11 || mod100 > 14) {
+    if (mod10 === 1) noun = 'участник';
+    else if (mod10 >= 2 && mod10 <= 4) noun = 'участника';
+  }
+  return `${count} ${noun}`;
+};
+
+const closeRoomMenu = () => {
+  menuRoomId.value = null;
+  menuTrigger.value = null;
+};
+
+const toggleRoomMenu = (roomId: number, event: MouseEvent) => {
+  if (menuRoomId.value === roomId) {
+    closeRoomMenu();
+    return;
+  }
+  menuTrigger.value = event.currentTarget as HTMLButtonElement;
+  menuRoomId.value = roomId;
+};
+
+watch(menuRoomId, async (roomId, _, onCleanup) => {
+  if (roomId === null) return;
+
+  let disposed = false;
+  let stopPositioning: (() => void) | undefined;
+  onCleanup(() => {
+    disposed = true;
+    stopPositioning?.();
+  });
+
+  await nextTick();
+  if (disposed || !menuTrigger.value || !menuElement.value) return;
+
+  stopPositioning = autoUpdate(menuTrigger.value, menuElement.value, async () => {
+    const { x, y } = await computePosition(menuTrigger.value!, menuElement.value!, {
+      strategy: 'fixed',
+      placement: 'bottom-end',
+      middleware: [offset(4), flip(), shift({ padding: 8 })],
+    });
+    if (!disposed) menuPosition.value = { left: `${x}px`, top: `${y}px` };
+  });
+});
+
+const handleRoomClick = async (roomId: number) => {
   if (isConnecting.value) return;
-  if (activeProjectId.value === projectId) {
+  closeRoomMenu();
+  if (activeRoomId.value === roomId) {
     await leaveRoom();
-  } else {
-    if (activeProjectId.value !== null) await leaveRoom();
-    await joinRoom(projectId);
+    return;
+  }
+  if (activeRoomId.value !== null) await leaveRoom();
+  await joinRoom(roomId);
+  if (error.value) $toast.error(error.value);
+};
+
+const openCreate = () => {
+  editingRoom.value = null;
+  name.value = '';
+  selectedMemberIds.value = userStore.user ? [userStore.user.id] : [];
+  closeRoomMenu();
+  editorOpen.value = true;
+};
+
+const openEdit = (room: VoiceRoom) => {
+  editingRoom.value = room;
+  name.value = room.name;
+  selectedMemberIds.value = room.members.map((member) => member.id);
+  closeRoomMenu();
+  editorOpen.value = true;
+};
+
+const toggleMember = (userId: number) => {
+  if (userId === editingRoom.value?.owner_id || (!editingRoom.value && userId === userStore.user?.id)) return;
+  selectedMemberIds.value = selectedMemberIds.value.includes(userId)
+    ? selectedMemberIds.value.filter((id) => id !== userId)
+    : [...selectedMemberIds.value, userId];
+};
+
+const submitRoom = async () => {
+  if (!name.value.trim() || saving.value) return;
+  saving.value = true;
+  try {
+    const payload = { name: name.value.trim(), member_ids: selectedMemberIds.value };
+    if (editingRoom.value) {
+      await voiceRoomStore.updateRoom(editingRoom.value.id, payload);
+      $toast.success('Комната обновлена');
+    } else {
+      await voiceRoomStore.createRoom(payload);
+      $toast.success('Комната создана');
+    }
+    editorOpen.value = false;
+  } catch (cause) {
+    $toast.error(getErrorMessage(cause));
+  } finally {
+    saving.value = false;
+  }
+};
+
+const requestDelete = (room: VoiceRoom) => {
+  roomPendingDelete.value = room;
+  closeRoomMenu();
+  deleteOpen.value = true;
+};
+
+const confirmDelete = async () => {
+  if (!roomPendingDelete.value || deleting.value) return;
+  deleting.value = true;
+  try {
+    if (activeRoomId.value === roomPendingDelete.value.id) await leaveRoom();
+    await voiceRoomStore.deleteRoom(roomPendingDelete.value.id);
+    $toast.trash('Комната удалена');
+    deleteOpen.value = false;
+    roomPendingDelete.value = null;
+  } catch (cause) {
+    $toast.error(getErrorMessage(cause));
+  } finally {
+    deleting.value = false;
   }
 };
 </script>
 
 <template>
-  <div class="vrs" :class="{ 'vrs--expanded': isExpanded }">
-    <div class="vrs__header" @click="isExpanded = !isExpanded">
-      <svg
-        class="vrs__chevron"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 16 16"
-        fill="none"
-      >
-        <path d="M6 4l4 4-4 4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-      <span>Голосовые комнаты</span>
-      <span v-if="activeCount" class="vrs__live-badge">
-        <span class="vrs__live-dot" />
-        {{ activeCount }} в эфире
-      </span>
-    </div>
+  <section class="vrs" aria-labelledby="voice-rooms-title">
+    <header class="vrs__header">
+      <div class="vrs__heading">
+        <span id="voice-rooms-title">Голосовые комнаты</span>
+        <span v-if="roomRows.some((room) => room.activeParticipants.length)" class="vrs__live-dot" title="Есть участники в эфире" />
+      </div>
+      <button class="vrs__add" type="button" aria-label="Создать голосовую комнату" title="Создать комнату" @click="openCreate">
+        <Plus :size="19" :stroke-width="1.75" aria-hidden="true" />
+      </button>
+    </header>
 
-    <ul class="vrs__list">
-      <li v-if="orderedRooms.length === 0" class="vrs__empty" role="status">
-        <MicOff :size="20" :stroke-width="1.75" aria-hidden="true" />
-        <span>Голосовых комнат пока нет</span>
-      </li>
+    <div v-if="loading && !roomRows.length" class="vrs__empty" role="status">Загрузка комнат...</div>
+    <div v-else-if="!roomRows.length" class="vrs__empty" role="status">
+      <MicOff :size="20" :stroke-width="1.75" aria-hidden="true" />
+      <span>Создайте первую комнату</span>
+    </div>
+    <ul v-else class="vrs__list">
       <li
-        v-for="room in orderedRooms"
-        v-show="room.participants.length > 0 || isExpanded"
-        :key="room.projectId"
+        v-for="room in roomRows"
+        :key="room.id"
         class="vrs__item"
         :class="{
-          'vrs__item--active': activeProjectId === room.projectId,
-          'vrs__item--loading': isConnecting,
-          'vrs__item--live': room.participants.length > 0,
+          'vrs__item_active': activeRoomId === room.id,
+          'vrs__item_live': room.activeParticipants.length > 0,
+          'vrs__item_loading': isConnecting,
         }"
-        @click="handleClick(room.projectId)"
       >
-        <span class="vrs__icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none">
-            <rect x="5.5" y="1.5" width="5" height="8" rx="2.5" stroke-width="1.3" stroke-linecap="round" />
-            <path d="M3 7.5a5 5 0 0 0 10 0" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" />
-            <line x1="8" y1="12.5" x2="8" y2="14.5" stroke-width="1.3" stroke-linecap="round" />
-          </svg>
-        </span>
-
-        <span class="vrs__name">{{ room.projectName }}</span>
-
-        <div v-if="room.participants.length > 0" class="vrs__avatars">
-          <div
-            v-for="(p, i) in room.participants.slice(0, 3)"
-            :key="p.userId"
-            class="vrs__avatar"
-            :style="{ zIndex: 3 - i }"
-            :title="p.displayName"
-          >
-            <img v-if="p.photoUrl" :src="p.photoUrl" :alt="p.displayName" />
-            <span v-else>{{ getInitials(p.displayName) }}</span>
-          </div>
-          <span v-if="room.participants.length > 3" class="vrs__avatar vrs__avatar--more">
-            +{{ room.participants.length - 3 }}
+        <button class="vrs__join" type="button" @click="handleRoomClick(room.id)">
+          <span class="vrs__icon">
+            <Mic :size="17" :stroke-width="1.75" aria-hidden="true" />
           </span>
-        </div>
+          <span class="vrs__content">
+            <span class="vrs__name">{{ room.name }}</span>
+            <span class="vrs__meta">
+              {{ room.activeParticipants.length ? `${room.activeParticipants.length} в эфире` : formatMembersCount(room.members.length) }}
+            </span>
+          </span>
+          <span v-if="room.activeParticipants.length" class="vrs__avatars" aria-label="Участники в эфире">
+            <span
+              v-for="participant in room.activeParticipants.slice(0, 3)"
+              :key="participant.userId"
+              class="vrs__avatar"
+              :title="participant.displayName"
+            >
+              <img v-if="participant.photoUrl" :src="participant.photoUrl" :alt="participant.displayName" />
+              <span v-else>{{ getParticipantInitials(participant.displayName) }}</span>
+            </span>
+          </span>
+        </button>
+
+        <button
+          v-if="room.can_manage"
+          class="vrs__more"
+          type="button"
+          :aria-expanded="menuRoomId === room.id"
+          :aria-label="`Действия с комнатой ${room.name}`"
+          @click.stop="toggleRoomMenu(room.id, $event)"
+        >
+          <Ellipsis :size="19" :stroke-width="1.75" aria-hidden="true" />
+        </button>
       </li>
     </ul>
-  </div>
+
+    <Teleport to="body">
+      <button
+        v-if="menuRoom"
+        class="vrs__menu-backdrop"
+        type="button"
+        aria-label="Закрыть меню"
+        @click="closeRoomMenu"
+      />
+      <div
+        v-if="menuRoom"
+        ref="menuElement"
+        class="vrs__menu"
+        :style="menuPosition"
+        role="menu"
+        @click.stop
+        @keydown.esc="closeRoomMenu"
+      >
+        <button type="button" role="menuitem" @click="openEdit(menuRoom)">
+          <Pencil :size="17" :stroke-width="1.75" aria-hidden="true" />
+          <span>Изменить</span>
+        </button>
+        <button type="button" role="menuitem" class="vrs__menu-danger" @click="requestDelete(menuRoom)">
+          <Trash2 :size="17" :stroke-width="1.75" aria-hidden="true" />
+          <span>Удалить</span>
+        </button>
+      </div>
+    </Teleport>
+
+    <BaseBottomSheet
+      v-model="editorOpen"
+      :title="editingRoom ? 'Изменить комнату' : 'Новая голосовая комната'"
+      subtitle="Укажите название и участников"
+      size="compact"
+      :dismissible="!saving"
+    >
+      <form class="voice-room-form" @submit.prevent="submitRoom">
+        <label class="voice-room-form__field">
+          <span>Название</span>
+          <input v-model="name" type="text" maxlength="120" autocomplete="off" placeholder="Например, Ежедневный созвон" />
+        </label>
+
+        <fieldset class="voice-room-form__members">
+          <legend>Участники</legend>
+          <label v-for="user in availableUsers" :key="user.id" class="voice-room-form__member">
+            <input
+              type="checkbox"
+              :checked="selectedMemberIds.includes(user.id)"
+              :disabled="user.id === editingRoom?.owner_id || (!editingRoom && user.id === userStore.user?.id)"
+              @change="toggleMember(user.id)"
+            />
+            <span class="voice-room-form__avatar">
+              <img v-if="user.photo_url" :src="user.photo_url" :alt="`${user.first_name} ${user.last_name}`" />
+              <span v-else>{{ getInitials(user.first_name, user.last_name) }}</span>
+            </span>
+            <span class="voice-room-form__member-name">{{ user.first_name }} {{ user.last_name }}</span>
+            <Check v-if="selectedMemberIds.includes(user.id)" :size="18" :stroke-width="2" aria-hidden="true" />
+          </label>
+        </fieldset>
+
+        <div class="voice-room-form__actions">
+          <button class="button_secondary" type="button" :disabled="saving" @click="editorOpen = false">Отмена</button>
+          <button class="button" type="submit" :disabled="saving || !name.trim()">
+            {{ saving ? 'Сохранение...' : editingRoom ? 'Сохранить' : 'Создать' }}
+          </button>
+        </div>
+      </form>
+    </BaseBottomSheet>
+
+    <BaseBottomSheet
+      v-model="deleteOpen"
+      title="Удалить комнату?"
+      :subtitle="roomPendingDelete?.name ?? ''"
+      size="compact"
+      :dismissible="!deleting"
+    >
+      <div class="voice-room-delete">
+        <p>Комната исчезнет у всех участников. Это действие нельзя отменить.</p>
+        <div class="voice-room-delete__actions">
+          <button class="button_secondary" type="button" :disabled="deleting" @click="deleteOpen = false">Отмена</button>
+          <button class="voice-room-delete__confirm" type="button" :disabled="deleting" @click="confirmDelete">
+            {{ deleting ? 'Удаление...' : 'Удалить' }}
+          </button>
+        </div>
+      </div>
+    </BaseBottomSheet>
+  </section>
 </template>
 
 <style scoped lang="scss">
 .vrs {
-  @include flex(cn);
+  position: relative;
   width: 100%;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+  min-width: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--light-text-backgroung-primary-10);
+  @include flex(cn);
+  gap: 8px;
+
+  &__header,
+  &__heading,
+  &__join,
+  &__avatars {
+    @include flex(rn, a-center);
+  }
 
   &__header {
-    @include flex(rn, a-center);
-    gap: 6px;
-    padding: 4px 0;
-    cursor: pointer;
+    min-height: 40px;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  &__heading {
+    min-width: 0;
+    gap: 8px;
     color: var(--text-secondary);
     @extend %h1;
-    transition: color 0.15s;
-    user-select: none;
-
-    @media (max-width: $screen-mobile-l) {
-      @include display-xs-medium;
-    }
-
-    &:hover {
-      color: var(--light-text-backgroung-primary);
-    }
-  }
-
-  &__chevron {
-    width: 12px;
-    height: 12px;
-    flex-shrink: 0;
-    stroke: currentColor;
-    transition: transform 0.2s;
-    opacity: 0.5;
-    margin-top: 1px;
-  }
-
-  &--expanded &__chevron {
-    transform: rotate(90deg);
-  }
-
-  &__live-badge {
-    @include flex(rn, a-center);
-    gap: 5px;
-    margin-left: 4px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: var(--green-10);
-    color: var(--green);
-    @extend %text-xs-medium;
-    flex-shrink: 0;
   }
 
   &__live-dot {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
     border-radius: 50%;
-    background-color: var(--green);
-    flex-shrink: 0;
-    animation: vrs-pulse 1.6s ease-in-out infinite;
+    background: var(--green);
+  }
+
+  &__add,
+  &__more {
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+    @include flex(center);
+
+    &:hover,
+    &:focus-visible {
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
+    }
+  }
+
+  &__add {
+    width: 40px;
+    height: 40px;
   }
 
   &__list {
+    max-height: 224px;
+    margin: 0;
+    padding: 0 2px 0 0;
     list-style: none;
-    margin: 4px 0 0;
-    padding: 0;
-    @include flex(cn);
-    gap: 1px;
-    max-height: 200px;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    @include flex(cn);
+    gap: 4px;
   }
 
   &__item {
-    @include flex(rn, a-center);
-    gap: 10px;
-    padding: 10px 10px;
+    position: relative;
+    min-height: 52px;
     border-radius: 8px;
-    cursor: pointer;
-    transition: background-color 0.15s;
-    min-width: 0;
+    @include flex(rn, a-center);
+    transition: background-color 0.15s ease;
 
-    &:hover {
-      background-color: var(--light-text-backgroung-primary-5);
-
-      .vrs__icon { opacity: 1; }
-      .vrs__name { color: var(--light-text-backgroung-primary); }
+    &:hover,
+    &_active {
+      background: var(--light-text-backgroung-primary-5);
     }
 
-    &--active {
-      background-color: var(--light-text-backgroung-primary-5);
-
-      .vrs__icon { color: var(--primary); opacity: 1; }
-      .vrs__name { color: var(--light-text-backgroung-primary); }
+    &_live .vrs__icon {
+      background: var(--green-10);
+      color: var(--green);
     }
 
-    &--loading {
+    &_active .vrs__icon {
+      background: var(--primary-25);
+      color: var(--primary);
+    }
+
+    &_loading {
       pointer-events: none;
-      opacity: 0.5;
-    }
-
-    &--live {
-      background-color: var(--green-10);
-
-      .vrs__icon {
-        color: var(--green);
-        opacity: 1;
-      }
-      .vrs__name {
-        color: var(--light-text-backgroung-primary);
-      }
-
-      &:hover {
-        background-color: var(--green-25);
-      }
+      opacity: 0.6;
     }
   }
 
-  &__empty {
-    min-height: 72px;
-    padding: 16px 8px;
-    color: var(--light-text-backgroung-primary-50);
-    text-align: center;
-    @include flex(cn, center, a-center);
-    gap: 8px;
-    @extend %text-xs-regular;
+  &__join {
+    width: 100%;
+    min-width: 0;
+    min-height: 52px;
+    padding: 6px 42px 6px 6px;
+    gap: 10px;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
 
-    svg {
-      color: var(--light-text-backgroung-primary-25);
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
     }
   }
 
   &__icon {
-    flex-shrink: 0;
-    width: 14px;
-    height: 14px;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    border-radius: 8px;
+    background: var(--light-text-backgroung-primary-5);
     color: var(--light-text-backgroung-primary-50);
-    @include flex(rn, a-center);
+    @include flex(center);
+  }
 
-    svg {
-      width: 100%;
-      height: 100%;
-      stroke: currentColor;
-    }
+  &__content {
+    min-width: 0;
+    flex: 1;
+    @include flex(cn);
+    gap: 2px;
+  }
+
+  &__name,
+  &__meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__name {
-    flex: 1;
-    min-width: 0;
-    @extend %text-m-medium;
     color: var(--light-text-backgroung-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: color 0.15s;
+    @extend %text-s-medium;
+  }
+
+  &__meta {
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-xs-regular;
   }
 
   &__avatars {
-    @include flex(rn, a-center);
     flex-direction: row-reverse;
-    flex-shrink: 0;
-    margin-right: 4px;
+    flex: 0 0 auto;
+    padding-left: 6px;
   }
 
   &__avatar {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    border: 1.5px solid var(--dark-text-background-primary);
+    width: 22px;
+    height: 22px;
+    margin-left: -6px;
     overflow: hidden;
-    margin-left: -5px;
-    background-color: var(--primary);
-    @include flex(center);
-    font-size: 7px;
-    font-weight: 600;
+    border: 2px solid var(--dark-text-background-primary);
+    border-radius: 50%;
+    background: var(--primary);
     color: var(--light-text-backgroung-primary);
-
-    &:last-child { margin-left: 0; }
+    font-size: 8px;
+    font-weight: 600;
+    @include flex(center);
 
     img {
       width: 100%;
       height: 100%;
       object-fit: cover;
     }
+  }
 
-    &--more {
-      background-color: var(--light-text-backgroung-primary-10);
+  &__more {
+    position: absolute;
+    top: 6px;
+    right: 4px;
+    z-index: 2;
+    width: 40px;
+    height: 40px;
+  }
+
+  &__menu {
+    position: fixed;
+    z-index: 10002;
+    width: 168px;
+    padding: 6px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 8px;
+    background: var(--dark-text-background-primary);
+    box-shadow: 0 12px 32px var(--black-50);
+
+    button {
+      width: 100%;
+      min-height: 40px;
+      padding: 8px 10px;
+      gap: 9px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--light-text-backgroung-primary);
+      text-align: left;
+      cursor: pointer;
+      @include flex(rn, a-center, j-start);
+      @extend %text-s-regular;
+
+      &:hover,
+      &:focus-visible {
+        background: var(--light-text-backgroung-primary-5);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: -2px;
+      }
+    }
+
+    .vrs__menu-danger {
+      color: var(--danger-delete);
+    }
+  }
+
+  &__menu-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10001;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  &__empty {
+    min-height: 72px;
+    padding: 12px;
+    gap: 8px;
+    color: var(--light-text-backgroung-primary-50);
+    text-align: left;
+    @include flex(rn, a-center);
+    @extend %text-xs-regular;
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    padding-top: 12px;
+
+    &__heading {
+      @include display-xs-medium;
+    }
+
+    &__add,
+    &__more {
+      width: 44px;
+      height: 44px;
+    }
+
+    &__list {
+      max-height: 240px;
+    }
+
+    &__item,
+    &__join {
+      min-height: 56px;
     }
   }
 }
 
-@keyframes vrs-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
+.voice-room-form {
+  padding: 0 16px 16px;
+  @include flex(cn);
+  gap: 20px;
+
+  &__field {
+    @include flex(cn);
+    gap: 7px;
+
+    span {
+      color: var(--light-text-backgroung-primary-50);
+      @extend %text-s-medium;
+    }
+
+    input {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid var(--light-text-backgroung-primary-10);
+      border-radius: 8px;
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+      @extend %text-m-regular;
+
+      &:focus {
+        border-color: var(--primary);
+        outline: none;
+      }
+    }
   }
-  50% {
-    opacity: 0.45;
-    transform: scale(0.85);
+
+  &__members {
+    max-height: min(360px, 45dvh);
+    margin: 0;
+    padding: 0 4px 0 0;
+    overflow-y: auto;
+    border: 0;
+
+    legend {
+      margin-bottom: 8px;
+      color: var(--light-text-backgroung-primary-50);
+      @extend %text-s-medium;
+    }
+  }
+
+  &__member {
+    min-height: 48px;
+    padding: 6px 8px;
+    gap: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    @include flex(rn, a-center);
+
+    &:hover {
+      background: var(--light-text-backgroung-primary-5);
+    }
+
+    &:has(input:focus-visible) {
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
+    }
+
+    input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
+
+    svg {
+      flex: 0 0 18px;
+      color: var(--primary);
+    }
+  }
+
+  &__avatar {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--primary-25);
+    color: var(--light-text-backgroung-primary);
+    @include flex(center);
+    @extend %text-xs-medium;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+  }
+
+  &__member-name {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    color: var(--light-text-backgroung-primary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    @extend %text-s-regular;
+  }
+
+  &__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+
+    button {
+      min-height: 44px;
+    }
+  }
+}
+
+.voice-room-delete {
+  padding: 0 16px 16px;
+
+  p {
+    margin: 0;
+    color: var(--light-text-backgroung-primary-50);
+    @extend %text-m-regular;
+  }
+
+  &__actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 20px;
+
+    button {
+      min-height: 44px;
+    }
+  }
+
+  &__confirm {
+    border: 0;
+    border-radius: 8px;
+    background: var(--danger-delete);
+    color: var(--light-text-backgroung-primary);
+    cursor: pointer;
+    @extend %text-s-medium;
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.5;
+    }
   }
 }
 </style>

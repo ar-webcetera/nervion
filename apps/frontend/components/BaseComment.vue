@@ -11,6 +11,8 @@ import IconTrash from './Icons/IconTrash.vue';
 import { hasTiptapContent } from '~/utils/tiptap/content';
 import { useNotificationStore } from '~/stores/notificationStore';
 import type { Notification } from '~/types/notification';
+import { useFullName } from '~/composables/useFullName';
+import { useShortName } from '~/composables/useShortName';
 
 defineOptions({ name: 'BaseComment' });
 

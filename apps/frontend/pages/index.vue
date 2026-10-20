@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useFullName } from '~/composables/useFullName';
 import type { FilterChip } from '~/types/filter';
 import { TaskBusinessKind } from '@tracker/contracts';
 import { FilterType } from '~/types/filter';

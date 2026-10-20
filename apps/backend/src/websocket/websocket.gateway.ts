@@ -192,16 +192,22 @@ export class WebsocketGateway {
     this.server.emit('event', { type: SOCKET_EVENT_TYPE.chat_deleted, data: { id: chatId, memberIds } });
   }
 
-  async sendVoiceRoomUpdate(projectId: number, participants: { userId: number; displayName: string; photoUrl: string | null }[]) {
-    const privateOwnerId = await this.getPrivateProjectOwner(projectId);
-    if (privateOwnerId) {
-      await this.sendUserEvent(privateOwnerId, 'event', {
+  sendVoiceRoomsChanged() {
+    if (!this.server) return;
+    this.server.emit('event', { type: SOCKET_EVENT_TYPE.voice_rooms_changed, data: {} });
+  }
+
+  async sendVoiceRoomUpdate(roomId: number, participants: { userId: number; displayName: string; photoUrl: string | null }[]) {
+    const recipients = await this.db.query<{ user_id: number }[]>(
+      `SELECT "user_id" FROM "voice_room_members" WHERE "room_id" = $1`,
+      [roomId],
+    );
+    for (const recipient of recipients) {
+      await this.sendUserEvent(recipient.user_id, 'event', {
         type: SOCKET_EVENT_TYPE.voice_room_updated,
-        data: { projectId, participants },
+        data: { roomId, participants },
       });
-      return;
     }
-    this.server.emit('event', { type: SOCKET_EVENT_TYPE.voice_room_updated, data: { projectId, participants } });
   }
 
   async sendTimelogUpdated(timelog: Timelogs) {

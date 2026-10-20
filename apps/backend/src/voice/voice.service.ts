@@ -150,61 +150,61 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     this.worker?.close();
   }
 
-  async getOrCreateRoom(projectId: number): Promise<Room> {
-    if (this.rooms.has(projectId)) {
-      return this.rooms.get(projectId)!;
+  async getOrCreateRoom(roomId: number): Promise<Room> {
+    if (this.rooms.has(roomId)) {
+      return this.rooms.get(roomId)!;
     }
 
     const router = await this.worker!.createRouter({ mediaCodecs: MEDIA_CODECS });
     const room: Room = { router, participants: new Map() };
-    this.rooms.set(projectId, room);
-    this.logger.log(`Room created for project ${projectId}`);
+    this.rooms.set(roomId, room);
+    this.logger.log(`Voice room created: ${roomId}`);
     return room;
   }
 
-  getRoom(projectId: number): Room | undefined {
-    return this.rooms.get(projectId);
+  getRoom(roomId: number): Room | undefined {
+    return this.rooms.get(roomId);
   }
 
-  getRoomParticipants(projectId: number): Participant[] {
-    const room = this.rooms.get(projectId);
+  getRoomParticipants(roomId: number): Participant[] {
+    const room = this.rooms.get(roomId);
     if (!room) return [];
     return [...room.participants.values()];
   }
 
-  getRouterRtpCapabilities(projectId: number): RtpCapabilities | null {
-    const room = this.rooms.get(projectId);
+  getRouterRtpCapabilities(roomId: number): RtpCapabilities | null {
+    const room = this.rooms.get(roomId);
     return room?.router.rtpCapabilities ?? null;
   }
 
-  async createTransport(projectId: number): Promise<WebRtcTransport> {
-    const room = this.rooms.get(projectId);
-    if (!room) throw new Error(`Room ${projectId} not found`);
+  async createTransport(roomId: number): Promise<WebRtcTransport> {
+    const room = this.rooms.get(roomId);
+    if (!room) throw new Error(`Room ${roomId} not found`);
     const transport = await room.router.createWebRtcTransport(getWebRtcTransportOptions());
     return transport;
   }
 
-  async connectTransport(projectId: number, transportId: string, dtlsParameters: DtlsParameters): Promise<void> {
-    const transport = this.findTransport(projectId, transportId);
+  async connectTransport(roomId: number, transportId: string, dtlsParameters: DtlsParameters): Promise<void> {
+    const transport = this.findTransport(roomId, transportId);
     if (!transport) throw new Error(`Transport ${transportId} not found`);
     await transport.connect({ dtlsParameters });
   }
 
   async produce(
-    projectId: number,
+    roomId: number,
     userId: number,
     transportId: string,
     kind: MediaKind,
     rtpParameters: RtpParameters,
     appData: ProducerAppData,
   ): Promise<Producer> {
-    const room = this.rooms.get(projectId);
-    if (!room) throw new Error(`Room ${projectId} not found`);
+    const room = this.rooms.get(roomId);
+    if (!room) throw new Error(`Room ${roomId} not found`);
 
     const participant = room.participants.get(userId);
     if (!participant) throw new Error(`Participant ${userId} not found`);
 
-    const transport = this.findTransport(projectId, transportId);
+    const transport = this.findTransport(roomId, transportId);
     if (!transport) throw new Error(`Transport ${transportId} not found`);
 
     const producer = await transport.produce({ kind, rtpParameters, appData });
@@ -217,9 +217,9 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     return producer;
   }
 
-  async consume(projectId: number, consumerId: number, producerId: string, rtpCapabilities: RtpCapabilities): Promise<Consumer> {
-    const room = this.rooms.get(projectId);
-    if (!room) throw new Error(`Room ${projectId} not found`);
+  async consume(roomId: number, consumerId: number, producerId: string, rtpCapabilities: RtpCapabilities): Promise<Consumer> {
+    const room = this.rooms.get(roomId);
+    if (!room) throw new Error(`Room ${roomId} not found`);
 
     if (!room.router.canConsume({ producerId, rtpCapabilities })) {
       throw new Error('Cannot consume this producer');
@@ -242,8 +242,8 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     return consumer;
   }
 
-  async resumeConsumer(projectId: number, userId: number, consumerId: string): Promise<void> {
-    const room = this.rooms.get(projectId);
+  async resumeConsumer(roomId: number, userId: number, consumerId: string): Promise<void> {
+    const room = this.rooms.get(roomId);
     if (!room) return;
     const participant = room.participants.get(userId);
     if (!participant) return;
@@ -259,8 +259,8 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async pauseProducer(projectId: number, userId: number): Promise<void> {
-    const participant = this.rooms.get(projectId)?.participants.get(userId);
+  async pauseProducer(roomId: number, userId: number): Promise<void> {
+    const participant = this.rooms.get(roomId)?.participants.get(userId);
     if (!participant) return;
     for (const producer of participant.producers.values()) {
       if (producer.kind === 'audio') {
@@ -270,8 +270,8 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async resumeProducer(projectId: number, userId: number): Promise<void> {
-    const participant = this.rooms.get(projectId)?.participants.get(userId);
+  async resumeProducer(roomId: number, userId: number): Promise<void> {
+    const participant = this.rooms.get(roomId)?.participants.get(userId);
     if (!participant) return;
     for (const producer of participant.producers.values()) {
       if (producer.kind === 'audio') {
@@ -281,8 +281,8 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  closeVideoProducers(projectId: number, excludeUserId: number): Array<{ producerId: string; userId: number }> {
-    const room = this.rooms.get(projectId);
+  closeVideoProducers(roomId: number, excludeUserId: number): Array<{ producerId: string; userId: number }> {
+    const room = this.rooms.get(roomId);
     if (!room) return [];
     const closed: Array<{ producerId: string; userId: number }> = [];
     for (const [uid, participant] of room.participants) {
@@ -298,8 +298,8 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     return closed;
   }
 
-  closeProducer(projectId: number, userId: number, producerId: string): { kind: MediaKind } | null {
-    const participant = this.rooms.get(projectId)?.participants.get(userId);
+  closeProducer(roomId: number, userId: number, producerId: string): { kind: MediaKind } | null {
+    const participant = this.rooms.get(roomId)?.participants.get(userId);
     if (!participant) return null;
     const producer = participant.producers.get(producerId);
     if (!producer) return null;
@@ -309,8 +309,8 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     return { kind };
   }
 
-  addParticipant(projectId: number, userId: number, socketId: string, displayName: string, photoUrl: string | null): void {
-    const room = this.rooms.get(projectId);
+  addParticipant(roomId: number, userId: number, socketId: string, displayName: string, photoUrl: string | null): void {
+    const room = this.rooms.get(roomId);
     if (!room) return;
     room.participants.set(userId, {
       userId,
@@ -324,18 +324,18 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  registerSendTransport(projectId: number, userId: number, transport: WebRtcTransport): void {
-    const participant = this.rooms.get(projectId)?.participants.get(userId);
+  registerSendTransport(roomId: number, userId: number, transport: WebRtcTransport): void {
+    const participant = this.rooms.get(roomId)?.participants.get(userId);
     if (participant) participant.sendTransport = transport;
   }
 
-  registerRecvTransport(projectId: number, userId: number, transport: WebRtcTransport): void {
-    const participant = this.rooms.get(projectId)?.participants.get(userId);
+  registerRecvTransport(roomId: number, userId: number, transport: WebRtcTransport): void {
+    const participant = this.rooms.get(roomId)?.participants.get(userId);
     if (participant) participant.recvTransport = transport;
   }
 
-  removeParticipant(projectId: number, userId: number): ClosedProducerInfo[] {
-    const room = this.rooms.get(projectId);
+  removeParticipant(roomId: number, userId: number): ClosedProducerInfo[] {
+    const room = this.rooms.get(roomId);
     if (!room) return [];
 
     const participant = room.participants.get(userId);
@@ -355,24 +355,24 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
 
     if (room.participants.size === 0) {
       room.router.close();
-      this.rooms.delete(projectId);
-      this.logger.log(`Room for project ${projectId} closed (empty)`);
+      this.rooms.delete(roomId);
+      this.logger.log(`Voice room ${roomId} closed (empty)`);
     }
 
     return closedProducers;
   }
 
-  findParticipantBySocket(socketId: string): { projectId: number; userId: number } | null {
-    for (const [projectId, room] of this.rooms) {
+  findParticipantBySocket(socketId: string): { roomId: number; userId: number } | null {
+    for (const [roomId, room] of this.rooms) {
       for (const [userId, participant] of room.participants) {
-        if (participant.socketId === socketId) return { projectId, userId };
+        if (participant.socketId === socketId) return { roomId, userId };
       }
     }
     return null;
   }
 
-  getExistingProducers(projectId: number, excludeUserId: number): ExistingProducerInfo[] {
-    const room = this.rooms.get(projectId);
+  getExistingProducers(roomId: number, excludeUserId: number): ExistingProducerInfo[] {
+    const room = this.rooms.get(roomId);
     if (!room) return [];
     const result: ExistingProducerInfo[] = [];
     for (const [userId, participant] of room.participants) {
@@ -385,8 +385,8 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     return result;
   }
 
-  private findTransport(projectId: number, transportId: string): WebRtcTransport | null {
-    const room = this.rooms.get(projectId);
+  private findTransport(roomId: number, transportId: string): WebRtcTransport | null {
+    const room = this.rooms.get(roomId);
     if (!room) return null;
     for (const participant of room.participants.values()) {
       if (participant.sendTransport?.id === transportId) return participant.sendTransport;

@@ -5,6 +5,7 @@ import { ru } from 'date-fns/locale';
 import { computed, ref, watch } from 'vue';
 import BaseModal from '~/components/BaseModal.vue';
 import { useFormatTimeSpent } from '~/composables/useFormatTimeSpent';
+import { useFullName } from '~/composables/useFullName';
 import type { Timelog } from '~/types/task';
 import { getErrorMessage } from '~/utils/error';
 import IconTrash from './Icons/IconTrash.vue';

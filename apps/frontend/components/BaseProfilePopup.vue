@@ -9,6 +9,8 @@ import AvatarCropperModal from './AvatarCropperModal.vue';
 import IconDeleteSimple from './Icons/IconDeleteSimple.vue';
 import IconCopy from './Icons/IconCopy.vue';
 import { X } from '@lucide/vue';
+import { useFullName } from '~/composables/useFullName';
+import { useShortName } from '~/composables/useShortName';
 
 const { getUserInfo, openUserEditModal, userEditModal, closeUserEditModal, handleLogout } = useProfile();
 const { formatMessageDate } = useDateFormatter();
