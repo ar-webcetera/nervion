@@ -192,6 +192,7 @@ describe('MailboxService', () => {
 
     service = module.get(MailboxService);
     jest.clearAllMocks();
+    mockConfigService.get.mockReset();
 
     mockMessagesRepository.createQueryBuilder.mockImplementation(() => messagesQueryBuilder);
     mockNotificationsRepository.createQueryBuilder.mockImplementation(() => notificationsQueryBuilder);
@@ -454,7 +455,7 @@ describe('MailboxService', () => {
       };
       const senderAccount = {
         id: 2,
-        address: 'notifications@webcetera.test',
+        address: 'bot@webcetera.test',
         display_name: 'Nervion',
         type: 'service',
         is_active: true,
@@ -480,7 +481,7 @@ describe('MailboxService', () => {
         expect.objectContaining({
           notification_id: 15,
           message_id: 'nervion-notification-15@nervion.local',
-          from_address: 'notifications@webcetera.test',
+          from_address: 'bot@webcetera.test',
           subject: 'Скоро встреча',
         }),
       );
@@ -505,9 +506,12 @@ describe('MailboxService', () => {
 
   describe('sendNotificationEmail', () => {
     it('должен отправлять уведомление через служебный ящик и Postbox', async () => {
+      mockConfigService.get.mockImplementation((key: string) =>
+        key === 'MAILBOX_NOTIFICATION_ACCOUNT' ? 'bot@webcetera.test' : undefined,
+      );
       mockAccountsRepository.findOne.mockResolvedValue({
         id: 2,
-        address: 'notifications@webcetera.test',
+        address: 'bot@webcetera.test',
         display_name: 'Nervion',
         type: 'service',
         is_active: true,
@@ -526,13 +530,16 @@ describe('MailboxService', () => {
       });
 
       expect(mockPostboxService.send).toHaveBeenCalledWith({
-        from: { address: 'notifications@webcetera.test', name: 'Nervion' },
+        from: { address: 'bot@webcetera.test', name: 'Nervion' },
         to: ['user@webcetera.test'],
         subject: 'Скоро встреча',
         text: 'Через 15 минут',
         html: '<p>Через 15 минут</p>',
         messageId: 'nervion-notification-15@nervion.local',
         headers: { 'X-Nervion-Notification-Id': '15' },
+      });
+      expect(mockAccountsRepository.findOne).toHaveBeenCalledWith({
+        where: { address: 'bot@webcetera.test', is_active: true },
       });
     });
   });

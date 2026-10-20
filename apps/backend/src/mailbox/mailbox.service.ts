@@ -141,6 +141,19 @@ export class MailboxService {
     });
   }
 
+  async findNotificationAccount(): Promise<MailAccounts | null> {
+    const configured = this.configService.get<string>('MAILBOX_NOTIFICATION_ACCOUNT')?.trim();
+
+    if (configured) {
+      return this.findAccountByAddress(configured);
+    }
+
+    const domain = this.configService.get<string>('MAILBOX_DOMAIN')?.trim() || 'example.com';
+    const botAccount = await this.findAccountByAddress(`bot@${domain}`);
+
+    return botAccount ?? this.findTaskAliasAccount();
+  }
+
   async listAccounts(user: AuthenticatedUser): Promise<MailAccounts[]> {
     const accounts = await this.accountsRepository.find({
       order: { id: 'ASC' },
@@ -399,7 +412,7 @@ export class MailboxService {
     });
     if (existing) return existing.id;
 
-    const senderAccount = await this.findTaskAliasAccount();
+    const senderAccount = await this.findNotificationAccount();
     const senderAddress = senderAccount?.address ?? 'notifications@nervion.local';
     const message = await this.ingestInbound(
       account,
@@ -425,7 +438,7 @@ export class MailboxService {
   }
 
   async sendNotificationEmail(data: NotificationEmailData): Promise<void> {
-    const senderAccount = await this.findTaskAliasAccount();
+    const senderAccount = await this.findNotificationAccount();
     if (!senderAccount) {
       throw new ServiceUnavailableException('Не настроен служебный почтовый ящик Nervion');
     }

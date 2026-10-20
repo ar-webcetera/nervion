@@ -26,13 +26,6 @@ cd nervion
 cp apps/backend/.env.example apps/backend/.env
 ```
 
-В `apps/backend/.env` исправьте значение отправителя, чтобы вся строка была в
-кавычках:
-
-```dotenv
-MAIL_FROM="Tracker <no-reply@example.com>"
-```
-
 Задайте данные первого администратора:
 
 ```dotenv
@@ -63,6 +56,10 @@ VAPID_PRIVATE_KEY=<privateKey>
 Не коммитьте `.env`: он содержит секреты и уже добавлен в `.gitignore`.
 Остальные необязательные интеграции — S3, почта, OAuth и AI — можно оставить
 пустыми для первого локального запуска.
+
+Для исходящей почты задайте `POSTBOX_*`, `MAILBOX_DOMAIN` и
+`MAILBOX_NOTIFICATION_ACCOUNT`. Системные письма отправляются через Postbox от
+внутреннего ящика бота. Переменные исходящего SMTP не используются.
 
 ## 3. Подготовить mediasoup-worker
 
