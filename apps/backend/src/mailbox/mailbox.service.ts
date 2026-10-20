@@ -296,6 +296,17 @@ export class MailboxService {
   }
 
   async ingestInbound(account: MailAccounts, data: InboundMailData, notifyUser = true): Promise<MailMessages | null> {
+    if (data.notificationId) {
+      const duplicate = await this.messagesRepository.findOne({
+        where: { notification_id: data.notificationId, thread: { account_id: account.id } },
+      });
+
+      if (duplicate) {
+        this.logger.warn(`Дубль письма уведомления ${data.notificationId} для ${account.address} - пропущен`);
+        return null;
+      }
+    }
+
     if (data.messageId) {
       const duplicate = await this.messagesRepository
         .createQueryBuilder('message')

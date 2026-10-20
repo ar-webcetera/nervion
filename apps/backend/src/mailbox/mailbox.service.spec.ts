@@ -199,6 +199,7 @@ describe('MailboxService', () => {
     mockThreadsRepository.createQueryBuilder.mockImplementation(() => threadsQueryBuilder);
     mockThreadsRepository.create.mockImplementation((value: Partial<MailThreads>) => value);
     mockMessagesRepository.create.mockImplementation((value: Partial<MailMessages>) => value);
+    mockMessagesRepository.findOne.mockResolvedValue(null);
     mockAccountsRepository.create.mockImplementation((value: Partial<MailAccounts>) => value);
     mockAccountsRepository.save.mockImplementation((value: Partial<MailAccounts>) => Promise.resolve(value));
     mockSpamRulesRepository.findOne.mockResolvedValue(null);
@@ -287,6 +288,21 @@ describe('MailboxService', () => {
   });
 
   describe('ingestInbound', () => {
+    it('не должен повторно сохранять письмо одного уведомления с другим Message-ID', async () => {
+      mockMessagesRepository.findOne.mockResolvedValue({ id: 27 });
+
+      const message = await service.ingestInbound({ id: 1, address: 'user@webcetera.test' } as MailAccounts, {
+        ...baseInbound(),
+        messageId: 'provider-message@ingress',
+      });
+
+      expect(message).toBeNull();
+      expect(mockMessagesRepository.findOne).toHaveBeenCalledWith({
+        where: { notification_id: 15, thread: { account_id: 1 } },
+      });
+      expect(mockMessagesRepository.save).not.toHaveBeenCalled();
+    });
+
     it('должен связывать письмо с уведомлением только при совпадении email ящика', async () => {
       notificationsQueryBuilder.getOne.mockResolvedValue({
         id: 15,
