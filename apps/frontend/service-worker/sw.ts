@@ -99,7 +99,7 @@ const parsePushPayload = (data: PushMessageData | null): PushPayload | null => {
   if (!textPayload) return null;
 
   return {
-    title: 'Tracker',
+    title: 'Nervion',
     body: textPayload,
     url: '/',
   };

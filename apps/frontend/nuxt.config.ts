@@ -12,8 +12,8 @@ export default defineNuxtConfig({
     filename: 'sw.ts',
     registerType: 'autoUpdate',
     manifest: {
-      name: 'Tracker',
-      short_name: 'TRC',
+      name: 'Nervion',
+      short_name: 'Nervion',
       id: '/',
       start_url: '/',
       launch_handler: {
@@ -32,9 +32,9 @@ export default defineNuxtConfig({
           sizes: '1672x1315',
           type: 'image/png',
           form_factor: 'wide',
-          label: 'Tracker — канбан доска',
+          label: 'Nervion - канбан доска',
         },
-        { src: '/screenshot-mobile.png', sizes: '700x1315', type: 'image/png', form_factor: 'narrow', label: 'Tracker — задачи' },
+        { src: '/screenshot-mobile.png', sizes: '700x1315', type: 'image/png', form_factor: 'narrow', label: 'Nervion - задачи' },
       ],
     },
     injectManifest: {
@@ -72,7 +72,7 @@ export default defineNuxtConfig({
         { name: 'yandex-verification', content: '1821b5a09daf0a20' },
         { name: 'mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
-        { name: 'apple-mobile-web-app-title', content: 'Tracker' },
+        { name: 'apple-mobile-web-app-title', content: 'Nervion' },
       ],
       link: [
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
