@@ -587,7 +587,7 @@ const vImgReveal = {
   position: relative;
   @include flex(rn);
   gap: 8px;
-  padding: 4px;
+  padding: 8px 4px;
   cursor: pointer;
   transition: background-color 0.2s ease;
   user-select: none;
