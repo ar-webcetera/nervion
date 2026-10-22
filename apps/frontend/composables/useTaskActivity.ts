@@ -12,12 +12,20 @@ export const useTaskActivity = (taskId: Ref<number | null | undefined>) => {
     { default: () => [] as TaskActivityItem[], watch: [taskId] },
   );
   const taskStore = useTaskStore();
+  const timelogStore = useTimelogStore();
   let timer: ReturnType<typeof setInterval> | undefined;
   const unsubscribe = taskStore.$onAction(({ name, after }) => {
     if (name === 'updateTask' || name === 'completeRecurringTask' || name === 'uncompleteRecurringTask')
       after(() => {
         void state.refresh();
       });
+  });
+  const unsubscribeTimelogs = timelogStore.$onAction(({ name, after }) => {
+    if (name === 'createTimelog' || name === 'updateTimelog') {
+      after(() => {
+        void state.refresh();
+      });
+    }
   });
   onMounted(() => {
     timer = setInterval(() => {
@@ -27,6 +35,7 @@ export const useTaskActivity = (taskId: Ref<number | null | undefined>) => {
   onBeforeUnmount(() => {
     clearInterval(timer);
     unsubscribe();
+    unsubscribeTimelogs();
   });
   return state;
 };

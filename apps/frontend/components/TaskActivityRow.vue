@@ -16,6 +16,9 @@ const actionLabel = computed(() => {
       return 'Отменена отметка выполнения';
     case AuditActionType.TASK_RECURRENCE_CHANGED:
       return 'Изменение повторения';
+    case AuditActionType.TIMELOG_CREATED:
+    case AuditActionType.TIMELOG_UPDATED:
+      return 'Зафиксировано затраченное время';
     default:
       return 'Изменение задачи';
   }
@@ -29,6 +32,7 @@ const formattedDate = computed(() =>
     minute: '2-digit',
   }),
 );
+const formattedTimeSpent = computed(() => useFormatTimeSpent(props.activity.timelog?.time_spent ?? 0));
 const valueLabel = (field: string, value: string | null) => {
   if (field === 'billing_type') {
     if (value === TaskBillingType.HOURLY) return 'Почасовая';
@@ -60,6 +64,10 @@ const valueLabel = (field: string, value: string | null) => {
         <time :datetime="activity.created_at" :title="formattedDate">{{ formattedDate }}</time>
       </div>
       <div>{{ actionLabel }}</div>
+      <div v-if="activity.timelog" class="task-activity__timelog">
+        <strong>{{ formattedTimeSpent }}</strong>
+        <p>{{ activity.timelog.summary }}</p>
+      </div>
       <ul v-if="activity.changes.length" class="task-activity__changes">
         <li v-for="change in activity.changes" :key="change.field">
           <template v-if="change.field === 'description'">Обновлено описание</template>
@@ -114,6 +122,21 @@ const valueLabel = (field: string, value: string | null) => {
     margin: 0;
     padding: 0;
     list-style: none;
+  }
+  &__timelog {
+    @include flex(cn);
+    gap: 2px;
+
+    strong {
+      @extend %text-s-medium;
+      font-variant-numeric: tabular-nums;
+    }
+
+    p {
+      margin: 0;
+      color: var(--light-text-backgroung-primary-50);
+      white-space: pre-wrap;
+    }
   }
   &__before {
     color: var(--light-text-backgroung-primary-50);

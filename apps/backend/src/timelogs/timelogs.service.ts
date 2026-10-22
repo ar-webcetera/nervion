@@ -117,7 +117,7 @@ export class TimelogsService {
 
     const createdTimelog = await this.timelogRepository.findOne({ where: { id: newTimelog.id }, relations: ['author', 'task'] });
     if (createdTimelog) {
-      void this.auditLogsService.record({
+      await this.auditLogsService.record({
         actionType: AuditActionType.TIMELOG_CREATED,
         entityType: AuditEntityType.TIMELOG,
         entityId: createdTimelog.id,
@@ -270,7 +270,7 @@ export class TimelogsService {
       throw error;
     }
     const timelogWithTask = await this.timelogRepository.findOne({ where: { id }, relations: ['task'] });
-    void this.auditLogsService.record({
+    await this.auditLogsService.record({
       actionType: AuditActionType.TIMELOG_UPDATED,
       entityType: AuditEntityType.TIMELOG,
       entityId: updatedTimelog.id,

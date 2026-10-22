@@ -7,6 +7,12 @@ export interface TaskActivityChange {
   after: string | null;
 }
 
+export interface TaskActivityTimelog {
+  time_spent: number;
+  summary: string;
+  tracking_date: string | null;
+}
+
 /** Public task history. Does not expose request metadata or raw audit payloads. */
 export interface TaskActivityItem {
   id: number;
@@ -14,4 +20,5 @@ export interface TaskActivityItem {
   actor_name: string;
   created_at: string;
   changes: TaskActivityChange[];
+  timelog: TaskActivityTimelog | null;
 }

@@ -10,6 +10,7 @@ import {
   type AuditLogItem,
   type AuditLogsResponse,
   AuditSourceType,
+  TIMELOG_STATUSES,
   type JsonObject,
 } from '@tracker/contracts';
 import { Brackets, In, Repository } from 'typeorm';
@@ -97,12 +98,24 @@ export class AuditLogsService {
 
   async findTaskActivity(taskId: number, includeBilling: boolean): Promise<TaskActivityItem[]> {
     const rows = await this.auditLogRepository.find({
-      where: { task_id: taskId, entity_type: AuditEntityType.TASK },
+      where: [
+        { task_id: taskId, entity_type: AuditEntityType.TASK },
+        {
+          task_id: taskId,
+          entity_type: AuditEntityType.TIMELOG,
+          action_type: In([AuditActionType.TIMELOG_CREATED, AuditActionType.TIMELOG_UPDATED]),
+        },
+      ],
       order: { created_at: 'ASC', id: 'ASC' },
+    });
+    const activityRows = rows.filter((row) => {
+      if (row.entity_type === AuditEntityType.TASK) return true;
+      if (row.after_payload?.status !== TIMELOG_STATUSES.completed) return false;
+      return row.before_payload?.status !== TIMELOG_STATUSES.completed;
     });
     const userIds = new Set<number>();
     const projectIds = new Set<number>();
-    for (const row of rows) {
+    for (const row of activityRows) {
       for (const payload of [row.before_payload, row.after_payload]) {
         if (typeof payload?.responsible_id === 'number') userIds.add(payload.responsible_id);
         if (typeof payload?.project_id === 'number') projectIds.add(payload.project_id);
@@ -146,7 +159,7 @@ export class AuditLogsService {
       if (field === 'project_id' && typeof value === 'number') return projectNames.get(value) ?? `Проект #${value}`;
       return typeof value === 'string' ? value : JSON.stringify(value);
     };
-    return rows.map((row) => {
+    return activityRows.map((row) => {
       const changes: TaskActivityChange[] = [];
       if (row.before_payload && row.after_payload) {
         for (const [field, label] of Object.entries(fields)) {
@@ -167,6 +180,14 @@ export class AuditLogsService {
         actor_name: row.actor_name || 'Система',
         created_at: row.created_at.toISOString(),
         changes,
+        timelog:
+          row.entity_type === AuditEntityType.TIMELOG
+            ? {
+                time_spent: typeof row.after_payload?.time_spent === 'number' ? row.after_payload.time_spent : 0,
+                summary: typeof row.after_payload?.summary === 'string' ? row.after_payload.summary : '',
+                tracking_date: typeof row.after_payload?.tracking_date === 'string' ? row.after_payload.tracking_date : null,
+              }
+            : null,
       };
     });
   }
