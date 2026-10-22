@@ -4,7 +4,7 @@ import type {
   CrmActivityKind,
   TaskBusinessKind,
 } from "./crm.enums";
-import type { TASK_STATUSES } from "../tasks/task-status.enum";
+import type { TaskStatus } from "../tasks/task-status.enum";
 export interface CrmCompany {
   id: number;
   name: string;
@@ -55,7 +55,7 @@ export interface CrmTask {
   id: number;
   title: string;
   planned_date: string | null;
-  status: TASK_STATUSES;
+  status: TaskStatus;
   business_kind: TaskBusinessKind;
 }
 export interface CrmActivity {

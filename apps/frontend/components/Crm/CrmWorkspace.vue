@@ -1039,7 +1039,6 @@ const selectStage = (value: string | number | (string | number)[] | null) => {
     <header class="crm__header">
       <div>
         <h1>CRM</h1>
-        <p>Сделки и клиентская база</p>
       </div>
       <button
         class="crm__primary"

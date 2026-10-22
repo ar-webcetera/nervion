@@ -1,11 +1,11 @@
+import type { TaskStatus } from '@tracker/contracts';
 import { Column, Entity, JoinColumn, OneToOne, PrimaryColumn } from 'typeorm';
 import { Users } from '../../users/entities/users.entity';
-import { TASK_STATUSES } from '../../common/enums/statuses.enum';
 
 export type TaskViewType = 'kanban' | 'list' | 'weekly';
 
 export interface Filter {
-  statuses?: TASK_STATUSES[];
+  statuses?: TaskStatus[];
   projects?: number[];
   responsibles?: number[];
   planned_date?: string[];
@@ -26,7 +26,7 @@ export class UserTaskFilter {
   task_filters: Filter;
 
   @Column({ type: 'jsonb', name: 'collapsed_columns', default: () => "'[]'" })
-  collapsed_columns: TASK_STATUSES[];
+  collapsed_columns: TaskStatus[];
 
   @Column({ type: 'varchar', name: 'view_type', default: 'list' })
   view_type: TaskViewType;

@@ -8,3 +8,6 @@ export enum TASK_STATUSES {
   control = "control",
   closed = "closed",
 }
+
+/** Persistent stage key. Built-in keys retain their business meaning. */
+export type TaskStatus = string;

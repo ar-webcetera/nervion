@@ -4,6 +4,9 @@ import FloatingChatWidget from '~/components/Chat/FloatingChatWidget.vue';
 import VoicePanel from '~/components/Voice/VoicePanel.vue';
 import { PAGE_NAMES } from '~/constants/pages.constants';
 
+const { refresh: refreshTaskStages } = useTaskStages();
+await useAsyncData('task-stage-definitions', refreshTaskStages);
+
 const taskStore = useTaskStore();
 const rootStore = useRootStore();
 const router = useRouter();

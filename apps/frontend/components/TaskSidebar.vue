@@ -146,7 +146,7 @@ const toggleRecurrenceDay = (day: number) => {
   updateRecurrenceDays(updated.length ? updated : null);
 };
 
-const allStatusOptions = useStatusOptions();
+const allStatusOptions = useStatusOptions(() => taskStore.currentTask?.business_kind === 'sales');
 const statusOptions = computed(() =>
   taskStore.currentTask?.business_kind === 'sales'
     ? allStatusOptions.value.filter((option) => ['to_do', 'in_progress', 'closed'].includes(option.value))

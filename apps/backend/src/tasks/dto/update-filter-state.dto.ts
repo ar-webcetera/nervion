@@ -1,12 +1,12 @@
-import { IsArray, IsEnum, IsNumber, IsObject, IsOptional, IsString } from 'class-validator';
-import { TASK_STATUSES } from '../../common/enums/statuses.enum';
+import type { TaskStatus } from '@tracker/contracts';
+import { IsArray, IsNumber, IsObject, IsOptional, IsString } from 'class-validator';
 import { TaskType } from '../entities/task.entity';
 
 export class UpdateFilterStateDto {
   @IsOptional()
   @IsArray()
-  @IsEnum(TASK_STATUSES, { each: true })
-  statuses: TASK_STATUSES[];
+  @IsString({ each: true })
+  statuses: TaskStatus[];
 
   @IsOptional()
   @IsArray()

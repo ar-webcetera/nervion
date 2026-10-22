@@ -96,8 +96,13 @@ describe('TasksService', () => {
     update: jest.fn(),
   };
   const mockDeepseekService = {};
+  const mockStageRepository = {
+    existsBy: jest.fn<Promise<boolean>, [{ id: string }]>().mockResolvedValue(true),
+    find: jest.fn().mockResolvedValue([]),
+  };
   const mockDataSource = {
     transaction: jest.fn(),
+    getRepository: jest.fn(() => mockStageRepository),
   };
   const mockAuditLogsService = {
     record: jest.fn(),
@@ -197,10 +202,18 @@ describe('TasksService', () => {
 
     service = module.get<TasksService>(TasksService);
     jest.clearAllMocks();
+    mockStageRepository.existsBy.mockResolvedValue(true);
     mockProjectsRepository.findOne.mockResolvedValue({ id: 1, name: 'Проект' } as Projects);
     mockUsersRepository.findOne.mockResolvedValue({ id: 1 } as Users);
     mockTasksRepository.findOne.mockResolvedValue({ id: 1, recurrence_days: null, priority: 1 } as Partial<Tasks>);
     mockTasksRepository.save.mockResolvedValue({ id: 1 } as Tasks);
+  });
+
+  it('отклоняет создание задачи в удалённом этапе', async () => {
+    mockStageRepository.existsBy.mockResolvedValueOnce(false);
+    const dto = Object.assign(new CreateTaskDto(), { title: 'Задача', status: 'custom_deleted' });
+    await expect(service.createTask(dto, createAuthenticatedUser(1))).rejects.toMatchObject({ status: 400 });
+    expect(mockTasksRepository.save).not.toHaveBeenCalled();
   });
 
   it('должен быть определен', () => {

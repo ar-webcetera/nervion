@@ -65,7 +65,6 @@ export const CreateTaskResponseDto = {
     },
     status: {
       type: 'string',
-      enum: Object.values(TASK_STATUSES),
       example: TASK_STATUSES.open,
     },
     created_at: {

@@ -1,3 +1,4 @@
+import type { TaskStatus } from '@tracker/contracts';
 import {
   Check,
   Column,
@@ -62,11 +63,10 @@ export class Tasks {
   project: Projects | null;
 
   @Column({
-    type: 'enum',
-    enum: TASK_STATUSES,
+    type: 'varchar',
     default: TASK_STATUSES.open,
   })
-  status: TASK_STATUSES;
+  status: TaskStatus;
 
   @Column({
     type: 'numeric',

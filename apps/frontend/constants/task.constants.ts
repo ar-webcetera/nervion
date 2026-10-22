@@ -1,9 +1,10 @@
+import type { TaskStatus } from '@tracker/contracts';
 import { TASK_STATUSES } from '@tracker/contracts';
 
 export const MAX_TASK_NAME_LENGTH = 150;
 export { TASK_STATUSES };
 
-export const TASK_STATUS_LABELS: Record<TASK_STATUSES, string> = {
+export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   [TASK_STATUSES.archive]: 'Архив',
   [TASK_STATUSES.open]: 'Открыто',
   [TASK_STATUSES.to_do]: 'К выполнению',
@@ -14,7 +15,7 @@ export const TASK_STATUS_LABELS: Record<TASK_STATUSES, string> = {
   [TASK_STATUSES.closed]: 'Закрыто',
 };
 
-export const TASK_STATUS_COLORS: Record<TASK_STATUSES, string> = {
+export const TASK_STATUS_COLORS: Record<TaskStatus, string> = {
   [TASK_STATUSES.archive]: '#8B8B8B',
   [TASK_STATUSES.open]: '#FEFEFE',
   [TASK_STATUSES.to_do]: '#38AEF7',
@@ -25,7 +26,7 @@ export const TASK_STATUS_COLORS: Record<TASK_STATUSES, string> = {
   [TASK_STATUSES.closed]: '#059669',
 };
 
-export const TASK_STATUS_DESCRIPTIONS: Record<TASK_STATUSES, string> = {
+export const TASK_STATUS_DESCRIPTIONS: Record<TaskStatus, string> = {
   [TASK_STATUSES.archive]: 'Вход: задача больше не участвует в работе. Выход: вернуть в "Открыто", если она снова актуальна.',
   [TASK_STATUSES.open]:
     'Вход: задача зафиксирована, но еще не готова к выполнению. Выход: уточнить условия и перенести в "К выполнению".',

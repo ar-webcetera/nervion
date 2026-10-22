@@ -1,10 +1,10 @@
+import type { TaskStatus } from '@tracker/contracts';
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { format } from 'date-fns';
 import type { Task, TaskParams, WeeklyTasksResponse } from '~/types/task';
 import type { Project } from '~/types/project';
 import type { User } from '~/types/user';
-import type { TASK_STATUSES } from '~/constants/task.constants';
 import type { JSONContent } from '@tiptap/core';
 import type { TaskType } from '~/enums/task.enums';
 import { extractPlainText, type TiptapDoc } from '~/utils/extractPainText';
@@ -55,7 +55,7 @@ interface GetTasksParams {
 
 interface UpdateTasksOptions {
   project_id?: number;
-  status?: TASK_STATUSES;
+  status?: TaskStatus;
   responsible_id?: number | number[] | null;
   description?: JSONContent;
   title?: string;
@@ -71,7 +71,7 @@ export interface KanbanCard {
   id: number | string;
   title: string;
   description?: string;
-  status: TASK_STATUSES;
+  status: TaskStatus;
   priority: number;
   users?: string[];
   projectName?: string;
@@ -85,7 +85,7 @@ export interface KanbanCard {
 export interface KanbanColumn {
   id: number | string;
   title: string;
-  status: TASK_STATUSES;
+  status: TaskStatus;
   cards: KanbanCard[];
   total?: number;
   collapsed?: boolean;
@@ -105,6 +105,7 @@ export interface KanbanParams {
 }
 
 export const useTaskStore = defineStore('task', () => {
+  const requestHeaders = useRequestHeaders(['cookie']);
   const config = useRuntimeConfig();
   const { $api } = useNuxtApp();
   const timelogStore = useTimelogStore();
@@ -183,7 +184,7 @@ export const useTaskStore = defineStore('task', () => {
   };
 
   const getFilterState = async () => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = requestHeaders;
     const response = await $fetch<Filter>(`/api/tasks/filter-state`, {
       method: 'GET',
       credentials: 'include',
@@ -204,7 +205,7 @@ export const useTaskStore = defineStore('task', () => {
     return response;
   };
 
-  const setColumnCollapsed = async (status: TASK_STATUSES, collapsed: boolean) => {
+  const setColumnCollapsed = async (status: TaskStatus, collapsed: boolean) => {
     const column = kanban.value.find((c) => c.status === status);
     if (!column) return;
 
@@ -271,7 +272,7 @@ export const useTaskStore = defineStore('task', () => {
     useSavedFilters,
     timezone,
   }: Partial<GetTasksParams>) => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = requestHeaders;
     const params: Partial<GetTasksParams> = {};
     if (statuses) params.statuses = statuses;
     if (projects) params.projects = projects;
@@ -302,7 +303,7 @@ export const useTaskStore = defineStore('task', () => {
   const searchTasks = async (title: string, limit = 20) => {
     const trimmed = title.trim();
     if (!trimmed) return [];
-    const headers = useRequestHeaders(['cookie']);
+    const headers = requestHeaders;
     const response = await $fetch<Task[]>(`/api/tasks/`, {
       baseURL: config.public.API_URL,
       method: 'GET',
@@ -314,7 +315,7 @@ export const useTaskStore = defineStore('task', () => {
   };
 
   const getKanban = async (params: Partial<KanbanParams>) => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = requestHeaders;
     const response = await $fetch<KanbanColumn[]>(`/api/tasks/kanban`, {
       baseURL: config.public.API_URL,
       method: 'GET',
@@ -334,7 +335,7 @@ export const useTaskStore = defineStore('task', () => {
   const loadMoreColumn = async (status: string, params: Partial<KanbanParams>, offset: number, limit = 50) => {
     const requestedColumn = kanban.value.find((c) => c.status === status);
     if (!requestedColumn) return;
-    const headers = useRequestHeaders(['cookie']);
+    const headers = requestHeaders;
     const response = await $fetch<{ status: string; total: number; cards: KanbanCard[] }>(`/api/tasks/kanban/column`, {
       baseURL: config.public.API_URL,
       method: 'GET',
@@ -361,7 +362,7 @@ export const useTaskStore = defineStore('task', () => {
   };
 
   const fetchTasksWithTimelogs = async () => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = requestHeaders;
     const response = await $fetch<Task[]>(`/api/tasks/`, {
       baseURL: config.public.API_URL,
       credentials: 'include',
@@ -376,7 +377,7 @@ export const useTaskStore = defineStore('task', () => {
   };
 
   const fetchTask = async (taskId: number) => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = requestHeaders;
     const task = await $fetch<Task>(`/api/tasks/${taskId}`, {
       baseURL: config.public.API_URL,
       method: 'GET',
@@ -496,7 +497,7 @@ export const useTaskStore = defineStore('task', () => {
   const myTodayTasksCount = ref(0);
 
   const fetchWeeklyTasks = async (weekStart?: string, useSavedFilters = true) => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = requestHeaders;
     const response = await $fetch<WeeklyTasksResponse>(`/api/tasks/weekly`, {
       baseURL: config.public.API_URL,
       method: 'GET',
@@ -526,7 +527,7 @@ export const useTaskStore = defineStore('task', () => {
       return 0;
     }
 
-    const headers = useRequestHeaders(['cookie']);
+    const headers = requestHeaders;
     const response = await $fetch<WeeklyTasksResponse>(`/api/tasks/weekly`, {
       baseURL: config.public.API_URL,
       method: 'GET',
@@ -637,7 +638,7 @@ export const useTaskStore = defineStore('task', () => {
 
   const exportTasks = async (params: ExportTasksParams) => {
     const config = useRuntimeConfig();
-    const headers = useRequestHeaders(['cookie']);
+    const headers = requestHeaders;
 
     const response = await $fetch<Blob>(`/api/tasks/export`, {
       baseURL: config.public.API_URL,

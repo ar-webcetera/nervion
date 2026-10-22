@@ -1,4 +1,5 @@
-import { IsArray, IsBoolean, IsEnum, IsNumber, IsOptional } from 'class-validator';
+import type { TaskStatus } from '@tracker/contracts';
+import { IsString, IsArray, IsBoolean, IsEnum, IsNumber, IsOptional } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { TASK_STATUSES } from '../../common/enums/statuses.enum';
@@ -49,20 +50,16 @@ export class FindTasksByFilterDto {
   responsibles?: number[];
 
   @ApiProperty({
-    description: 'Статусы задач (массив значений TASK_STATUSES), не передавать или projects=null для без фильтра',
+    description: 'Ключи этапов задач, не передавать для выборки без фильтра',
     example: [TASK_STATUSES.open, TASK_STATUSES.in_progress],
     required: false,
     type: [String],
-    enum: Object.values(TASK_STATUSES),
     nullable: true,
   })
   @IsOptional()
   @IsArray({ message: 'statuses должен быть массивом строк' })
-  @IsEnum(TASK_STATUSES, {
-    each: true,
-    message: 'каждый элемент statuses должен быть одним из TASK_STATUSES',
-  })
-  statuses?: TASK_STATUSES[];
+  @IsString({ each: true })
+  statuses?: TaskStatus[];
 
   @ApiProperty({
     description: 'Дата планирования задачи (массив строк для диапазона или одна строка)',

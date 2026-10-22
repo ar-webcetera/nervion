@@ -1,3 +1,5 @@
+import { TaskStageEntity } from './entities/task-stage.entity';
+import type { TaskStatus } from '@tracker/contracts';
 import { TASK_CODE_PREFIX, TaskBusinessKind, CrmActivityKind } from '@tracker/contracts';
 import { CrmActivityEntity, CrmDealEntity } from '../crm/entities/crm.entity';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
@@ -39,7 +41,7 @@ import { buildPublicAppUrl } from '../common/utils/public-app-url';
 interface TaskAuditPayload extends JsonObject {
   title: string | null;
   description: string | null;
-  status: TASK_STATUSES | null;
+  status: TaskStatus | null;
   project_id: number | null;
   responsible_id: number | null;
   taskType: TaskType | null;
@@ -432,41 +434,39 @@ export class TasksService {
     const collapsedColumns = new Set(userFilter?.collapsed_columns ?? []);
     const KANBAN_PAGE = 50;
 
-    const columnDefs = [
-      { id: 1, title: 'Архив', status: TASK_STATUSES.archive },
-      { id: 2, title: 'Открыто', status: TASK_STATUSES.open },
-      { id: 3, title: 'К выполнению', status: TASK_STATUSES.to_do },
-      { id: 4, title: 'Выполняется', status: TASK_STATUSES.in_progress },
-      { id: 5, title: 'Ожидание', status: TASK_STATUSES.waiting },
-      { id: 6, title: 'На ревью', status: TASK_STATUSES.in_review },
-      { id: 7, title: 'Контроль', status: TASK_STATUSES.control },
-      { id: 8, title: 'Закрыто', status: TASK_STATUSES.closed },
-    ];
+    const columnDefs: Array<{ id: string; title: string; status: string }> =
+      getKanbanByFilterDto.business_kind === TaskBusinessKind.SALES
+        ? [
+            { id: TASK_STATUSES.to_do, title: 'К выполнению', status: TASK_STATUSES.to_do },
+            { id: TASK_STATUSES.in_progress, title: 'Выполняется', status: TASK_STATUSES.in_progress },
+            { id: TASK_STATUSES.closed, title: 'Закрыто', status: TASK_STATUSES.closed },
+          ]
+        : (await this.dataSource.getRepository(TaskStageEntity).find({ order: { position: 'ASC', id: 'ASC' } })).map((stage) => ({
+            ...stage,
+            status: stage.id,
+          }));
+
+    if (
+      !getKanbanByFilterDto.business_kind &&
+      currentUser.role === ROLES.admin &&
+      !columnDefs.some((stage) => stage.status === String(TASK_STATUSES.to_do)) &&
+      (await this.tasksRepository.existsBy({ status: TASK_STATUSES.to_do, business_kind: TaskBusinessKind.SALES }))
+    ) {
+      columnDefs.push({ id: TASK_STATUSES.to_do, status: TASK_STATUSES.to_do, title: 'К выполнению (продажи)' });
+    }
 
     const columns = await Promise.all(
-      columnDefs
-        .filter(
-          (def) =>
-            getKanbanByFilterDto.business_kind !== TaskBusinessKind.SALES ||
-            [TASK_STATUSES.to_do, TASK_STATUSES.in_progress, TASK_STATUSES.closed].includes(def.status),
-        )
-        .map(async (def) => {
-          const { cards, total } = await this.fetchKanbanColumnPage(
-            getKanbanByFilterDto,
-            def.status,
-            0,
-            KANBAN_PAGE,
-            currentUser,
-          );
-          return {
-            id: def.id,
-            title: def.title,
-            status: def.status,
-            cards,
-            total,
-            collapsed: collapsedColumns.has(def.status),
-          };
-        }),
+      columnDefs.map(async (def) => {
+        const { cards, total } = await this.fetchKanbanColumnPage(getKanbanByFilterDto, def.status, 0, KANBAN_PAGE, currentUser);
+        return {
+          id: def.id,
+          title: def.title,
+          status: def.status,
+          cards,
+          total,
+          collapsed: collapsedColumns.has(def.status),
+        };
+      }),
     );
 
     return columns;
@@ -474,7 +474,7 @@ export class TasksService {
 
   async getKanbanColumn(
     getKanbanByFilterDto: FindTasksByFilterDto,
-    status: TASK_STATUSES,
+    status: TaskStatus,
     offset: number,
     limit: number,
     currentUser: AuthenticatedUser,
@@ -485,7 +485,7 @@ export class TasksService {
 
   private async fetchKanbanColumnPage(
     getKanbanByFilterDto: FindTasksByFilterDto,
-    status: TASK_STATUSES,
+    status: TaskStatus,
     offset: number,
     limit: number,
     currentUser: AuthenticatedUser,
@@ -627,6 +627,7 @@ export class TasksService {
 
     const status =
       createTaskDto.status ?? (createTaskDto.business_kind === TaskBusinessKind.SALES ? TASK_STATUSES.to_do : TASK_STATUSES.open);
+    if (createTaskDto.business_kind !== TaskBusinessKind.SALES) await this.assertStageExists(status);
     const data: DeepPartial<Tasks> = {
       business_kind: createTaskDto.business_kind ?? TaskBusinessKind.PRODUCTION,
       deal_id: createTaskDto.deal_id ?? null,
@@ -648,7 +649,7 @@ export class TasksService {
     if (createTaskDto.planned_date) data.planned_date = createTaskDto.planned_date;
     const task = this.tasksRepository.create(data);
     const createdTask = await this.tasksRepository.save(task);
-    if (status === TASK_STATUSES.closed) await this.upsertFixedRevenue(createdTask);
+    if (status === String(TASK_STATUSES.closed)) await this.upsertFixedRevenue(createdTask);
     const createdTaskForLog = await this.tasksRepository.findOne({
       where: { id: createdTask.id },
       relations: ['project', 'responsible'],
@@ -813,6 +814,8 @@ export class TasksService {
         data.responsible_id = null;
       }
       if (updateTaskDto.status) {
+        if ((updateTaskDto.business_kind ?? existingTask.business_kind) !== TaskBusinessKind.SALES)
+          await this.assertStageExists(updateTaskDto.status);
         data.status = updateTaskDto.status;
         data.closed_date = this.resolveClosedDate(updateTaskDto.status);
       }
@@ -929,7 +932,7 @@ export class TasksService {
       await this.recordCrmTask(
         Number(taskId),
         currentUser,
-        `Обновлена задача «${existingTask.title}»${updateTaskDto.status ? `: ${updateTaskDto.status === TASK_STATUSES.closed ? 'Закрыта' : updateTaskDto.status === TASK_STATUSES.in_progress ? 'Выполняется' : 'К выполнению'}` : ''}`,
+        `Обновлена задача «${existingTask.title}»${updateTaskDto.status ? `: ${updateTaskDto.status === String(TASK_STATUSES.closed) ? 'Закрыта' : updateTaskDto.status === String(TASK_STATUSES.in_progress) ? 'Выполняется' : 'К выполнению'}` : ''}`,
       );
       return findTask ?? updatedTask;
     } catch (e) {
@@ -1101,7 +1104,7 @@ export class TasksService {
     };
   }
 
-  async saveUserCollapsedColumns(userId: number, collapsed_columns: TASK_STATUSES[]) {
+  async saveUserCollapsedColumns(userId: number, collapsed_columns: TaskStatus[]) {
     const userFilter = await this.userTaskFilterRepository.findOne({ where: { user_id: userId } });
 
     if (userFilter) {
@@ -1190,6 +1193,9 @@ export class TasksService {
 
     const tasks = await qb.getMany();
 
+    const stageLabels = new Map(
+      (await this.dataSource.getRepository(TaskStageEntity).find()).map((stage) => [stage.id, stage.title]),
+    );
     const data = tasks.map((task) => {
       const description = task.description ? extractTextFromDoc(task.description).slice(0, 32_000) : '';
 
@@ -1197,7 +1203,10 @@ export class TasksService {
         ID: task.id,
         Название: task.title,
         Тип: task.taskType === TaskType.USER_STORY ? 'История' : 'Задача',
-        Статус: this.getStatusLabel(task.status),
+        Статус:
+          task.business_kind === TaskBusinessKind.SALES
+            ? this.getStatusLabel(task.status)
+            : (stageLabels.get(task.status) ?? task.status),
         Проект: task.project?.name || '',
         Ответственный: task.responsible ? `${task.responsible.last_name} ${task.responsible.first_name}` : '',
         Описание: description,
@@ -1442,7 +1451,12 @@ export class TasksService {
     });
   }
 
-  private getStatusLabel(status: TASK_STATUSES): string {
+  private async assertStageExists(status: string) {
+    if (!(await this.dataSource.getRepository(TaskStageEntity).existsBy({ id: status })))
+      throw new HttpException('Этап удалён. Обновите доску и выберите другой.', HttpStatus.BAD_REQUEST);
+  }
+
+  private getStatusLabel(status: TaskStatus): string {
     const labels = {
       [TASK_STATUSES.archive]: 'В архиве',
       [TASK_STATUSES.open]: 'Открыта',
@@ -1456,12 +1470,12 @@ export class TasksService {
     return labels[status] || status;
   }
 
-  private resolveClosedDate(status?: TASK_STATUSES): Date | null | undefined {
+  private resolveClosedDate(status?: TaskStatus): Date | null | undefined {
     if (!status) {
       return undefined;
     }
 
-    return status === TASK_STATUSES.closed ? new Date() : null;
+    return status === String(TASK_STATUSES.closed) ? new Date() : null;
   }
 
   private assertBillingFieldsAccess(dto: Pick<CreateTaskDto, 'billing_type' | 'fixed_price'>, currentUser?: AuthenticatedUser) {
@@ -1481,7 +1495,10 @@ export class TasksService {
     if (dto.deal_id && !(await this.dataSource.getRepository(CrmDealEntity).existsBy({ id: dto.deal_id })))
       throw new HttpException('Сделка не найдена', HttpStatus.BAD_REQUEST);
     if (!sales) return;
-    if (dto.status && ![TASK_STATUSES.to_do, TASK_STATUSES.in_progress, TASK_STATUSES.closed].includes(dto.status))
+    if (
+      dto.status &&
+      ![TASK_STATUSES.to_do, TASK_STATUSES.in_progress, TASK_STATUSES.closed].some((status) => status === dto.status)
+    )
       throw new HttpException('Недопустимый статус коммерческой задачи', HttpStatus.BAD_REQUEST);
     if (dto.billing_type || dto.fixed_price || dto.recurrence_days?.length)
       throw new HttpException('Для коммерческой задачи недоступны оплата и повторения', HttpStatus.BAD_REQUEST);
@@ -1556,7 +1573,7 @@ export class TasksService {
       }
     }
 
-    if (task.status === TASK_STATUSES.closed && task.billing_type === TaskBillingType.FIXED) {
+    if (task.status === String(TASK_STATUSES.closed) && task.billing_type === TaskBillingType.FIXED) {
       await this.upsertFixedRevenue(task);
       return;
     }

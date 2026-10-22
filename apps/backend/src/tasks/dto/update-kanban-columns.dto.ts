@@ -1,8 +1,8 @@
-import { IsArray, IsEnum } from 'class-validator';
-import { TASK_STATUSES } from '../../common/enums/statuses.enum';
+import type { TaskStatus } from '@tracker/contracts';
+import { IsString, IsArray } from 'class-validator';
 
 export class UpdateKanbanColumnsDto {
   @IsArray()
-  @IsEnum(TASK_STATUSES, { each: true })
-  collapsed_columns: TASK_STATUSES[];
+  @IsString({ each: true })
+  collapsed_columns: TaskStatus[];
 }

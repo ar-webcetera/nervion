@@ -1,8 +1,8 @@
+import type { TaskStatus } from '@tracker/contracts';
 import type { JSONContent } from '@tiptap/core';
 import { TaskBusinessKind } from '@tracker/contracts';
 import type { SelectOption } from '~/types/select';
 import type { User } from '~/types/user';
-import type { TASK_STATUSES } from '~/constants/task.constants';
 import type { TaskType } from '~/enums/task.enums';
 import { getErrorMessage } from '~/utils/error';
 import type { Task } from '~/types/task';
@@ -31,8 +31,11 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
   const responsibleId = ref<number | null>(null);
   const projectUpdatePending = ref(false);
 
-  const prefix = computed(() => taskStore.currentTask?.business_kind === TaskBusinessKind.SALES
-    ? `crm/tasks/${taskId.value}/` : `tracker-tasks/${taskId.value}/`);
+  const prefix = computed(() =>
+    taskStore.currentTask?.business_kind === TaskBusinessKind.SALES
+      ? `crm/tasks/${taskId.value}/`
+      : `tracker-tasks/${taskId.value}/`,
+  );
 
   const usersOptions = computed(() => {
     if (userStore.users.length) {
@@ -127,7 +130,7 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
   const updateTaskStatus = async (value: string | number | (string | number)[] | null) => {
     try {
       if (!taskId.value) return;
-      const status = value as TASK_STATUSES;
+      const status = value as TaskStatus;
       await taskStore.updateTask(taskId.value, { status });
 
       const task = taskStore.tasks.find((t) => t.id === taskId.value);
@@ -243,7 +246,7 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
     }
   };
 
-  const moveTaskToStatusColumn = (id: number, status: TASK_STATUSES) => {
+  const moveTaskToStatusColumn = (id: number, status: TaskStatus) => {
     const task = taskStore.tasks.find((t) => t.id === id) ?? (taskStore.currentTask?.id === id ? taskStore.currentTask : null);
     if (!task) return;
 

@@ -27,10 +27,12 @@ const props = withDefaults(
     modelValue?: boolean;
     dismissible?: boolean;
     showClose?: boolean;
+    padded?: boolean;
   }>(),
   {
     dismissible: true,
     showClose: true,
+    padded: false,
   },
 );
 
@@ -87,7 +89,7 @@ defineExpose({
             <IconClose />
           </button>
         </div>
-        <div class="base-modal__content">
+        <div class="base-modal__content" :class="{ 'base-modal__content_padded': padded }">
           <slot />
         </div>
       </div>
@@ -148,6 +150,11 @@ defineExpose({
     border-radius: 8px;
     border: 1px solid var(--light-text-backgroung-primary-5);
     background: var(--dark-text-background-primary);
+
+    &_padded {
+      box-sizing: border-box;
+      padding-inline: 24px;
+    }
   }
 }
 

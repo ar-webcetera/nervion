@@ -1,3 +1,11 @@
+import { TaskStagesService } from './task-stages.service';
+import {
+  ApplyTaskStagesDto,
+  CreateTaskStageDto,
+  SaveTaskStageDto,
+  ReorderTaskStagesDto,
+  DeleteTaskStageDto,
+} from './dto/task-stage.dto';
 import {
   Body,
   Controller,
@@ -51,7 +59,57 @@ import { RequestWithCookies } from '../common/types/request';
 @ApiTags('Задачи')
 export class TasksController {
   private readonly logger = new Logger(TasksController.name);
-  constructor(private readonly tasksService: TasksService) {}
+  constructor(
+    private readonly tasksService: TasksService,
+    private readonly stagesService: TaskStagesService,
+  ) {}
+
+  @Get('stages')
+  getStages() {
+    return this.stagesService.list();
+  }
+
+  @Post('stages')
+  @UseGuards(RolesGuard)
+  @Roles(ROLES.admin)
+  createStage(@Body() body: CreateTaskStageDto) {
+    return this.stagesService.save(body.title, undefined, body.afterStageId);
+  }
+
+  @Patch('stages')
+  @UseGuards(RolesGuard)
+  @Roles(ROLES.admin)
+  applyStages(@Body() body: ApplyTaskStagesDto, @Req() req: RequestWithCookies) {
+    return this.stagesService.applyDraft(body, req.user);
+  }
+
+  @Patch('stages/order')
+  @UseGuards(RolesGuard)
+  @Roles(ROLES.admin)
+  reorderStages(@Body() body: ReorderTaskStagesDto) {
+    return this.stagesService.reorder(body.ids);
+  }
+
+  @Patch('stages/:stageId')
+  @UseGuards(RolesGuard)
+  @Roles(ROLES.admin)
+  renameStage(@Param('stageId') id: string, @Body() body: SaveTaskStageDto) {
+    return this.stagesService.save(body.title, id);
+  }
+
+  @Get('stages/:stageId/count')
+  @UseGuards(RolesGuard)
+  @Roles(ROLES.admin)
+  countStage(@Param('stageId') id: string) {
+    return this.stagesService.count(id);
+  }
+
+  @Delete('stages/:stageId')
+  @UseGuards(RolesGuard)
+  @Roles(ROLES.admin)
+  deleteStage(@Param('stageId') id: string, @Body() body: DeleteTaskStageDto, @Req() req: RequestWithCookies) {
+    return this.stagesService.remove(id, body.targetStatus, req.user);
+  }
 
   @Get(':taskId/activity')
   @ApiOperation({ summary: 'История действий по доступной пользователю задаче' })

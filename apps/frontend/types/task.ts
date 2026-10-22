@@ -1,3 +1,4 @@
+import type { TaskStatus } from '@tracker/contracts';
 import type { User } from '~/types/user';
 import type { Project } from '~/types/project';
 import type { JSONContent } from '@tiptap/core';
@@ -45,7 +46,7 @@ export interface Task {
   description: JSONContent;
   project: Project | null;
   taskType: TaskType;
-  status: TASK_STATUSES;
+  status: TaskStatus;
   responsible: User | null;
   current_timelog: Timelog | null;
   isTimerRunning?: boolean;
@@ -68,7 +69,7 @@ export interface WeeklyCard {
   title: string;
   description: string;
   taskType: TaskType;
-  status: TASK_STATUSES;
+  status: TaskStatus;
   priority: number;
   recurrence_days: number[] | null;
   responsible: User | null;

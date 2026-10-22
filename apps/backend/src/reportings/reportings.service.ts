@@ -1,3 +1,5 @@
+import { TaskStageEntity } from '../tasks/entities/task-stage.entity';
+import type { TaskStatus } from '@tracker/contracts';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateReportingDto } from './dto/create-reporting.dto';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -38,7 +40,7 @@ export interface TimelogRow {
   amount: number;
 }
 
-const TASK_STATUS_LABELS: Record<TASK_STATUSES, string> = {
+const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   [TASK_STATUSES.archive]: 'Архив',
   [TASK_STATUSES.open]: 'Открыто',
   [TASK_STATUSES.to_do]: 'К выполнению',
@@ -49,7 +51,7 @@ const TASK_STATUS_LABELS: Record<TASK_STATUSES, string> = {
   [TASK_STATUSES.closed]: 'Закрыто',
 };
 
-const getTaskStatusLabel = (status: TASK_STATUSES): string => TASK_STATUS_LABELS[status] ?? status;
+const getTaskStatusLabel = (status: TaskStatus): string => TASK_STATUS_LABELS[status] ?? status;
 
 interface ReportRow {
   Проект: string;
@@ -408,6 +410,9 @@ export class ReportingsService {
       Сумма: t.amount,
     }));
 
+    const stageLabels = new Map(
+      (await this.tasksRepository.manager.getRepository(TaskStageEntity).find()).map((stage) => [stage.id, stage.title]),
+    );
     const aggByTask = new Map<number, TaskAgg>();
 
     for (const timelog of rawTimelogs) {
@@ -428,7 +433,7 @@ export class ReportingsService {
           projectName: task.project?.name ?? '',
           taskTitle: task.title ?? '',
           description: this.extractTaskDescription(task.description),
-          status: getTaskStatusLabel(task.status),
+          status: stageLabels.get(task.status) ?? getTaskStatusLabel(task.status),
           totalHours: hours,
           totalAmount: amount,
         });

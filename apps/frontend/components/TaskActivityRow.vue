@@ -2,6 +2,7 @@
 import { AuditActionType, TaskBillingType, type TaskActivityItem } from '@tracker/contracts';
 import { History } from '@lucide/vue';
 import { TASK_STATUS_LABELS } from '~/constants/task.constants';
+const { stages } = useTaskStages();
 import { TASK_TYPE_OPTIONS } from '~/enums/task.enums';
 
 const props = defineProps<{ activity: TaskActivityItem }>();
@@ -40,7 +41,7 @@ const valueLabel = (field: string, value: string | null) => {
     return days.length ? days.map((day) => labels[Number(day)]).join(', ') : 'Без повторения';
   }
   if (value == null || value === '') return 'Не указано';
-  if (field === 'status') return Object.entries(TASK_STATUS_LABELS).find(([key]) => key === value)?.[1] ?? value;
+  if (field === 'status') return stages.value.find((stage) => stage.id === value)?.title ?? TASK_STATUS_LABELS[value] ?? value;
   if (field === 'taskType') return TASK_TYPE_OPTIONS.find((option) => option.value === value)?.label ?? value;
   if (['planned_date', 'closed_date', 'recurrence_since'].includes(field)) {
     const date = new Date(value);

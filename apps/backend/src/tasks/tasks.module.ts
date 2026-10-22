@@ -1,3 +1,5 @@
+import { TaskStagesService } from './task-stages.service';
+import { TaskStageEntity } from './entities/task-stage.entity';
 import { Module } from '@nestjs/common';
 import { TasksController } from './tasks.controller';
 import { TasksService } from './tasks.service';
@@ -22,6 +24,7 @@ import { FixedRevenue } from '../reportings/entities/fixed-revenue.entity';
     WebsocketModule,
     HttpModule,
     TypeOrmModule.forFeature([
+      TaskStageEntity,
       Timelogs,
       Users,
       Tasks,
@@ -34,7 +37,7 @@ import { FixedRevenue } from '../reportings/entities/fixed-revenue.entity';
     ]),
   ],
   controllers: [TasksController],
-  providers: [TasksService],
+  providers: [TasksService, TaskStagesService],
   exports: [TasksService],
 })
 export class TasksModule {}

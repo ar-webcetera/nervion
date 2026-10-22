@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import type { TaskStatus } from '@tracker/contracts';
+
 import BaseModal from '~/components/BaseModal.vue';
 import TaskCode from '~/components/TaskCode.vue';
 import IconDrag from '~/components/Icons/IconDrag.vue';
 import { TaskType, type Task, type Timelog } from '~/types/task';
 import { useUserStore } from '~/stores/userStore';
 import type { User } from '~/types/user';
-import type { TASK_STATUSES } from '~/constants/task.constants';
 import type { SelectOption } from '~/types/select';
 import type { Project } from '~/types/project';
 import { useProjectStore } from '~/stores/projectStore';
@@ -45,7 +46,7 @@ resposibleId.value = props.task.responsible_id || null;
 status.value = props.task.status || null;
 projectId.value = props.task.project_id || null;
 
-const allStatusOptions = useStatusOptions();
+const allStatusOptions = useStatusOptions(() => props.task.business_kind === 'sales');
 const statusOptions = computed(() =>
   props.task.business_kind === 'sales'
     ? allStatusOptions.value.filter((option) => ['to_do', 'in_progress', 'closed'].includes(option.value))
@@ -75,7 +76,7 @@ const updateTaskProject = async (taskId: number, value: string | number | (strin
 
 const updateTaskStatus = async (taskId: number, value: string | number | (string | number)[] | null) => {
   try {
-    const status = value as TASK_STATUSES;
+    const status = value as TaskStatus;
     await taskStore.updateTask(taskId, { status });
   } catch (e) {
     $toast.error(getErrorMessage(e));

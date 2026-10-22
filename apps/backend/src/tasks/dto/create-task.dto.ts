@@ -1,3 +1,4 @@
+import type { TaskStatus } from '@tracker/contracts';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsNumber, IsObject, IsOptional, IsString, Length, Min, ValidateIf } from 'class-validator';
 import { TaskBillingType, TaskBusinessKind } from '@tracker/contracts';
@@ -48,7 +49,7 @@ export class CreateTaskDto {
   })
   responsible_id: number | null;
 
-  @IsEnum(TASK_STATUSES)
+  @IsString()
   @IsOptional()
   @ApiProperty({
     isArray: true,
@@ -56,7 +57,7 @@ export class CreateTaskDto {
     example: TASK_STATUSES.in_progress,
     required: false,
   })
-  status: TASK_STATUSES;
+  status: TaskStatus;
 
   @IsString({ message: 'Дата планирования должна быть строкой' })
   @IsOptional()

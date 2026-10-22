@@ -299,7 +299,10 @@ export class CrmService {
         next_task: this.task(
           tasks.find(
             (t) =>
-              t.deal_id === d.id && t.planned_date && t.status !== TASK_STATUSES.closed && t.status !== TASK_STATUSES.archive,
+              t.deal_id === d.id &&
+              t.planned_date &&
+              t.status !== String(TASK_STATUSES.closed) &&
+              t.status !== String(TASK_STATUSES.archive),
           ),
         ),
       };

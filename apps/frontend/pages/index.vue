@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { TaskStatus, TaskStage } from '@tracker/contracts';
+
 import { useFullName } from '~/composables/useFullName';
 import type { FilterChip } from '~/types/filter';
 import { TaskBusinessKind } from '@tracker/contracts';
@@ -15,7 +17,7 @@ import type { Task } from '~/types/task';
 import type { JSONContent } from '@tiptap/core';
 import IconButtonLoader from '~/components/Icons/IconButtonLoader.vue';
 import { CalendarDays, LayoutDashboard, List, Search, X } from '@lucide/vue';
-import { TASK_STATUS_LABELS, MAX_TASK_NAME_LENGTH } from '~/constants/task.constants';
+import { MAX_TASK_NAME_LENGTH } from '~/constants/task.constants';
 import { format } from 'date-fns';
 const projectStore = useProjectStore();
 const { $toast } = useNuxtApp();
@@ -27,6 +29,22 @@ const route = useRoute();
 const router = useRouter();
 
 const { kanban } = storeToRefs(taskStore);
+const editingStages = ref(false);
+const stageDraft = ref<TaskStage[]>([]);
+const stageSettings = ref<InstanceType<(typeof import('~/components/TaskStageSettings.vue'))['default']> | null>(null);
+const canEditStages = computed(() => userStore.user?.role === 'admin' && taskStore.businessKind !== TaskBusinessKind.SALES);
+watch(canEditStages, (allowed) => {
+  if (!allowed) editingStages.value = false;
+});
+const onStagesChanged = async () => {
+  try {
+    await taskStore.getFilterState();
+    await taskStore.getKanban({ useSavedFilters: true });
+    if (taskStore.currentTaskId) await taskStore.fetchTask(taskStore.currentTaskId);
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  }
+};
 const { getKanban } = taskStore;
 const pendingViewRequests = ref(0);
 const isTasksLoading = computed(() => pendingViewRequests.value > 0);
@@ -64,7 +82,7 @@ enum ViewType {
 }
 const viewType = computed<ViewType>(() => (taskStore.viewType as ViewType) ?? ViewType.LIST);
 
-const onToggleCollapse = (payload: { status: TASK_STATUSES; collapsed: boolean }) => {
+const onToggleCollapse = (payload: { status: TaskStatus; collapsed: boolean }) => {
   taskStore.setColumnCollapsed(payload.status, payload.collapsed);
 };
 
@@ -149,7 +167,7 @@ interface NewTask {
   title: string;
   project_id: number | null;
   responsible_id: number | null;
-  status: TASK_STATUSES;
+  status: TaskStatus;
   description: JSONContent;
 }
 const initialTaskData = {
@@ -210,7 +228,7 @@ const createTask = async () => {
   }
 };
 
-const statusOptions = useStatusOptions();
+const statusOptions = useStatusOptions(() => taskStore.businessKind === TaskBusinessKind.SALES);
 
 const usersOptions = computed(() => {
   if (userStore.users.length) {
@@ -302,6 +320,7 @@ watch(
 );
 
 const setViewType = (type: ViewType) => {
+  if (type !== ViewType.KANBAN) editingStages.value = false;
   taskStore.saveViewType(type);
   if (type === ViewType.KANBAN) {
     fetchKanban();
@@ -383,7 +402,7 @@ const filterChips = computed((): FilterChip[] => {
     chips.push({
       id: chipId,
       type: FilterType.STATUS,
-      label: TASK_STATUS_LABELS[status as TASK_STATUSES],
+      label: statusOptions.value.find((option) => option.value === status)?.label ?? status,
       value: status,
       isNegative: taskStore.filter.negativeFilters?.[chipId] || false,
     });
@@ -693,7 +712,7 @@ const swapPriorityTask = async (taskIds: number[]) => {
   }
 };
 
-const updateTask = async (taskId: number, task: { status: TASK_STATUSES }) => {
+const updateTask = async (taskId: number, task: { status: TaskStatus }) => {
   try {
     await taskStore.updateTask(taskId, { status: task.status });
   } catch (e) {
@@ -794,16 +813,14 @@ useHead({
         @export="handleExport"
       />
 
-      <label
-        class="home__today-filter"
-        :class="{ 'home__today-filter_active': isTodayFilterActive }"
-      >
+      <label class="home__today-filter" :class="{ 'home__today-filter_active': isTodayFilterActive }">
         <input type="checkbox" :checked="isTodayFilterActive" @change="toggleTodayFilter" />
         <span>Мои сегодня</span>
       </label>
 
       <div class="toggle-view-type">
         <button
+          v-if="!editingStages"
           type="button"
           class="toggle-view-type__button"
           :class="{ 'toggle-view-type__button_active': viewType === ViewType.KANBAN }"
@@ -814,6 +831,7 @@ useHead({
           <span class="toggle-view-type__label">Канбан</span>
         </button>
         <button
+          v-if="!editingStages"
           type="button"
           class="toggle-view-type__button"
           :class="{ 'toggle-view-type__button_active': viewType === ViewType.WEEKLY }"
@@ -827,6 +845,7 @@ useHead({
           </span>
         </button>
         <button
+          v-if="!editingStages"
           type="button"
           class="toggle-view-type__button"
           :class="{ 'toggle-view-type__button_active': viewType === ViewType.LIST }"
@@ -836,6 +855,18 @@ useHead({
           <List :size="20" :stroke-width="1.75" aria-hidden="true" />
           <span class="toggle-view-type__label">Список</span>
         </button>
+        <TaskStageSettings
+          v-if="canEditStages"
+          ref="stageSettings"
+          v-model:editing="editingStages"
+          @update:editing="
+            (value) => {
+              if (value) setViewType(ViewType.KANBAN);
+            }
+          "
+          @draft-change="stageDraft = $event"
+          @changed="onStagesChanged"
+        />
       </div>
 
       <button
@@ -876,8 +907,15 @@ useHead({
       <template v-else-if="viewType === ViewType.KANBAN">
         <BaseKanban
           :key="String(taskStore.filter)"
-          quick-create-enabled
+          :quick-create-enabled="!editingStages"
+          :editing-stages="editingStages"
+          :stage-draft="stageDraft"
+          :stages-busy="stageSettings?.busy ?? false"
           :columns="kanban"
+          @add-stage="stageSettings?.openAfter($event)"
+          @rename-stage="stageSettings?.open($event)"
+          @delete-stage="stageSettings?.open($event, true)"
+          @reorder-stages="stageSettings?.reorder($event)"
           @click-to-card="openTaskSidebar"
           @swap-priority-task="swapPriorityTask"
           @update-task="updateTask"
@@ -949,10 +987,7 @@ useHead({
           @remove-filter="removeFilter"
           @toggle-filter-mode="toggleFilterMode"
         />
-        <label
-          class="home__today-filter mobile-task-search__today"
-          :class="{ 'home__today-filter_active': isTodayFilterActive }"
-        >
+        <label class="home__today-filter mobile-task-search__today" :class="{ 'home__today-filter_active': isTodayFilterActive }">
           <input type="checkbox" :checked="isTodayFilterActive" @change="toggleTodayFilterFromMobile" />
           <span>Мои сегодня</span>
         </label>
@@ -1388,7 +1423,7 @@ useHead({
 
 .toggle-view-type {
   margin-left: auto;
-  display: flex;
+  @include flex(rw, a-center);
   gap: 12px;
 
   &__button {
@@ -1461,7 +1496,7 @@ useHead({
   padding: 0 20px;
 
   &__header {
-    @include flex(rn between a-center);
+    @include flex(rn, between, a-center);
     gap: 16px;
   }
 

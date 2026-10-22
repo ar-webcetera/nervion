@@ -1,5 +1,8 @@
 <script setup lang="ts">
+import type { TaskStatus, TaskStage } from '@tracker/contracts';
+
 import TaskCode from '~/components/TaskCode.vue';
+import { GripVertical, Pencil, Trash2, ChevronLeft, ChevronRight, Lock, Ellipsis, Plus } from '@lucide/vue';
 import type { PropType } from 'vue';
 import { TASK_STATUSES, TASK_STATUS_DESCRIPTIONS } from '~/constants/task.constants';
 import { TaskType } from '~/enums/task.enums';
@@ -16,12 +19,15 @@ const TASK_STATUS_DESCRIPTION_PARTS = Object.fromEntries(
       },
     ];
   }),
-) as Record<TASK_STATUSES, { entry: string; exit: string }>;
+) as Record<TaskStatus, { entry: string; exit: string }>;
 
 const { resolveAwsUrl } = useResolveUrl();
 const { isDragging: isBoardDragging, onPointerDown, onPointerMove, onPointerEnd } = useHorizontalDragScroll();
 
 const props = defineProps({
+  editingStages: { type: Boolean, default: false },
+  stageDraft: { type: Array as PropType<TaskStage[]>, default: () => [] },
+  stagesBusy: { type: Boolean, default: false },
   columns: {
     type: Array as PropType<KanbanColumn[]>,
     default: () => [
@@ -86,7 +92,18 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['click-to-card', 'swap-priority-task', 'update-task', 'toggle-collapse', 'load-more', 'task-created']);
+const emit = defineEmits([
+  'click-to-card',
+  'swap-priority-task',
+  'update-task',
+  'toggle-collapse',
+  'load-more',
+  'task-created',
+  'add-stage',
+  'rename-stage',
+  'delete-stage',
+  'reorder-stages',
+]);
 
 const quickCreatePending = ref(false);
 const quickCreateStatus = ref<string | null>(null);
@@ -112,7 +129,140 @@ watch(
   },
 );
 
-const columns = computed<KanbanColumn[]>(() => props.columns);
+const { stages } = useTaskStages();
+const stageDefinitions = computed(() => (props.editingStages ? props.stageDraft : stages.value));
+const columns = computed<KanbanColumn[]>(() => {
+  if (!props.editingStages) return props.columns;
+  return props.stageDraft.map((stage) => ({
+    ...(props.columns.find((column) => column.status === stage.id) ?? { cards: [], total: 0 }),
+    id: stage.id,
+    status: stage.id,
+    title: stage.title,
+    collapsed: false,
+  }));
+});
+const configuredStage = (id: string) => stageDefinitions.value.some((stage) => stage.id === id);
+const protectedStage = (id: string) => stageDefinitions.value.find((stage) => stage.id === id)?.protected ?? true;
+const draggedStage = ref<string | null>(null);
+const stageInsertIndex = ref<number | null>(null);
+const stageMenu = ref<string | null>(null);
+const boardElement = ref<HTMLElement | null>(null);
+const draggedStageTitle = computed(() => columns.value.find((column) => column.status === draggedStage.value)?.title);
+let scrollFrame: number | null = null;
+let scrollSpeed = 0;
+const stopStageScroll = () => {
+  if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+  scrollFrame = null;
+  scrollSpeed = 0;
+};
+const resetStageDrag = () => {
+  draggedStage.value = null;
+  stageInsertIndex.value = null;
+  stopStageScroll();
+};
+const scrollStageBoard = () => {
+  if (!boardElement.value || !draggedStage.value || !scrollSpeed) {
+    stopStageScroll();
+    return;
+  }
+  boardElement.value.scrollLeft += scrollSpeed;
+  scrollFrame = requestAnimationFrame(scrollStageBoard);
+};
+const trackStagePointer = (event: DragEvent) => {
+  if (!draggedStage.value || !boardElement.value) return;
+  event.preventDefault();
+  const rect = boardElement.value.getBoundingClientRect();
+  const edge = 64;
+  scrollSpeed = event.clientX < rect.left + edge ? -10 : event.clientX > rect.right - edge ? 10 : 0;
+  if (scrollSpeed && scrollFrame === null) scrollFrame = requestAnimationFrame(scrollStageBoard);
+  if (!scrollSpeed) stopStageScroll();
+};
+const leaveStageBoard = (event: DragEvent) => {
+  if (event.relatedTarget instanceof Node && boardElement.value?.contains(event.relatedTarget)) return;
+  const rect = boardElement.value?.getBoundingClientRect();
+  if (
+    rect &&
+    event.clientX >= rect.left &&
+    event.clientX <= rect.right &&
+    event.clientY >= rect.top &&
+    event.clientY <= rect.bottom
+  )
+    return;
+  stageInsertIndex.value = null;
+  stopStageScroll();
+};
+const reorderStage = (source: string, destination: string) => {
+  if (props.stagesBusy || source === destination || !configuredStage(source) || !configuredStage(destination)) return;
+  const ids = columns.value.map((column) => column.status).filter(configuredStage);
+  const from = ids.indexOf(source);
+  const to = ids.indexOf(destination);
+  if (from < 0 || to < 0) return;
+  ids.splice(from, 1);
+  ids.splice(to, 0, source);
+  stageMenu.value = null;
+  emit('reorder-stages', ids);
+};
+const moveStage = (id: string, direction: number) => {
+  const ids = columns.value.map((column) => column.status).filter(configuredStage);
+  const destination = ids[ids.indexOf(id) + direction];
+  if (destination) reorderStage(id, destination);
+};
+const canMoveStage = (id: string, direction: number) => {
+  const ids = columns.value.map((column) => column.status).filter(configuredStage);
+  return configuredStage(id) && !!ids[ids.indexOf(id) + direction];
+};
+const startStageDrag = (id: string, event: DragEvent) => {
+  if (props.stagesBusy || !configuredStage(id)) {
+    event.preventDefault();
+    return;
+  }
+  stageMenu.value = null;
+  draggedStage.value = id;
+  stageInsertIndex.value = null;
+  event.dataTransfer?.setData('text/plain', id);
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    const header = (event.currentTarget as HTMLElement).closest('.kanban__stage-header');
+    if (header) event.dataTransfer.setDragImage(header, 24, 20);
+  }
+};
+const setStageInsertion = (columnIndex: number, event: DragEvent) => {
+  const column = columns.value[columnIndex];
+  if (!column || !configuredStage(column.status)) return;
+  const element = (event.target as HTMLElement).closest('.kanban__column');
+  if (!element) return;
+  const rect = element.getBoundingClientRect();
+  const index = columnIndex + (event.clientX >= rect.left + rect.width / 2 ? 1 : 0);
+  const sourceIndex = columns.value.findIndex((item) => item.status === draggedStage.value);
+  stageInsertIndex.value = index === sourceIndex || index === sourceIndex + 1 ? null : index;
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+};
+const dropStage = () => {
+  const source = draggedStage.value;
+  const insertion = stageInsertIndex.value;
+  if (!source || insertion === null || props.stagesBusy) {
+    resetStageDrag();
+    return;
+  }
+  const original = columns.value.map((column) => column.status).filter(configuredStage);
+  const before = columns.value
+    .slice(0, insertion)
+    .filter((column) => configuredStage(column.status) && column.status !== source).length;
+  const ids = original.filter((id) => id !== source);
+  ids.splice(before, 0, source);
+  resetStageDrag();
+  if (ids.some((id, index) => id !== original[index])) emit('reorder-stages', ids);
+};
+onBeforeUnmount(stopStageScroll);
+
+watch(
+  () => props.editingStages,
+  () => {
+    quickCreateStatus.value = null;
+    stageMenu.value = null;
+    resetStageDrag();
+  },
+);
 
 const loadingColumns = ref<Set<string>>(new Set());
 const sentinelEls = new Map<number, HTMLElement>();
@@ -293,6 +443,10 @@ const onDragOver = (event: DragEvent) => {
 const onDragOverColumn = (columnIndex: number, event: DragEvent) => {
   event.preventDefault();
   event.stopPropagation();
+  if (props.editingStages && draggedStage.value) {
+    setStageInsertion(columnIndex, event);
+    return;
+  }
   if (!draggedCard.value) return;
 
   if (draggedFromColumn.value === columnIndex) {
@@ -317,6 +471,11 @@ const onDragLeaveColumn = (event: DragEvent) => {
 const onDropToColumn = (columnIndex: number, event: DragEvent) => {
   event.preventDefault();
   event.stopPropagation();
+  if (props.editingStages && draggedStage.value) {
+    setStageInsertion(columnIndex, event);
+    dropStage();
+    return;
+  }
   if (!draggedCard.value) return;
 
   const fromCol = draggedFromColumn.value!;
@@ -345,6 +504,10 @@ const onDropToColumn = (columnIndex: number, event: DragEvent) => {
 };
 
 const onDropToCard = (columnIndex: number, cardIndex: number, event: DragEvent) => {
+  if (props.editingStages && draggedStage.value) {
+    onDropToColumn(columnIndex, event);
+    return;
+  }
   event.preventDefault();
   event.stopPropagation();
   if (!draggedCard.value) return;
@@ -409,165 +572,291 @@ const dragend = () => {
 
 <template>
   <div
+    ref="boardElement"
     class="kanban"
-    :class="{ kanban_dragging: isBoardDragging }"
+    :class="{ kanban_dragging: isBoardDragging, kanban_editing: editingStages }"
+    @dragover.capture="trackStagePointer"
+    @dragleave="leaveStageBoard"
+    @drop.prevent="draggedStage && dropStage()"
+    @keydown.esc="resetStageDrag"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerEnd"
     @pointercancel="onPointerEnd"
   >
-    <div
-      v-for="(column, colIndex) in columns"
-      :key="column.id"
-      class="kanban__column"
-      :class="{ kanban__column_collapsed: column.collapsed }"
-      @dragover="onDragOverColumn(colIndex, $event)"
-      @dragleave="onDragLeaveColumn($event)"
-      @drop="onDropToColumn(colIndex, $event)"
-    >
+    <template v-for="(column, colIndex) in columns" :key="column.id">
       <div
-        v-if="column.collapsed"
-        class="kanban__collapsed"
-        role="button"
-        tabindex="0"
-        title="Развернуть колонку"
-        @click="$emit('toggle-collapse', { status: column.status, collapsed: false })"
-        @keydown.enter="$emit('toggle-collapse', { status: column.status, collapsed: false })"
+        v-if="draggedStage && stageInsertIndex === colIndex"
+        class="kanban__stage-placeholder"
+        @dragover.prevent.stop
+        @drop.prevent.stop="dropStage"
       >
-        <span class="kanban__collapsed-expand">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </span>
-        <span class="kanban__collapsed-count">{{ column.total ?? column.cards.length }}</span>
-        <span class="kanban__collapsed-title">
-          <span class="kanban__column-header_dot" :class="'kanban__column-header_' + column.status"></span>
-          {{ column.title }}
-        </span>
+        <GripVertical :size="20" :stroke-width="1.75" aria-hidden="true" />
+        <strong>{{ draggedStageTitle }}</strong
+        ><span>Переместить сюда</span>
       </div>
-
-      <div v-if="!column.collapsed" class="kanban__column-header">
-        <span
-          class="kanban__column-status"
+      <div
+        class="kanban__column"
+        :class="{ kanban__column_collapsed: column.collapsed, 'kanban__column_stage-dragging': draggedStage === column.status }"
+        @dragover="onDragOverColumn(colIndex, $event)"
+        @dragleave="onDragLeaveColumn($event)"
+        @drop="onDropToColumn(colIndex, $event)"
+      >
+        <div
+          v-if="column.collapsed"
+          class="kanban__collapsed"
+          role="button"
           tabindex="0"
-          :aria-describedby="`kanban-status-tooltip-${column.id}`"
+          title="Развернуть колонку"
+          @click="$emit('toggle-collapse', { status: column.status, collapsed: false })"
+          @keydown.enter="$emit('toggle-collapse', { status: column.status, collapsed: false })"
         >
-          <span class="kanban__column-header_dot" :class="'kanban__column-header_' + column.status"></span>
-          <span class="kanban__column-header_title">{{ column.title }}</span>
-          <span :id="`kanban-status-tooltip-${column.id}`" class="kanban__status-tooltip" role="tooltip">
-            <span class="kanban__status-tooltip-section">
-              <strong>Вход:</strong> {{ TASK_STATUS_DESCRIPTION_PARTS[column.status].entry }}
-            </span>
-            <span class="kanban__status-tooltip-section">
-              <strong>Выход:</strong> {{ TASK_STATUS_DESCRIPTION_PARTS[column.status].exit }}
+          <span class="kanban__collapsed-expand">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </span>
+          <span class="kanban__collapsed-count">{{ column.total ?? column.cards.length }}</span>
+          <span class="kanban__collapsed-title">
+            <span class="kanban__column-header_dot" :class="'kanban__column-header_' + column.status"></span>
+            {{ column.title }}
+          </span>
+        </div>
+
+        <div v-if="editingStages" class="kanban__stage-header">
+          <button
+            type="button"
+            class="kanban__stage-icon kanban__stage-grip"
+            :draggable="!stagesBusy && configuredStage(column.status)"
+            :disabled="stagesBusy || !configuredStage(column.status)"
+            :aria-label="`Переместить этап ${column.title}`"
+            title="Перетащите колонку. С клавиатуры: влево или вправо"
+            @dragstart.stop="startStageDrag(column.status, $event)"
+            @dragend="resetStageDrag"
+            @keydown.left.prevent="moveStage(column.status, -1)"
+            @keydown.right.prevent="moveStage(column.status, 1)"
+          >
+            <GripVertical :size="18" :stroke-width="1.75" aria-hidden="true" />
+          </button>
+          <span v-if="protectedStage(column.status)" class="kanban__stage-name">{{ column.title }}</span>
+          <button
+            v-else
+            type="button"
+            class="kanban__stage-name kanban__stage-name_editable"
+            :disabled="stagesBusy"
+            :title="`Переименовать этап ${column.title}`"
+            @click="emit('rename-stage', column.status)"
+          >
+            <span>{{ column.title }}</span
+            ><Pencil :size="14" :stroke-width="1.75" aria-hidden="true" />
+          </button>
+          <Lock
+            v-if="protectedStage(column.status)"
+            class="kanban__stage-lock"
+            :size="14"
+            :stroke-width="1.75"
+            role="img"
+            aria-label="Нельзя переименовать или удалить"
+          />
+          <div
+            v-click-outside="
+              () => {
+                if (stageMenu === column.status) stageMenu = null;
+              }
+            "
+            class="kanban__stage-actions"
+            @keydown.esc.stop="stageMenu = null"
+          >
+            <button
+              type="button"
+              class="kanban__stage-icon"
+              :disabled="stagesBusy"
+              :aria-expanded="stageMenu === column.status"
+              :aria-label="`Действия с этапом ${column.title}`"
+              @click="stageMenu = stageMenu === column.status ? null : column.status"
+            >
+              <Ellipsis :size="18" :stroke-width="1.75" aria-hidden="true" />
+            </button>
+            <div v-if="stageMenu === column.status" class="kanban__stage-menu">
+              <button
+                v-if="configuredStage(column.status)"
+                type="button"
+                @click="
+                  emit('add-stage', column.status);
+                  stageMenu = null;
+                "
+              >
+                <Plus :size="16" :stroke-width="1.75" /> Добавить этап после
+              </button>
+              <button
+                v-if="!protectedStage(column.status)"
+                type="button"
+                @click="
+                  emit('rename-stage', column.status);
+                  stageMenu = null;
+                "
+              >
+                <Pencil :size="16" :stroke-width="1.75" /> Переименовать
+              </button>
+              <button type="button" :disabled="!canMoveStage(column.status, -1)" @click="moveStage(column.status, -1)">
+                <ChevronLeft :size="16" :stroke-width="1.75" /> Переместить влево
+              </button>
+              <button type="button" :disabled="!canMoveStage(column.status, 1)" @click="moveStage(column.status, 1)">
+                <ChevronRight :size="16" :stroke-width="1.75" /> Переместить вправо
+              </button>
+              <button
+                v-if="!protectedStage(column.status)"
+                type="button"
+                class="kanban__stage-delete"
+                @click="
+                  emit('delete-stage', column.status);
+                  stageMenu = null;
+                "
+              >
+                <Trash2 :size="16" :stroke-width="1.75" /> Удалить этап
+              </button>
+            </div>
+          </div>
+        </div>
+        <div v-if="!column.collapsed && !editingStages" class="kanban__column-header">
+          <span
+            class="kanban__column-status"
+            tabindex="0"
+            :aria-describedby="TASK_STATUS_DESCRIPTION_PARTS[column.status] ? `kanban-status-tooltip-${column.id}` : undefined"
+          >
+            <span class="kanban__column-header_dot" :class="'kanban__column-header_' + column.status"></span>
+            <span class="kanban__column-header_title">{{ column.title }}</span>
+            <span
+              v-if="TASK_STATUS_DESCRIPTION_PARTS[column.status]"
+              :id="`kanban-status-tooltip-${column.id}`"
+              class="kanban__status-tooltip"
+              role="tooltip"
+            >
+              <span class="kanban__status-tooltip-section">
+                <strong>Вход:</strong> {{ TASK_STATUS_DESCRIPTION_PARTS[column.status].entry }}
+              </span>
+              <span class="kanban__status-tooltip-section">
+                <strong>Выход:</strong> {{ TASK_STATUS_DESCRIPTION_PARTS[column.status].exit }}
+              </span>
             </span>
           </span>
-        </span>
-        <span class="kanban__column-header_count">{{ column.total ?? column.cards.length }}</span>
-        <span v-if="column.cards.some((c) => c.story_points != null)" class="kanban__column-header_sp">
-          {{ column.cards.reduce((sum, c) => sum + (Number(c.story_points) || 0), 0) }} SP
-        </span>
-        <button
-          v-if="quickCreateEnabled"
-          class="kanban__create-btn"
-          :class="{ 'kanban__create-btn_active': quickCreateStatus === column.status }"
-          :disabled="quickCreatePending"
-          type="button"
-          :title="`Создать задачу в колонке «${column.title}»`"
-          :aria-label="`Создать задачу в колонке «${column.title}»`"
-          :aria-expanded="quickCreateStatus === column.status"
-          @click="openQuickCreate(column.status, $event)"
-        >
-          <IconsIconPlus />
-        </button>
-        <button
-          class="kanban__collapse-btn"
-          :disabled="quickCreatePending"
-          type="button"
-          title="Свернуть колонку"
-          @click="$emit('toggle-collapse', { status: column.status, collapsed: true })"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-            <path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </button>
-      </div>
-
-      <KanbanQuickCreate
-        v-if="quickCreateEnabled && !column.collapsed && quickCreateStatus === column.status"
-        class="kanban__quick-create"
-        :status="column.status"
-        @close="closeQuickCreate"
-        @created="onTaskCreated"
-        @pending="quickCreatePending = $event"
-      />
-
-      <div v-if="!column.collapsed && hoveredColumn === colIndex" class="kanban__column-placeholder">
-        <div class="kanban__column-placeholder-text">
-          Задача встанет в соответствии со своим приоритетом {{ draggedCard?.priority }}
-        </div>
-      </div>
-
-      <div
-        v-if="!column.collapsed"
-        class="kanban__cards"
-        :class="{ 'kanban__cards_with-placeholder': hoveredColumn === colIndex }"
-      >
-        <template v-for="(card, cardIndex) in column.cards" :key="card.id">
-          <BaseKanbanCard
-            as="div"
-            draggable="true"
-            role="button"
-            tabindex="0"
-            :class="{
-              kanban__card_hidden: draggedCard?.id === card.id,
-            }"
-            :muted="card.status === TASK_STATUSES.closed"
-            @click="$emit('click-to-card', card.id)"
-            @keydown.enter.prevent="$emit('click-to-card', card.id)"
-            @keydown.space.prevent="$emit('click-to-card', card.id)"
-            @dragstart="onDragStart(colIndex, cardIndex, card, $event)"
-            @dragover="onDragOver"
-            @drop="onDropToCard(colIndex, cardIndex, $event)"
-            @dragend="dragend()"
+          <span class="kanban__column-header_count">{{ column.total ?? column.cards.length }}</span>
+          <span v-if="column.cards.some((c) => c.story_points != null)" class="kanban__column-header_sp">
+            {{ column.cards.reduce((sum, c) => sum + (Number(c.story_points) || 0), 0) }} SP
+          </span>
+          <button
+            v-if="quickCreateEnabled && configuredStage(column.status)"
+            class="kanban__create-btn"
+            :class="{ 'kanban__create-btn_active': quickCreateStatus === column.status }"
+            :disabled="quickCreatePending"
+            type="button"
+            :title="`Создать задачу в колонке «${column.title}»`"
+            :aria-label="`Создать задачу в колонке «${column.title}»`"
+            :aria-expanded="quickCreateStatus === column.status"
+            @click="openQuickCreate(column.status, $event)"
           >
-            <template v-if="card.taskType === TaskType.USER_STORY && card.coverImage" #media>
-              <div class="kanban_cover">
-                <img :src="resolveAwsUrl(card.coverImage)" alt="" draggable="false" />
-              </div>
-            </template>
-            <template #header>
-              <div class="kanban__project-name" :title="card.projectName">{{ card.projectName }}</div>
-              <TaskCode :id="card.id" />
-            </template>
-            <template #title>
-              {{ card.title }}
-            </template>
-            <template v-if="card.description" #description>{{ card.description }}</template>
-            <template v-if="card.taskType || card.planned_date || card.story_points != null || card.users?.length" #footer>
-              <TaskTypeBadge v-if="card.taskType" :task-type="card.taskType" />
-              <span
-                v-if="card.planned_date"
-                class="kanban__card_deadline"
-                :class="`kanban__card_deadline_${getDeadline(card)?.cls}`"
-              >
-                {{ getDeadline(card)?.text }}
-              </span>
-              <div v-if="card.story_points != null" class="kanban__card_sp">{{ card.story_points }} SP</div>
-              <div v-if="card.users?.length" class="kanban__card_users">
-                <img v-for="(user, idx) in card.users" :key="idx" :src="user" class="kanban__card_user" @error="onImgError" />
-              </div>
-            </template>
-          </BaseKanbanCard>
-        </template>
+            <IconsIconPlus />
+          </button>
+          <button
+            v-if="!editingStages"
+            class="kanban__collapse-btn"
+            :disabled="quickCreatePending"
+            type="button"
+            title="Свернуть колонку"
+            @click="$emit('toggle-collapse', { status: column.status, collapsed: true })"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M15 6l-6 6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
+
+        <KanbanQuickCreate
+          v-if="quickCreateEnabled && !column.collapsed && quickCreateStatus === column.status"
+          class="kanban__quick-create"
+          :status="column.status"
+          @close="closeQuickCreate"
+          @created="onTaskCreated"
+          @pending="quickCreatePending = $event"
+        />
+
+        <div v-if="!column.collapsed && hoveredColumn === colIndex" class="kanban__column-placeholder">
+          <div class="kanban__column-placeholder-text">
+            Задача встанет в соответствии со своим приоритетом {{ draggedCard?.priority }}
+          </div>
+        </div>
+
         <div
-          v-if="column.cards.length < (column.total ?? column.cards.length)"
-          :ref="(el) => setSentinel(el, colIndex)"
-          class="kanban__cards-loader"
+          v-if="!column.collapsed"
+          class="kanban__cards"
+          :class="{ 'kanban__cards_with-placeholder': hoveredColumn === colIndex }"
         >
-          {{ loadingColumns.has(column.status) ? 'Загрузка…' : '' }}
+          <template v-for="(card, cardIndex) in column.cards" :key="card.id">
+            <BaseKanbanCard
+              as="div"
+              :draggable="!editingStages"
+              role="button"
+              tabindex="0"
+              :class="{
+                kanban__card_hidden: draggedCard?.id === card.id,
+              }"
+              :muted="card.status === TASK_STATUSES.closed"
+              @click="$emit('click-to-card', card.id)"
+              @keydown.enter.prevent="$emit('click-to-card', card.id)"
+              @keydown.space.prevent="$emit('click-to-card', card.id)"
+              @dragstart="onDragStart(colIndex, cardIndex, card, $event)"
+              @dragover="onDragOver"
+              @drop="onDropToCard(colIndex, cardIndex, $event)"
+              @dragend="dragend()"
+            >
+              <template v-if="card.taskType === TaskType.USER_STORY && card.coverImage" #media>
+                <div class="kanban_cover">
+                  <img :src="resolveAwsUrl(card.coverImage)" alt="" draggable="false" />
+                </div>
+              </template>
+              <template #header>
+                <div class="kanban__project-name" :title="card.projectName">{{ card.projectName }}</div>
+                <TaskCode :id="card.id" />
+              </template>
+              <template #title>
+                {{ card.title }}
+              </template>
+              <template v-if="card.description" #description>{{ card.description }}</template>
+              <template v-if="card.taskType || card.planned_date || card.story_points != null || card.users?.length" #footer>
+                <TaskTypeBadge v-if="card.taskType" :task-type="card.taskType" />
+                <span
+                  v-if="card.planned_date"
+                  class="kanban__card_deadline"
+                  :class="`kanban__card_deadline_${getDeadline(card)?.cls}`"
+                >
+                  {{ getDeadline(card)?.text }}
+                </span>
+                <div v-if="card.story_points != null" class="kanban__card_sp">{{ card.story_points }} SP</div>
+                <div v-if="card.users?.length" class="kanban__card_users">
+                  <img v-for="(user, idx) in card.users" :key="idx" :src="user" class="kanban__card_user" @error="onImgError" />
+                </div>
+              </template>
+            </BaseKanbanCard>
+          </template>
+          <div
+            v-if="column.cards.length < (column.total ?? column.cards.length)"
+            :ref="(el) => setSentinel(el, colIndex)"
+            class="kanban__cards-loader"
+          >
+            {{ loadingColumns.has(column.status) ? 'Загрузка…' : '' }}
+          </div>
         </div>
       </div>
+    </template>
+    <div
+      v-if="draggedStage && stageInsertIndex === columns.length"
+      class="kanban__stage-placeholder"
+      @dragover.prevent.stop
+      @drop.prevent.stop="dropStage"
+    >
+      <GripVertical :size="20" :stroke-width="1.75" aria-hidden="true" />
+      <strong>{{ draggedStageTitle }}</strong
+      ><span>Переместить сюда</span>
     </div>
   </div>
 </template>
@@ -581,6 +870,159 @@ const dragend = () => {
   border-radius: 8px;
   box-sizing: border-box;
   height: 100%;
+
+  &__stage-header {
+    @include flex(rn, a-center);
+    gap: 4px;
+    width: 100%;
+    min-height: 40px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--light-text-backgroung-primary-10);
+    flex-shrink: 0;
+  }
+  &__stage-icon {
+    @include flex(center);
+    flex: 0 0 28px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+    &:hover:not(:disabled) {
+      color: var(--light-text-backgroung-primary);
+      background: var(--light-text-backgroung-primary-5);
+    }
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+  }
+  &__stage-grip {
+    cursor: grab;
+    &:active {
+      cursor: grabbing;
+    }
+  }
+  &__stage-name {
+    @include flex(rn, a-center, j-start);
+    min-height: 32px;
+    padding: 6px 4px;
+    @extend %text-s-medium;
+    min-width: 0;
+    flex: 1;
+    color: var(--light-text-backgroung-primary);
+    overflow-wrap: anywhere;
+    text-align: left;
+    &_editable {
+      @include flex(rn, a-center);
+      gap: 8px;
+      padding: 6px 4px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+      span {
+        min-width: 0;
+      }
+      svg {
+        flex-shrink: 0;
+        color: var(--light-text-backgroung-primary-50);
+        opacity: 0;
+      }
+      &:hover,
+      &:focus-visible {
+        background: var(--light-text-backgroung-primary-5);
+        svg {
+          opacity: 1;
+        }
+      }
+    }
+  }
+  &__stage-lock {
+    flex-shrink: 0;
+    color: var(--light-text-backgroung-primary-50);
+  }
+  &__stage-actions {
+    @include flex(rn, a-center);
+    position: relative;
+    flex-shrink: 0;
+  }
+  &__stage-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 20;
+    width: 224px;
+    padding: 4px;
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    border-radius: 12px;
+    background: var(--dark-text-background-primary);
+    button {
+      @include flex(rn, a-center);
+      gap: 8px;
+      width: 100%;
+      min-height: 40px;
+      padding: 8px 12px;
+      @extend %text-s-regular;
+      color: var(--light-text-backgroung-primary);
+      background: transparent;
+      border: 0;
+      border-radius: 8px;
+      text-align: left;
+      justify-content: flex-start;
+      svg {
+        flex-shrink: 0;
+      }
+      cursor: pointer;
+      &:hover:not(:disabled) {
+        background: var(--light-text-backgroung-primary-5);
+      }
+      &:disabled {
+        opacity: 0.4;
+        cursor: default;
+      }
+    }
+    button.kanban__stage-delete {
+      color: var(--danger-delete);
+      border-top: 1px solid var(--light-text-backgroung-primary-10);
+      border-radius: 0 0 8px 8px;
+    }
+  }
+  &__stage-header button:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+  &__column_stage-dragging {
+    opacity: 0.35;
+  }
+  &__stage-placeholder {
+    @include flex(cn, a-center, j-start);
+    gap: 8px;
+    flex: 0 0 290px;
+    min-width: 290px;
+    margin: 0 8px;
+    padding: 24px 16px;
+    height: calc(100% - 8px);
+    border: 1px dashed var(--primary);
+    border-radius: 12px;
+    background: var(--primary-10, var(--light-text-backgroung-primary-5));
+    color: var(--light-text-backgroung-primary);
+    pointer-events: auto;
+    text-align: center;
+    overflow-wrap: anywhere;
+    strong {
+      @extend %text-s-medium;
+    }
+    span {
+      @extend %text-xs-regular;
+      color: var(--light-text-backgroung-primary-50);
+    }
+    svg {
+      color: var(--primary);
+    }
+  }
 
   &_dragging {
     cursor: grabbing;
@@ -1017,6 +1459,18 @@ const dragend = () => {
     }
     50% {
       opacity: 1;
+    }
+  }
+  @media (max-width: $screen-tablet) {
+    &__stage-icon {
+      flex-basis: 36px;
+      height: 44px;
+    }
+    &__stage-name_editable svg {
+      opacity: 1;
+    }
+    &__stage-menu button {
+      min-height: 44px;
     }
   }
 }

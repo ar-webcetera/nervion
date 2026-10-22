@@ -1,19 +1,19 @@
-import { TASK_STATUSES } from 'src/common/enums/statuses.enum';
+import type { TaskStatus } from '@tracker/contracts';
 
 class Card {
   id: number;
   title: string;
   description: string;
-  status: TASK_STATUSES;
+  status: TaskStatus;
   story_points: number | null;
   planned_date: string | null;
   closed_date: Date | null;
 }
 
 class Column {
-  id: number;
+  id: string;
   title: string;
-  status: TASK_STATUSES;
+  status: TaskStatus;
   cards: Card[];
 }
 

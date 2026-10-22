@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { type TASK_STATUSES, MAX_TASK_NAME_LENGTH } from '~/constants/task.constants';
+import type { TaskStatus } from '@tracker/contracts';
+
+import { MAX_TASK_NAME_LENGTH } from '~/constants/task.constants';
 import { TaskType } from '~/enums/task.enums';
 
-const props = defineProps<{ status: TASK_STATUSES }>();
+const props = defineProps<{ status: TaskStatus }>();
 const emit = defineEmits<{ close: []; created: []; pending: [value: boolean] }>();
 const taskStore = useTaskStore();
 const projectStore = useProjectStore();
