@@ -1,6 +1,10 @@
 <script setup lang="ts">
 defineOptions({ inheritAttrs: false });
 
+const emit = defineEmits<{
+  contextmenu: [event: MouseEvent];
+}>();
+
 withDefaults(
   defineProps<{
     as?: 'button' | 'div';
@@ -22,6 +26,7 @@ withDefaults(
     class="base-kanban-card"
     :class="{ 'base-kanban-card_muted': muted }"
     :type="as === 'button' ? type : undefined"
+    @contextmenu="emit('contextmenu', $event)"
   >
     <slot name="media" />
     <div v-if="$slots.header" class="base-kanban-card__header">
