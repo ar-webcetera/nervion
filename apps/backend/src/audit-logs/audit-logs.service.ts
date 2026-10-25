@@ -180,6 +180,10 @@ export class AuditLogsService {
         actor_name: row.actor_name || 'Система',
         created_at: row.created_at.toISOString(),
         changes,
+        flag_comment:
+          row.action_type === AuditActionType.TASK_FLAG_ADDED && typeof row.after_payload?.flag_comment === 'string'
+            ? row.after_payload.flag_comment
+            : null,
         timelog:
           row.entity_type === AuditEntityType.TIMELOG
             ? {

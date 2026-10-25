@@ -144,6 +144,12 @@ export class Tasks {
   @Column({ type: 'numeric', precision: 12, scale: 2, name: 'fixed_price', nullable: true })
   fixed_price: number | null;
 
+  @Column({ type: 'boolean', name: 'is_flagged', default: false })
+  is_flagged: boolean;
+
+  @Column({ type: 'varchar', length: 500, name: 'flag_comment', nullable: true })
+  flag_comment: string | null;
+
   @Column({
     type: 'int',
     name: 'recurrence_days',

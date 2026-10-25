@@ -65,6 +65,8 @@ interface UpdateTasksOptions {
   recurrence_days?: number[] | null;
   billing_type?: TaskBillingType | null;
   fixed_price?: number | null;
+  is_flagged?: boolean;
+  flag_comment?: string | null;
 }
 
 export interface KanbanCard {
@@ -80,6 +82,8 @@ export interface KanbanCard {
   story_points?: number | null;
   planned_date?: string | null;
   closed_date?: string | null;
+  is_flagged?: boolean;
+  flag_comment?: string | null;
 }
 
 export interface KanbanColumn {
@@ -411,6 +415,8 @@ export const useTaskStore = defineStore('task', () => {
     if (updateTaskOptions.recurrence_days !== undefined) body.recurrence_days = updateTaskOptions.recurrence_days;
     if (updateTaskOptions.billing_type !== undefined) body.billing_type = updateTaskOptions.billing_type;
     if (updateTaskOptions.fixed_price !== undefined) body.fixed_price = updateTaskOptions.fixed_price;
+    if (updateTaskOptions.is_flagged !== undefined) body.is_flagged = updateTaskOptions.is_flagged;
+    if (updateTaskOptions.flag_comment !== undefined) body.flag_comment = updateTaskOptions.flag_comment;
     const updatedTask = await $fetch<Task>(`/api/tasks/${id}`, {
       method: 'PATCH',
       credentials: 'include',
@@ -428,6 +434,8 @@ export const useTaskStore = defineStore('task', () => {
       card.status = updatedTask.status;
       card.planned_date = updatedTask.planned_date ? String(updatedTask.planned_date) : null;
       card.closed_date = updatedTask.closed_date ? String(updatedTask.closed_date) : null;
+      card.is_flagged = updatedTask.is_flagged;
+      card.flag_comment = updatedTask.flag_comment;
     }
 
     return updatedTask;

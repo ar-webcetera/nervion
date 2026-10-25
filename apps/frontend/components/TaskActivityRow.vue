@@ -16,6 +16,10 @@ const actionLabel = computed(() => {
       return 'Отменена отметка выполнения';
     case AuditActionType.TASK_RECURRENCE_CHANGED:
       return 'Изменение повторения';
+    case AuditActionType.TASK_FLAG_ADDED:
+      return 'Добавлена метка';
+    case AuditActionType.TASK_FLAG_REMOVED:
+      return 'Снята метка';
     case AuditActionType.TIMELOG_CREATED:
     case AuditActionType.TIMELOG_UPDATED:
       return 'Зафиксировано затраченное время';
@@ -64,6 +68,9 @@ const valueLabel = (field: string, value: string | null) => {
         <time :datetime="activity.created_at" :title="formattedDate">{{ formattedDate }}</time>
       </div>
       <div>{{ actionLabel }}</div>
+      <p v-if="activity.flag_comment" class="task-activity__flag-comment">
+        Комментарий: {{ activity.flag_comment }}
+      </p>
       <div v-if="activity.timelog" class="task-activity__timelog">
         <strong>{{ formattedTimeSpent }}</strong>
         <p>{{ activity.timelog.summary }}</p>
@@ -137,6 +144,12 @@ const valueLabel = (field: string, value: string | null) => {
       color: var(--light-text-backgroung-primary-50);
       white-space: pre-wrap;
     }
+  }
+  &__flag-comment {
+    margin: 2px 0 0;
+    color: var(--light-text-backgroung-primary-50);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
   &__before {
     color: var(--light-text-backgroung-primary-50);

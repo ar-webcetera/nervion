@@ -137,6 +137,8 @@ const updateTask = (updatedTask: Task) => {
     task.priority = update.priority;
     task.responsible_id = update.responsible_id;
     task.story_points = update.story_points;
+    task.is_flagged = update.is_flagged;
+    task.flag_comment = update.flag_comment;
   };
 
   if (updatedTask.id === taskStore.currentTask?.id) {
@@ -173,6 +175,8 @@ const updateTask = (updatedTask: Task) => {
     story_points: updatedTask.story_points,
     planned_date: updatedTask.planned_date,
     closed_date: updatedTask.closed_date,
+    is_flagged: updatedTask.is_flagged,
+    flag_comment: updatedTask.flag_comment,
   });
 
   if (sourceColumn.status === updatedTask.status) return;

@@ -2,10 +2,22 @@
 import type { TaskStatus, TaskStage } from '@tracker/contracts';
 
 import TaskCode from '~/components/TaskCode.vue';
-import { GripVertical, Pencil, Trash2, ChevronLeft, ChevronRight, Lock, Ellipsis, Plus } from '@lucide/vue';
+import {
+  GripVertical,
+  Pencil,
+  Trash2,
+  ChevronLeft,
+  ChevronRight,
+  Lock,
+  Ellipsis,
+  Plus,
+  Flag,
+  FlagOff,
+} from '@lucide/vue';
 import type { PropType } from 'vue';
 import { TASK_STATUSES, TASK_STATUS_DESCRIPTIONS } from '~/constants/task.constants';
 import { TaskType } from '~/enums/task.enums';
+import { getErrorMessage } from '~/utils/error';
 
 const TASK_STATUS_DESCRIPTION_PARTS = Object.fromEntries(
   Object.entries(TASK_STATUS_DESCRIPTIONS).map(([status, description]) => {
@@ -104,6 +116,142 @@ const emit = defineEmits([
   'delete-stage',
   'reorder-stages',
 ]);
+
+const taskStore = useTaskStore();
+const { $toast } = useNuxtApp();
+const contextMenu = ref<{ card: KanbanCard; x: number; y: number } | null>(null);
+const contextMenuElement = ref<HTMLElement | null>(null);
+const contextMenuTrigger = ref<HTMLElement | null>(null);
+const selectedCard = ref<KanbanCard | null>(null);
+const flagComment = ref('');
+const flagCommentInput = ref<HTMLTextAreaElement | null>(null);
+const deleteCancelButton = ref<HTMLButtonElement | null>(null);
+const flagModalOpen = ref(false);
+const deleteModalOpen = ref(false);
+const actionPending = ref(false);
+
+const closeContextMenu = (restoreFocus = false) => {
+  const trigger = contextMenuTrigger.value;
+  contextMenu.value = null;
+  if (restoreFocus) nextTick(() => trigger?.focus());
+};
+
+const openContextMenu = async (card: KanbanCard, event: MouseEvent | KeyboardEvent) => {
+  if (props.editingStages) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const cardElement = event.currentTarget as HTMLElement;
+  const rect = cardElement.getBoundingClientRect();
+  const x = ('clientX' in event && event.clientX) || rect.left + 16;
+  const y = ('clientY' in event && event.clientY) || rect.top + 16;
+  contextMenuTrigger.value = cardElement;
+  contextMenu.value = { card, x, y };
+  await nextTick();
+  const menu = contextMenuElement.value;
+  if (!menu || !contextMenu.value) return;
+  const menuRect = menu.getBoundingClientRect();
+  contextMenu.value = {
+    card,
+    x: Math.max(8, Math.min(x, window.innerWidth - menuRect.width - 8)),
+    y: Math.max(8, Math.min(y, window.innerHeight - menuRect.height - 8)),
+  };
+  await nextTick();
+  contextMenuElement.value?.querySelector<HTMLButtonElement>('button')?.focus();
+};
+
+const onCardKeydown = (card: KanbanCard, event: KeyboardEvent) => {
+  if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+  openContextMenu(card, event);
+};
+
+const moveContextMenuFocus = (direction: number) => {
+  const items = [...(contextMenuElement.value?.querySelectorAll<HTMLButtonElement>('button') ?? [])];
+  if (!items.length) return;
+  const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+  items[(currentIndex + direction + items.length) % items.length]?.focus();
+};
+
+const openFlagModal = (card: KanbanCard) => {
+  selectedCard.value = card;
+  flagComment.value = '';
+  flagModalOpen.value = true;
+  closeContextMenu();
+  nextTick(() => flagCommentInput.value?.focus());
+};
+
+const openDeleteModal = (card: KanbanCard) => {
+  selectedCard.value = card;
+  deleteModalOpen.value = true;
+  closeContextMenu();
+  nextTick(() => deleteCancelButton.value?.focus());
+};
+
+const saveFlag = async () => {
+  if (!selectedCard.value || actionPending.value) return;
+  actionPending.value = true;
+  try {
+    await taskStore.updateTask(Number(selectedCard.value.id), {
+      is_flagged: true,
+      flag_comment: flagComment.value.trim() || null,
+    });
+    flagModalOpen.value = false;
+    $toast.success('Метка добавлена');
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  } finally {
+    actionPending.value = false;
+  }
+};
+
+const removeFlag = async (card: KanbanCard) => {
+  closeContextMenu();
+  try {
+    await taskStore.updateTask(Number(card.id), { is_flagged: false, flag_comment: null });
+    $toast.success('Метка снята');
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  }
+};
+
+const deleteSelectedTask = async () => {
+  if (!selectedCard.value || actionPending.value) return;
+  const taskId = Number(selectedCard.value.id);
+  const taskStatus = selectedCard.value.status;
+  actionPending.value = true;
+  try {
+    await taskStore.deleteTask(taskId);
+    taskStore.tasks = taskStore.tasks.filter((task) => task.id !== taskId);
+    taskStore.tasksWithTimelogs = taskStore.tasksWithTimelogs.filter((task) => task.id !== taskId);
+    for (const column of taskStore.kanban) {
+      column.cards = column.cards.filter((card) => Number(card.id) !== taskId);
+      if (column.status === taskStatus && column.total !== undefined) column.total = Math.max(0, column.total - 1);
+    }
+    deleteModalOpen.value = false;
+    $toast.trash('Задача успешно удалена');
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  } finally {
+    actionPending.value = false;
+  }
+};
+
+const handleDocumentPointer = (event: PointerEvent) => {
+  if (contextMenuElement.value?.contains(event.target as Node)) return;
+  closeContextMenu();
+};
+const handleViewportChange = () => closeContextMenu();
+
+onMounted(() => {
+  document.addEventListener('pointerdown', handleDocumentPointer);
+  window.addEventListener('resize', handleViewportChange);
+  window.addEventListener('scroll', handleViewportChange, true);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointer);
+  window.removeEventListener('resize', handleViewportChange);
+  window.removeEventListener('scroll', handleViewportChange, true);
+});
 
 const quickCreatePending = ref(false);
 const quickCreateStatus = ref<string | null>(null);
@@ -260,6 +408,7 @@ watch(
   () => {
     quickCreateStatus.value = null;
     stageMenu.value = null;
+    closeContextMenu();
     resetStageDrag();
   },
 );
@@ -414,6 +563,7 @@ const draggedFromIndex = ref<number | null>(null);
 const hoveredColumn = ref<number | null>(null);
 
 const onDragStart = (columnIndex: number, cardIndex: number, card: KanbanCard, event: DragEvent) => {
+  closeContextMenu();
   draggedCard.value = card;
   draggedFromColumn.value = columnIndex;
   draggedFromIndex.value = cardIndex;
@@ -804,6 +954,8 @@ const dragend = () => {
               @click="$emit('click-to-card', card.id)"
               @keydown.enter.prevent="$emit('click-to-card', card.id)"
               @keydown.space.prevent="$emit('click-to-card', card.id)"
+              @keydown="onCardKeydown(card, $event)"
+              @contextmenu="openContextMenu(card, $event)"
               @dragstart="onDragStart(colIndex, cardIndex, card, $event)"
               @dragover="onDragOver"
               @drop="onDropToCard(colIndex, cardIndex, $event)"
@@ -822,8 +974,17 @@ const dragend = () => {
                 {{ card.title }}
               </template>
               <template v-if="card.description" #description>{{ card.description }}</template>
-              <template v-if="card.taskType || card.planned_date || card.story_points != null || card.users?.length" #footer>
+              <template v-if="card.taskType || card.is_flagged || card.planned_date || card.story_points != null || card.users?.length" #footer>
                 <TaskTypeBadge v-if="card.taskType" :task-type="card.taskType" />
+                <Flag
+                  v-if="card.is_flagged"
+                  class="kanban__card-flag"
+                  :size="16"
+                  :stroke-width="2"
+                  role="img"
+                  aria-label="Задача отмечена"
+                  :title="card.flag_comment || 'Задача отмечена'"
+                />
                 <span
                   v-if="card.planned_date"
                   class="kanban__card_deadline"
@@ -859,6 +1020,98 @@ const dragend = () => {
       ><span>Переместить сюда</span>
     </div>
   </div>
+
+  <Teleport to="body">
+    <div
+      v-if="contextMenu"
+      ref="contextMenuElement"
+      class="kanban-context-menu"
+      role="menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      @keydown.esc.stop="closeContextMenu(true)"
+      @keydown.down.prevent="moveContextMenuFocus(1)"
+      @keydown.up.prevent="moveContextMenuFocus(-1)"
+    >
+      <button
+        type="button"
+        role="menuitem"
+        class="kanban-context-menu__delete"
+        @click="openDeleteModal(contextMenu.card)"
+      >
+        <Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" />
+        <span>Удалить задачу</span>
+      </button>
+      <button
+        v-if="!contextMenu.card.is_flagged"
+        type="button"
+        role="menuitem"
+        @click="openFlagModal(contextMenu.card)"
+      >
+        <Flag :size="16" :stroke-width="1.75" aria-hidden="true" />
+        <span>Добавить флажок</span>
+      </button>
+      <button v-else type="button" role="menuitem" @click="removeFlag(contextMenu.card)">
+        <FlagOff :size="16" :stroke-width="1.75" aria-hidden="true" />
+        <span>Удалить флажок</span>
+      </button>
+    </div>
+  </Teleport>
+
+  <BaseModal v-model="flagModalOpen" padded>
+    <form class="kanban-action-modal" @submit.prevent="saveFlag">
+      <div class="kanban-action-modal__header">
+        <h2>Добавить метку</h2>
+        <p>Флажок появится рядом с типом задачи.</p>
+      </div>
+      <label class="kanban-action-modal__field">
+        <span>Комментарий <small>необязательно</small></span>
+        <textarea
+          ref="flagCommentInput"
+          v-model="flagComment"
+          name="flag-comment"
+          maxlength="500"
+          rows="4"
+          placeholder="Например, обратить внимание на сроки"
+        ></textarea>
+      </label>
+      <div class="kanban-action-modal__buttons">
+        <button
+          type="button"
+          class="kanban-action-modal__secondary"
+          :disabled="actionPending"
+          @click="flagModalOpen = false"
+        >
+          Отменить
+        </button>
+        <button type="submit" :disabled="actionPending">{{ actionPending ? 'Добавление...' : 'Добавить' }}</button>
+      </div>
+    </form>
+  </BaseModal>
+
+  <BaseModal v-model="deleteModalOpen" padded>
+    <div class="kanban-action-modal">
+      <div class="kanban-action-modal__header">
+        <h2>Удалить задачу?</h2>
+        <p>
+          Задача "{{ selectedCard?.title }}" и все прикреплённые к ней файлы будут удалены без возможности восстановления.
+        </p>
+      </div>
+      <div class="kanban-action-modal__buttons">
+        <button
+          ref="deleteCancelButton"
+          type="button"
+          class="kanban-action-modal__secondary"
+          :disabled="actionPending"
+          @click="deleteModalOpen = false"
+        >
+          Отменить
+        </button>
+        <button type="button" class="kanban-action-modal__danger" :disabled="actionPending" @click="deleteSelectedTask">
+          {{ actionPending ? 'Удаление...' : 'Удалить' }}
+        </button>
+      </div>
+    </div>
+  </BaseModal>
 </template>
 
 <style scoped lang="scss">
@@ -1422,6 +1675,11 @@ const dragend = () => {
         background: var(--light-text-backgroung-primary-10);
       }
     }
+
+    &-flag {
+      flex-shrink: 0;
+      color: var(--danger-delete);
+    }
   }
 
   &__project-name {
@@ -1470,6 +1728,173 @@ const dragend = () => {
       opacity: 1;
     }
     &__stage-menu button {
+      min-height: 44px;
+    }
+  }
+}
+
+.kanban-context-menu {
+  position: fixed;
+  z-index: 2100;
+  width: 216px;
+  padding: 4px;
+  border: 1px solid var(--light-text-backgroung-primary-10);
+  border-radius: 12px;
+  background: var(--dark-text-background-primary);
+  box-shadow: 0 8px 24px var(--black-40);
+
+  button {
+    @include flex(rn, a-center, j-start);
+    gap: 8px;
+    width: 100%;
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary);
+    text-align: left;
+    cursor: pointer;
+    @extend %text-s-regular;
+
+    svg {
+      flex-shrink: 0;
+    }
+
+    &:hover {
+      background: var(--light-text-backgroung-primary-5);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
+    }
+  }
+
+  &__delete {
+    color: var(--danger-delete) !important;
+  }
+
+  @media (max-width: $screen-tablet) {
+    button {
+      min-height: 44px;
+    }
+  }
+}
+
+.kanban-action-modal {
+  box-sizing: border-box;
+  width: 100%;
+  @include flex(cn);
+  gap: 24px;
+
+  &__header {
+    @include flex(cn);
+    gap: 4px;
+
+    h2 {
+      margin: 0;
+      color: var(--light-text-backgroung-primary);
+      @extend %text-l-bold;
+    }
+
+    p {
+      margin: 0;
+      color: var(--light-text-backgroung-primary-50);
+      overflow-wrap: anywhere;
+      @extend %text-s-regular;
+    }
+  }
+
+  &__field {
+    @include flex(cn);
+    gap: 8px;
+    color: var(--light-text-backgroung-primary);
+    @extend %text-s-medium;
+
+    small {
+      color: var(--light-text-backgroung-primary-50);
+      @extend %text-xs-regular;
+    }
+
+    textarea {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 112px;
+      padding: 10px 12px;
+      resize: vertical;
+      border: 1px solid var(--light-text-backgroung-primary-10);
+      border-radius: 8px;
+      outline: none;
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+      @extend %text-s-regular;
+
+      &::placeholder {
+        color: var(--light-text-backgroung-primary-50);
+      }
+
+      &:focus-visible {
+        border-color: var(--primary-50);
+        outline: 2px solid var(--primary-25);
+      }
+    }
+  }
+
+  &__buttons {
+    @include flex(rn);
+    gap: 8px;
+
+    button {
+      flex: 1;
+      min-height: 40px;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--primary);
+      color: var(--light-text-backgroung-primary);
+      cursor: pointer;
+      @extend %text-s-medium;
+
+      &:hover:not(:disabled) {
+        background: var(--primary-hover);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--light-text-backgroung-primary);
+        outline-offset: 2px;
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    }
+  }
+
+  &__buttons &__secondary {
+    border: 1px solid var(--light-text-backgroung-primary-10);
+    background: var(--light-text-backgroung-primary-5);
+
+    &:hover:not(:disabled) {
+      background: var(--light-text-backgroung-primary-10);
+    }
+  }
+
+  &__buttons &__danger {
+    background: var(--danger-delete);
+
+    &:hover:not(:disabled) {
+      background: var(--danger-delete-50);
+    }
+  }
+
+  @media (max-width: $screen-mobile-l) {
+    &__field textarea {
+      font-size: 16px;
+    }
+
+    &__buttons button {
       min-height: 44px;
     }
   }

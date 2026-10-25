@@ -269,6 +269,8 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
         description: extractPlainText(task.description as TiptapDoc, 80),
         planned_date: task.planned_date ? String(task.planned_date) : null,
         closed_date: task.closed_date ? String(task.closed_date) : null,
+        is_flagged: task.is_flagged,
+        flag_comment: task.flag_comment,
       };
 
       const insertIndex = targetColumn.cards.findIndex((card) => card.priority < task.priority);
@@ -302,6 +304,8 @@ export const useTaskSidebar = (taskId: Ref<number | null>) => {
         if (updates.story_points !== undefined) card.story_points = updates.story_points;
         if (updates.planned_date !== undefined) card.planned_date = updates.planned_date as string | null;
         if (updates.taskType !== undefined) card.taskType = updates.taskType;
+        if (updates.is_flagged !== undefined) card.is_flagged = updates.is_flagged;
+        if (updates.flag_comment !== undefined) card.flag_comment = updates.flag_comment;
         if (updates.project !== undefined) card.projectName = updates.project?.name;
         if (updates.description !== undefined) {
           card.description = extractPlainText(updates.description as TiptapDoc, 80);

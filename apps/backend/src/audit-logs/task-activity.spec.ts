@@ -50,6 +50,7 @@ describe('Task activity projection', () => {
           { field: 'title', label: 'Название', before: 'До', after: 'После' },
           { field: 'description', label: 'Описание', before: null, after: null },
         ],
+        flag_comment: null,
         timelog: null,
       },
     ]);
@@ -94,11 +95,46 @@ describe('Task activity projection', () => {
         actor_name: 'Андрей',
         created_at: '2026-10-22T10:00:00.000Z',
         changes: [],
+        flag_comment: null,
         timelog: {
           time_spent: 2700,
           summary: 'Подготовил отчет',
           tracking_date: '2026-10-22',
         },
+      },
+    ]);
+  });
+
+  it('adds the optional flag comment to task activity', async () => {
+    const row = Object.assign(new AuditLog(), {
+      id: 5,
+      action_type: AuditActionType.TASK_FLAG_ADDED,
+      entity_type: AuditEntityType.TASK,
+      actor_name: 'Андрей',
+      created_at: new Date('2026-10-25T10:00:00Z'),
+      before_payload: { is_flagged: false, flag_comment: null },
+      after_payload: { is_flagged: true, flag_comment: 'Проверить сроки' },
+    });
+    const module = await Test.createTestingModule({
+      providers: [
+        AuditLogsService,
+        AuditContextService,
+        {
+          provide: getRepositoryToken(AuditLog),
+          useValue: { find: jest.fn().mockResolvedValue([row]), manager: { find: jest.fn() } },
+        },
+      ],
+    }).compile();
+
+    await expect(module.get(AuditLogsService).findTaskActivity(12, false)).resolves.toEqual([
+      {
+        id: 5,
+        action_type: AuditActionType.TASK_FLAG_ADDED,
+        actor_name: 'Андрей',
+        created_at: '2026-10-25T10:00:00.000Z',
+        changes: [],
+        flag_comment: 'Проверить сроки',
+        timelog: null,
       },
     ]);
   });

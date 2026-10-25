@@ -62,6 +62,8 @@ export interface Task {
   active_tracking_date?: string | null;
   billing_type: TaskBillingType | null;
   fixed_price: number | null;
+  is_flagged: boolean;
+  flag_comment: string | null;
 }
 
 export interface WeeklyCard {

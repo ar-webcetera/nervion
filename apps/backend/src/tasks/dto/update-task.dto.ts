@@ -1,9 +1,25 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray, IsInt, IsNumber, IsOptional, IsString, Length, Max, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, Length, Max, MaxLength, Min } from 'class-validator';
 import { CreateTaskDto } from './create-task.dto';
 import { MAX_TASK_NAME_LENGTH } from '../../tasks/entities/task.entity';
 
 export class UpdateTaskDto extends CreateTaskDto {
+  @IsBoolean({ message: 'Признак метки должен быть логическим значением' })
+  @IsOptional()
+  @ApiProperty({ description: 'Отмечена ли задача флажком', example: true, required: false })
+  is_flagged?: boolean;
+
+  @IsString({ message: 'Комментарий метки должен быть строкой' })
+  @MaxLength(500, { message: 'Комментарий метки должен быть не длиннее 500 символов' })
+  @IsOptional()
+  @ApiProperty({
+    description: 'Необязательный комментарий к метке',
+    example: 'Нужна проверка',
+    required: false,
+    nullable: true,
+  })
+  flag_comment?: string | null;
+
   @IsNumber({}, { message: 'Приоритет должен быть числом' })
   @IsOptional()
   @ApiProperty({

@@ -20,5 +20,6 @@ export interface TaskActivityItem {
   actor_name: string;
   created_at: string;
   changes: TaskActivityChange[];
+  flag_comment: string | null;
   timelog: TaskActivityTimelog | null;
 }

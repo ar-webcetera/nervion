@@ -12,6 +12,8 @@ export const AUDIT_ACTION_LABELS: Record<AuditActionType, string> = {
   [AuditActionType.TASK_COMPLETED]: "Выполнение recurring-задачи",
   [AuditActionType.TASK_UNCOMPLETED]: "Снятие выполнения recurring-задачи",
   [AuditActionType.TASK_RECURRENCE_CHANGED]: "Изменение повторения задачи",
+  [AuditActionType.TASK_FLAG_ADDED]: "Добавление метки задачи",
+  [AuditActionType.TASK_FLAG_REMOVED]: "Снятие метки задачи",
   [AuditActionType.PROJECT_CREATED]: "Создание проекта",
   [AuditActionType.PROJECT_UPDATED]: "Обновление проекта",
   [AuditActionType.PROJECT_DELETED]: "Удаление проекта",

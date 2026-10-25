@@ -52,6 +52,8 @@ interface TaskAuditPayload extends JsonObject {
   closed_date: string | null;
   billing_type: TaskBillingType | null;
   fixed_price: number | null;
+  is_flagged: boolean;
+  flag_comment: string | null;
 }
 
 interface ResponsibleAssignedNotificationPayload {
@@ -512,6 +514,8 @@ export class TasksService {
       story_points: task.story_points,
       planned_date: task.planned_date,
       closed_date: task.closed_date,
+      is_flagged: task.is_flagged,
+      flag_comment: task.flag_comment,
     };
   }
 
@@ -846,6 +850,10 @@ export class TasksService {
       if (updateTaskDto.title) data.title = updateTaskDto.title;
       if (updateTaskDto.taskType) data.taskType = updateTaskDto.taskType;
       if (updateTaskDto.story_points !== undefined) data.story_points = updateTaskDto.story_points;
+      if (updateTaskDto.is_flagged !== undefined) {
+        data.is_flagged = updateTaskDto.is_flagged;
+        data.flag_comment = updateTaskDto.is_flagged ? updateTaskDto.flag_comment?.trim() || null : null;
+      }
       if (updateTaskDto.billing_type !== undefined) {
         data.billing_type = updateTaskDto.billing_type;
         data.fixed_price = updateTaskDto.billing_type === TaskBillingType.FIXED ? (updateTaskDto.fixed_price ?? 0) : null;
@@ -910,9 +918,13 @@ export class TasksService {
       const beforePayload = this.serializeTaskForAudit(existingTask);
       const afterPayload = this.serializeTaskForAudit(findTask ?? updatedTask);
       const actionType =
-        JSON.stringify(beforePayload.recurrence_days ?? null) !== JSON.stringify(afterPayload.recurrence_days ?? null)
-          ? AuditActionType.TASK_RECURRENCE_CHANGED
-          : AuditActionType.TASK_UPDATED;
+        beforePayload.is_flagged !== afterPayload.is_flagged
+          ? afterPayload.is_flagged
+            ? AuditActionType.TASK_FLAG_ADDED
+            : AuditActionType.TASK_FLAG_REMOVED
+          : JSON.stringify(beforePayload.recurrence_days ?? null) !== JSON.stringify(afterPayload.recurrence_days ?? null)
+            ? AuditActionType.TASK_RECURRENCE_CHANGED
+            : AuditActionType.TASK_UPDATED;
       const changedFields = this.getChangedTaskAuditFields(beforePayload, afterPayload);
       const taskLabel = afterPayload.title ?? beforePayload.title ?? `#${taskId}`;
 
@@ -924,7 +936,7 @@ export class TasksService {
         actor: currentUser,
         projectId: (afterPayload.project_id as number | null | undefined) ?? null,
         taskId: Number(taskId),
-        summary: this.buildTaskUpdateSummary(actionType, taskLabel, changedFields),
+        summary: this.buildTaskUpdateSummary(actionType, taskLabel, changedFields, afterPayload.flag_comment),
         beforePayload,
         afterPayload,
       });
@@ -1596,6 +1608,8 @@ export class TasksService {
       closed_date: task.closed_date ? new Date(task.closed_date).toISOString() : null,
       billing_type: task.billing_type ?? null,
       fixed_price: task.fixed_price == null ? null : Number(task.fixed_price),
+      is_flagged: task.is_flagged ?? false,
+      flag_comment: task.flag_comment?.trim() || null,
     };
   }
 
@@ -1687,7 +1701,18 @@ export class TasksService {
       .map(({ label }) => label);
   }
 
-  private buildTaskUpdateSummary(actionType: AuditActionType, taskLabel: string, changedFields: string[]): string {
+  private buildTaskUpdateSummary(
+    actionType: AuditActionType,
+    taskLabel: string,
+    changedFields: string[],
+    flagComment: string | null,
+  ): string {
+    if (actionType === AuditActionType.TASK_FLAG_ADDED) {
+      return flagComment ? `Добавлена метка к задаче "${taskLabel}": ${flagComment}` : `Добавлена метка к задаче "${taskLabel}"`;
+    }
+    if (actionType === AuditActionType.TASK_FLAG_REMOVED) {
+      return `Снята метка с задачи "${taskLabel}"`;
+    }
     const baseSummary =
       actionType === AuditActionType.TASK_RECURRENCE_CHANGED
         ? `Изменена повторяемость задачи "${taskLabel}"`

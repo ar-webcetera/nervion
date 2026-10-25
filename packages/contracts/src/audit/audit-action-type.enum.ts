@@ -8,6 +8,8 @@ export enum AuditActionType {
   TASK_COMPLETED = "tasks.completed",
   TASK_UNCOMPLETED = "tasks.uncompleted",
   TASK_RECURRENCE_CHANGED = "tasks.recurrence_changed",
+  TASK_FLAG_ADDED = "tasks.flag_added",
+  TASK_FLAG_REMOVED = "tasks.flag_removed",
   PROJECT_CREATED = "projects.created",
   PROJECT_UPDATED = "projects.updated",
   PROJECT_DELETED = "projects.deleted",
