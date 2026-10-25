@@ -981,6 +981,7 @@ const dragend = () => {
                   class="kanban__card-flag"
                   :size="16"
                   :stroke-width="2"
+                  fill="currentColor"
                   role="img"
                   aria-label="Задача отмечена"
                   :title="card.flag_comment || 'Задача отмечена'"
