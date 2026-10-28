@@ -125,7 +125,7 @@ const checkArrowActivity = (month: number, year: number) => {
 </script>
 
 <template>
-  <div class="calendar__wrapper">
+  <div class="calendar__wrapper" :class="{ calendar__wrapper_inline: inline }">
     <IconsIconClose v-if="valueDate && type === DatePickerType.filter" @click="valueDate = null" />
     <VueDatePicker
       v-model="valueDate"
@@ -147,6 +147,7 @@ const checkArrowActivity = (month: number, year: number) => {
           'calendar__task-field-type': type === DatePickerType.taskField,
           'calendar__filter-type': type === DatePickerType.filter,
           calendar__small: small,
+          calendar__inline: inline,
         },
       ]"
       type="date"
@@ -316,7 +317,56 @@ const checkArrowActivity = (month: number, year: number) => {
 
   &__wrapper {
     @include flex(rn, a-center);
+
+    &_inline {
+      width: 100%;
+      min-width: 0;
+      overflow: hidden;
+    }
   }
+
+  &__inline {
+    width: 100%;
+    min-width: 0;
+    --dp-menu-min-width: 0;
+    --dp-menu-padding: 0;
+    --dp-cell-size: 40px;
+
+    :deep(.dp__menu) {
+      width: 100%;
+      min-width: 0;
+      box-shadow: none;
+    }
+
+    :deep(.dp__calendar_header) {
+      box-sizing: border-box;
+      padding: 0 8px;
+    }
+
+    :deep(.dp__calendar_header_item) {
+      width: auto;
+      min-width: 0;
+      height: 40px;
+      padding: 8px 4px;
+    }
+
+    :deep(.dp__calendar_row) {
+      width: 100%;
+    }
+
+    :deep(.dp__calendar_item) {
+      min-width: 0;
+      padding: 0;
+    }
+
+    :deep(.dp__cell_inner) {
+      width: 100%;
+      max-width: 40px;
+      height: 40px;
+      margin: 0 auto;
+    }
+  }
+
   &__task-field-type {
     :deep(.dp__input_icon_pad) {
       border: none;
@@ -368,6 +418,7 @@ const checkArrowActivity = (month: number, year: number) => {
 
   &__header {
     @include flex(rn, a-center, between);
+    box-sizing: border-box;
     padding: 0 12px;
     width: 100%;
   }

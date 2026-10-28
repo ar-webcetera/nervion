@@ -1913,9 +1913,10 @@ const dragend = () => {
   position: fixed;
   z-index: 2100;
   box-sizing: border-box;
-  width: 292px;
+  width: 320px;
   max-width: calc(100vw - 16px);
   max-height: calc(100dvh - 16px);
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 12px;
   border: 1px solid var(--light-text-backgroung-primary-10);
