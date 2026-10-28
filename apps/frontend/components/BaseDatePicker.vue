@@ -75,6 +75,11 @@ const props = defineProps({
     required: false,
     default: false,
   },
+  inline: {
+    type: Boolean,
+    required: false,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -125,6 +130,7 @@ const checkArrowActivity = (month: number, year: number) => {
     <VueDatePicker
       v-model="valueDate"
       :auto-apply="!range"
+      :inline="inline ? { input: false } : false"
       :clearable="clearButton"
       :enable-time-picker="false"
       :range="range"

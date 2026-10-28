@@ -13,6 +13,8 @@ import {
   Plus,
   Flag,
   FlagOff,
+  CalendarDays,
+  X,
 } from '@lucide/vue';
 import type { PropType } from 'vue';
 import { TASK_STATUSES, TASK_STATUS_DESCRIPTIONS } from '~/constants/task.constants';
@@ -122,6 +124,10 @@ const { $toast } = useNuxtApp();
 const contextMenu = ref<{ card: KanbanCard; x: number; y: number } | null>(null);
 const contextMenuElement = ref<HTMLElement | null>(null);
 const contextMenuTrigger = ref<HTMLElement | null>(null);
+const deadlinePicker = ref<{ card: KanbanCard; x: number; y: number } | null>(null);
+const deadlinePickerElement = ref<HTMLElement | null>(null);
+const deadlineDate = ref<Date | null>(null);
+const deadlinePending = ref(false);
 const selectedCard = ref<KanbanCard | null>(null);
 const flagComment = ref('');
 const flagCommentInput = ref<HTMLTextAreaElement | null>(null);
@@ -136,10 +142,18 @@ const closeContextMenu = (restoreFocus = false) => {
   if (restoreFocus) nextTick(() => trigger?.focus());
 };
 
+const closeDeadlinePicker = (restoreFocus = false) => {
+  const trigger = contextMenuTrigger.value;
+  deadlinePicker.value = null;
+  deadlineDate.value = null;
+  if (restoreFocus) nextTick(() => trigger?.focus());
+};
+
 const openContextMenu = async (card: KanbanCard, event: MouseEvent | KeyboardEvent) => {
   if (props.editingStages) return;
   event.preventDefault();
   event.stopPropagation();
+  closeDeadlinePicker();
   const cardElement = event.currentTarget as HTMLElement;
   const rect = cardElement.getBoundingClientRect();
   const x = ('clientX' in event && event.clientX) || rect.left + 16;
@@ -169,6 +183,71 @@ const moveContextMenuFocus = (direction: number) => {
   if (!items.length) return;
   const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
   items[(currentIndex + direction + items.length) % items.length]?.focus();
+};
+
+const toDeadlineDate = (value: string | null | undefined): Date | null => {
+  if (!value) return null;
+  const parsed = parseDueDate(value);
+  if (!parsed) return null;
+  return new Date(parsed.year, parsed.month - 1, parsed.day);
+};
+
+const toDeadlinePayload = (value: Date): string => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const openDeadlinePicker = async (card: KanbanCard) => {
+  if (!contextMenu.value) return;
+  const { x, y } = contextMenu.value;
+  deadlineDate.value = toDeadlineDate(card.planned_date);
+  deadlinePicker.value = { card, x, y };
+  closeContextMenu();
+  await nextTick();
+
+  const picker = deadlinePickerElement.value;
+  if (!picker || !deadlinePicker.value) return;
+  const pickerRect = picker.getBoundingClientRect();
+  deadlinePicker.value = {
+    card,
+    x: Math.max(8, Math.min(x, window.innerWidth - pickerRect.width - 8)),
+    y: Math.max(8, Math.min(y, window.innerHeight - pickerRect.height - 8)),
+  };
+  await nextTick();
+  deadlinePickerElement.value?.focus();
+};
+
+const saveDeadline = async (value: Date | null) => {
+  if (!value || !deadlinePicker.value || deadlinePending.value) return;
+  const card = deadlinePicker.value.card;
+  const hadDeadline = Boolean(card.planned_date);
+  deadlinePending.value = true;
+  try {
+    await taskStore.updateTask(Number(card.id), { planned_date: toDeadlinePayload(value) });
+    $toast.success(hadDeadline ? 'Дедлайн изменён' : 'Дедлайн установлен');
+    closeDeadlinePicker(true);
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  } finally {
+    deadlinePending.value = false;
+  }
+};
+
+const removeDeadline = async () => {
+  if (!deadlinePicker.value || deadlinePending.value) return;
+  const card = deadlinePicker.value.card;
+  deadlinePending.value = true;
+  try {
+    await taskStore.updateTask(Number(card.id), { planned_date: null });
+    $toast.success('Дедлайн удалён');
+    closeDeadlinePicker(true);
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  } finally {
+    deadlinePending.value = false;
+  }
 };
 
 const openFlagModal = (card: KanbanCard) => {
@@ -237,9 +316,14 @@ const deleteSelectedTask = async () => {
 
 const handleDocumentPointer = (event: PointerEvent) => {
   if (contextMenuElement.value?.contains(event.target as Node)) return;
+  if (deadlinePickerElement.value?.contains(event.target as Node)) return;
   closeContextMenu();
+  closeDeadlinePicker();
 };
-const handleViewportChange = () => closeContextMenu();
+const handleViewportChange = () => {
+  closeContextMenu();
+  closeDeadlinePicker();
+};
 
 onMounted(() => {
   document.addEventListener('pointerdown', handleDocumentPointer);
@@ -1033,14 +1117,9 @@ const dragend = () => {
       @keydown.down.prevent="moveContextMenuFocus(1)"
       @keydown.up.prevent="moveContextMenuFocus(-1)"
     >
-      <button
-        type="button"
-        role="menuitem"
-        class="kanban-context-menu__delete"
-        @click="openDeleteModal(contextMenu.card)"
-      >
-        <Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" />
-        <span>Удалить задачу</span>
+      <button type="button" role="menuitem" @click="openDeadlinePicker(contextMenu.card)">
+        <CalendarDays :size="16" :stroke-width="1.75" aria-hidden="true" />
+        <span>{{ contextMenu.card.planned_date ? 'Изменить дедлайн' : 'Установить дедлайн' }}</span>
       </button>
       <button
         v-if="!contextMenu.card.is_flagged"
@@ -1054,6 +1133,53 @@ const dragend = () => {
       <button v-else type="button" role="menuitem" @click="removeFlag(contextMenu.card)">
         <FlagOff :size="16" :stroke-width="1.75" aria-hidden="true" />
         <span>Удалить флажок</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        class="kanban-context-menu__delete"
+        @click="openDeleteModal(contextMenu.card)"
+      >
+        <Trash2 :size="16" :stroke-width="1.75" aria-hidden="true" />
+        <span>Удалить задачу</span>
+      </button>
+    </div>
+  </Teleport>
+
+  <Teleport to="body">
+    <div
+      v-if="deadlinePicker"
+      ref="deadlinePickerElement"
+      class="kanban-deadline-picker"
+      role="dialog"
+      aria-label="Выбор дедлайна"
+      tabindex="-1"
+      :style="{ left: `${deadlinePicker.x}px`, top: `${deadlinePicker.y}px` }"
+      @keydown.esc.stop="closeDeadlinePicker(true)"
+    >
+      <div class="kanban-deadline-picker__header">
+        <div>
+          <strong>{{ deadlinePicker.card.planned_date ? 'Изменить дедлайн' : 'Установить дедлайн' }}</strong>
+          <span>Выберите дату</span>
+        </div>
+        <button type="button" aria-label="Закрыть календарь" @click="closeDeadlinePicker(true)">
+          <X :size="18" :stroke-width="1.75" aria-hidden="true" />
+        </button>
+      </div>
+      <BaseDatePicker
+        v-model="deadlineDate"
+        inline
+        :disabled="deadlinePending"
+        @update:model-value="saveDeadline"
+      />
+      <button
+        v-if="deadlinePicker.card.planned_date"
+        type="button"
+        class="kanban-deadline-picker__remove"
+        :disabled="deadlinePending"
+        @click="removeDeadline"
+      >
+        Удалить дедлайн
       </button>
     </div>
   </Teleport>
@@ -1778,6 +1904,100 @@ const dragend = () => {
 
   @media (max-width: $screen-tablet) {
     button {
+      min-height: 44px;
+    }
+  }
+}
+
+.kanban-deadline-picker {
+  position: fixed;
+  z-index: 2100;
+  box-sizing: border-box;
+  width: 292px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--light-text-backgroung-primary-10);
+  border-radius: 12px;
+  outline: none;
+  background: var(--dark-text-background-primary);
+  box-shadow: 0 8px 24px var(--black-40);
+
+  &__header {
+    @include flex(rn between a-start);
+    gap: 12px;
+    margin-bottom: 8px;
+
+    div {
+      min-width: 0;
+      @include flex(cn);
+      gap: 2px;
+    }
+
+    strong {
+      color: var(--light-text-backgroung-primary);
+      @extend %text-s-medium;
+    }
+
+    span {
+      color: var(--light-text-backgroung-primary-50);
+      @extend %text-xs-regular;
+    }
+
+    button {
+      @include flex(center);
+      flex: 0 0 40px;
+      height: 40px;
+      padding: 0;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--light-text-backgroung-primary-50);
+      cursor: pointer;
+
+      &:hover {
+        background: var(--light-text-backgroung-primary-5);
+        color: var(--light-text-backgroung-primary);
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--primary);
+        outline-offset: -2px;
+      }
+    }
+  }
+
+  &__remove {
+    width: 100%;
+    min-height: 40px;
+    margin-top: 8px;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--danger-delete);
+    cursor: pointer;
+    @extend %text-s-medium;
+
+    &:hover:not(:disabled) {
+      background: var(--danger-delete-25);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--danger-delete);
+      outline-offset: -2px;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+  }
+
+  @media (max-width: $screen-tablet) {
+    &__header button,
+    &__remove {
       min-height: 44px;
     }
   }
