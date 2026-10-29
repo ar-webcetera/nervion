@@ -235,6 +235,13 @@ const saveDeadline = async (value: Date | null) => {
   }
 };
 
+const saveRelativeDeadline = (daysFromToday: number) => {
+  const value = new Date();
+  value.setHours(0, 0, 0, 0);
+  value.setDate(value.getDate() + daysFromToday);
+  return saveDeadline(value);
+};
+
 const removeDeadline = async () => {
   if (!deadlinePicker.value || deadlinePending.value) return;
   const card = deadlinePicker.value.card;
@@ -1162,9 +1169,18 @@ const dragend = () => {
           <strong>{{ deadlinePicker.card.planned_date ? 'Изменить дедлайн' : 'Установить дедлайн' }}</strong>
           <span>Выберите дату</span>
         </div>
-        <button type="button" aria-label="Закрыть календарь" @click="closeDeadlinePicker(true)">
-          <X :size="18" :stroke-width="1.75" aria-hidden="true" />
-        </button>
+      </div>
+      <button
+        type="button"
+        class="kanban-deadline-picker__close"
+        aria-label="Закрыть календарь"
+        @click="closeDeadlinePicker(true)"
+      >
+        <X :size="18" :stroke-width="1.75" aria-hidden="true" />
+      </button>
+      <div class="kanban-deadline-picker__shortcuts" role="group" aria-label="Быстрый выбор дедлайна">
+        <button type="button" :disabled="deadlinePending" @click="saveRelativeDeadline(0)">Сегодня</button>
+        <button type="button" :disabled="deadlinePending" @click="saveRelativeDeadline(1)">Завтра</button>
       </div>
       <BaseDatePicker
         v-model="deadlineDate"
@@ -1926,9 +1942,9 @@ const dragend = () => {
   box-shadow: 0 8px 24px var(--black-40);
 
   &__header {
-    @include flex(rn between a-start);
-    gap: 12px;
-    margin-bottom: 8px;
+    min-height: 40px;
+    padding-right: 48px;
+    margin-bottom: 12px;
 
     div {
       min-width: 0;
@@ -1945,26 +1961,64 @@ const dragend = () => {
       color: var(--light-text-backgroung-primary-50);
       @extend %text-xs-regular;
     }
+  }
+
+  &__close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--light-text-backgroung-primary-50);
+    cursor: pointer;
+    @include flex(center);
+
+    &:hover {
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: -2px;
+    }
+  }
+
+  &__shortcuts {
+    width: 100%;
+    margin-bottom: 8px;
+    @include flex(rn);
+    gap: 8px;
 
     button {
-      @include flex(center);
-      flex: 0 0 40px;
-      height: 40px;
-      padding: 0;
-      border: 0;
+      flex: 1;
+      min-width: 0;
+      min-height: 40px;
+      padding: 8px 12px;
+      border: 1px solid var(--light-text-backgroung-primary-10);
       border-radius: 8px;
-      background: transparent;
-      color: var(--light-text-backgroung-primary-50);
+      background: var(--light-text-backgroung-primary-5);
+      color: var(--light-text-backgroung-primary);
       cursor: pointer;
+      @extend %text-s-medium;
 
-      &:hover {
-        background: var(--light-text-backgroung-primary-5);
-        color: var(--light-text-backgroung-primary);
+      &:hover:not(:disabled) {
+        border-color: var(--primary-50);
+        background: var(--primary-25);
       }
 
       &:focus-visible {
         outline: 2px solid var(--primary);
         outline-offset: -2px;
+      }
+
+      &:disabled {
+        opacity: 0.5;
+        cursor: default;
       }
     }
   }
@@ -1997,7 +2051,8 @@ const dragend = () => {
   }
 
   @media (max-width: $screen-tablet) {
-    &__header button,
+    &__close,
+    &__shortcuts button,
     &__remove {
       min-height: 44px;
     }

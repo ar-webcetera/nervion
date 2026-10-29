@@ -338,12 +338,24 @@ const checkArrowActivity = (month: number, year: number) => {
       box-shadow: none;
     }
 
+    :deep(.dp__outer_menu_wrap),
+    :deep(.dp__menu_inner),
+    :deep(.dp__menu_content_wrapper),
+    :deep(.dp__instance_calendar),
+    :deep(.dp__calendar) {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+    }
+
     :deep(.dp__calendar_header) {
       box-sizing: border-box;
+      width: 100%;
       padding: 0 8px;
     }
 
     :deep(.dp__calendar_header_item) {
+      flex: 1 1 0;
       width: auto;
       min-width: 0;
       height: 40px;
@@ -355,15 +367,14 @@ const checkArrowActivity = (month: number, year: number) => {
     }
 
     :deep(.dp__calendar_item) {
+      flex: 1 1 0;
       min-width: 0;
       padding: 0;
     }
 
     :deep(.dp__cell_inner) {
       width: 100%;
-      max-width: 40px;
       height: 40px;
-      margin: 0 auto;
     }
   }
 
