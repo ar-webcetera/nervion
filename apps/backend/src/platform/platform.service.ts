@@ -36,7 +36,7 @@ import { ROLES } from '../common/enums/roles.enum';
 import { seedTenantDefaults } from './seed-tenant-defaults';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const RESERVED_SLUGS = new Set(['admin', 'auth', 'api', 'www', 'mail', 'smtp', 'status', 'static']);
+const RESERVED_SLUGS = new Set(['admin', 'auth', 'api', 'app', 'preprod', 'www', 'mail', 'smtp', 'media', 'status', 'static']);
 const DUMMY_PASSWORD_HASH = `scrypt$16384$8$1$${'0'.repeat(32)}$${'0'.repeat(128)}`;
 
 export interface MembershipReservation {

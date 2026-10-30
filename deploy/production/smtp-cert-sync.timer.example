@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the Nervion SMTP TLS bundle every 15 minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/15:00
+RandomizedDelaySec=60
+Persistent=true
+Unit=smtp-cert-sync.service
+
+[Install]
+WantedBy=timers.target

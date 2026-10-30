@@ -64,13 +64,14 @@ export class NotificationsService {
     const text = createNotificationDto.message ?? '';
 
     try {
-      const send = () => this.mailboxService.sendNotificationEmail({
-        notificationId: notification.id,
-        recipientEmail,
-        subject,
-        text,
-        html,
-      });
+      const send = () =>
+        this.mailboxService.sendNotificationEmail({
+          notificationId: notification.id,
+          recipientEmail,
+          subject,
+          text,
+          html,
+        });
       if (process.env.TENANCY_ENABLED === 'true') await runTenantSavepoint(send);
       else await send();
     } catch (error) {
@@ -78,13 +79,14 @@ export class NotificationsService {
     }
 
     try {
-      const store = () => this.mailboxService.storeNotificationEmail({
-        notificationId: notification.id,
-        recipientEmail,
-        subject,
-        text,
-        html,
-      });
+      const store = () =>
+        this.mailboxService.storeNotificationEmail({
+          notificationId: notification.id,
+          recipientEmail,
+          subject,
+          text,
+          html,
+        });
       if (process.env.TENANCY_ENABLED === 'true') await runTenantSavepoint(store);
       else await store();
     } catch (error) {

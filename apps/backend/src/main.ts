@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { buildProxyUrlFromEnv, DEFAULT_NO_PROXY } from './common/utils/proxy-url';
 import { RedisIoAdapter } from './websocket/redis-io.adapter';
+import { backendBindHost } from './common/utils/backend-bind-host';
 
 const REQUEST_BODY_LIMIT = '1mb';
 const CORS_ALLOWED_ROOT_HOST = (process.env.CORS_ALLOWED_ROOT_HOST || '').trim().toLowerCase();
@@ -37,6 +38,7 @@ export function buildProxyUrl(): string | null {
 }
 
 async function bootstrap() {
+  const bindHost = backendBindHost(process.env.BACKEND_BIND_HOST);
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const configService = new ConfigService();
   if (configService.get<string>('TENANCY_ENABLED') === 'true') {
@@ -127,7 +129,8 @@ async function bootstrap() {
     }),
   );
   app.use(cookieParser());
-  await app.listen(process.env.PORT ?? 3000);
+  if (bindHost) await app.listen(process.env.PORT ?? 3000, bindHost);
+  else await app.listen(process.env.PORT ?? 3000);
   console.log(`Приложение запущено на порту: ${process.env.PORT}`);
 }
 void bootstrap();

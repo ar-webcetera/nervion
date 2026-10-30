@@ -107,7 +107,9 @@ export class MailboxService {
     @Optional() private readonly outbox?: MailOutboxService,
   ) {}
 
-  private isTenantMail(): boolean { return this.configService.get<string>('TENANCY_ENABLED') === 'true'; }
+  private isTenantMail(): boolean {
+    return this.configService.get<string>('TENANCY_ENABLED') === 'true';
+  }
 
   private tenantConfiguration() {
     if (!this.tenantMail) throw new ServiceUnavailableException('Почта пространства не настроена');
@@ -144,7 +146,9 @@ export class MailboxService {
   }
 
   async findTaskAliasAccount(): Promise<MailAccounts | null> {
-    const configured = this.isTenantMail() ? this.tenantConfiguration().taskAliasAccount : this.configService.get<string>('MAILBOX_TASK_ALIAS_ACCOUNT');
+    const configured = this.isTenantMail()
+      ? this.tenantConfiguration().taskAliasAccount
+      : this.configService.get<string>('MAILBOX_TASK_ALIAS_ACCOUNT');
 
     if (configured) {
       const account = await this.findAccountByAddress(configured);
@@ -161,7 +165,9 @@ export class MailboxService {
   }
 
   async findNotificationAccount(): Promise<MailAccounts | null> {
-    const configured = this.isTenantMail() ? this.tenantConfiguration().notificationAccount : this.configService.get<string>('MAILBOX_NOTIFICATION_ACCOUNT')?.trim();
+    const configured = this.isTenantMail()
+      ? this.tenantConfiguration().notificationAccount
+      : this.configService.get<string>('MAILBOX_NOTIFICATION_ACCOUNT')?.trim();
 
     if (configured) {
       return this.findAccountByAddress(configured);
@@ -332,8 +338,9 @@ export class MailboxService {
   async ingestInbound(account: MailAccounts, data: InboundMailData, notifyUser = true): Promise<MailMessages | null> {
     if (this.isTenantMail()) {
       // SMTP retries and concurrent replicas must not create duplicate messages.
-      await requireTenantContext().manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-        [`${requireTenantContext().tenant.id}:mail:${account.id}:${data.messageId || data.notificationId || ''}`]);
+      await requireTenantContext().manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `${requireTenantContext().tenant.id}:mail:${account.id}:${data.messageId || data.notificationId || ''}`,
+      ]);
     }
     if (data.notificationId) {
       const duplicate = await this.messagesRepository.findOne({
@@ -472,17 +479,34 @@ export class MailboxService {
     if (this.isTenantMail()) {
       const messageId = buildNotificationMessageId(data.notificationId);
       await requireTenantContext().manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [messageId]);
-      const existing = await this.messagesRepository.findOne({ where: { message_id: messageId, direction: MAIL_DIRECTIONS.outbound } });
+      const existing = await this.messagesRepository.findOne({
+        where: { message_id: messageId, direction: MAIL_DIRECTIONS.outbound },
+      });
       if (existing) return;
-      const thread = await this.threadsRepository.save(this.threadsRepository.create({
-        subject: data.subject || '(без темы)', account_id: senderAccount.id, counterparty_address: data.recipientEmail, last_message_at: new Date(),
-      }));
-      const message = await this.messagesRepository.save(this.messagesRepository.create({
-        thread_id: thread.id, direction: MAIL_DIRECTIONS.outbound,
-        message_id: messageId, from_address: senderAccount.address, from_name: senderAccount.display_name || 'Nervion',
-        to_addresses: [{ address: data.recipientEmail }], cc_addresses: [], subject: data.subject, text_body: data.text, html_body: data.html,
-        is_read: true, status: MAIL_MESSAGE_STATUSES.queued,
-      }));
+      const thread = await this.threadsRepository.save(
+        this.threadsRepository.create({
+          subject: data.subject || '(без темы)',
+          account_id: senderAccount.id,
+          counterparty_address: data.recipientEmail,
+          last_message_at: new Date(),
+        }),
+      );
+      const message = await this.messagesRepository.save(
+        this.messagesRepository.create({
+          thread_id: thread.id,
+          direction: MAIL_DIRECTIONS.outbound,
+          message_id: messageId,
+          from_address: senderAccount.address,
+          from_name: senderAccount.display_name || 'Nervion',
+          to_addresses: [{ address: data.recipientEmail }],
+          cc_addresses: [],
+          subject: data.subject,
+          text_body: data.text,
+          html_body: data.html,
+          is_read: true,
+          status: MAIL_MESSAGE_STATUSES.queued,
+        }),
+      );
       if (!this.outbox) throw new ServiceUnavailableException('Очередь почты недоступна');
       await this.outbox.enqueue(message.id);
       return;
@@ -668,8 +692,8 @@ export class MailboxService {
       LIMIT 1000
     `;
 
-    const rows = await this.messagesRepository.query(sql, params);
-    return (rows as { addr: string }[]).map((row) => row.addr);
+    const rows = await this.messagesRepository.query<Array<{ addr: string }>>(sql, params);
+    return rows.map((row) => row.addr);
   }
 
   async uploadOutboundAttachment(file: Express.Multer.File): Promise<MailAttachmentInputDto> {
@@ -692,11 +716,16 @@ export class MailboxService {
     let total = 0;
     for (const item of items ?? []) {
       if (!item.s3_key.startsWith(`mailbox/outbound/users/${user.id}/`)) {
-        const attachments = await this.attachmentsRepository.find({ where: { s3_key: item.s3_key }, relations: { message: { thread: { account: { allowedUsers: true } } } } });
-        if (!attachments.some((attachment) => canAccessAccount(user, attachment.message.thread.account))) throw new ForbiddenException('Нет доступа к вложению');
+        const attachments = await this.attachmentsRepository.find({
+          where: { s3_key: item.s3_key },
+          relations: { message: { thread: { account: { allowedUsers: true } } } },
+        });
+        if (!attachments.some((attachment) => canAccessAccount(user, attachment.message.thread.account)))
+          throw new ForbiddenException('Нет доступа к вложению');
       }
       const head = await this.storageService.headObject(item.s3_key);
-      if (head.ContentLength === undefined || head.ContentLength < 0) throw new BadRequestException('Не удалось определить размер вложения');
+      if (head.ContentLength === undefined || head.ContentLength < 0)
+        throw new BadRequestException('Не удалось определить размер вложения');
       item.size = head.ContentLength;
       total += head.ContentLength;
       if (total > MAX_OUTBOUND_ATTACHMENTS_BYTES) throw new PayloadTooLargeException(OUTBOUND_ATTACHMENTS_TOO_LARGE_MESSAGE);
@@ -800,27 +829,28 @@ export class MailboxService {
 
     if (this.isTenantMail()) {
       sendResult = { messageId: this.postboxService.generateMessageId(), providerMessageId: null };
-    } else try {
-      sendResult = await this.postboxService.send({
-        from: { address: account.address, name: account.display_name },
-        to: dto.to,
-        cc: dto.cc,
-        subject: dto.subject,
-        html: dto.html,
-        text: dto.text,
-        inReplyTo,
-        references,
-        attachments: dto.attachments?.length ? await this.buildPostboxAttachments(dto.attachments) : undefined,
-      });
-    } catch (error) {
-      this.logger.error(`Ошибка отправки письма с ${account.address}: ${error}`);
+    } else
+      try {
+        sendResult = await this.postboxService.send({
+          from: { address: account.address, name: account.display_name },
+          to: dto.to,
+          cc: dto.cc,
+          subject: dto.subject,
+          html: dto.html,
+          text: dto.text,
+          inReplyTo,
+          references,
+          attachments: dto.attachments?.length ? await this.buildPostboxAttachments(dto.attachments) : undefined,
+        });
+      } catch (error) {
+        this.logger.error(`Ошибка отправки письма с ${account.address}: ${error}`);
 
-      if (error instanceof Error) {
-        this.rethrowPostboxError(error, 'Не удалось отправить письмо');
+        if (error instanceof Error) {
+          this.rethrowPostboxError(error, 'Не удалось отправить письмо');
+        }
+
+        throw new InternalServerErrorException('Не удалось отправить письмо');
       }
-
-      throw new InternalServerErrorException('Не удалось отправить письмо');
-    }
 
     if (!thread) {
       thread = await this.threadsRepository.save(
@@ -1292,7 +1322,8 @@ export class MailboxService {
   }
 
   async sendDraft(user: AuthenticatedUser, draftId: number): Promise<MailMessages> {
-    if (this.isTenantMail()) await requireTenantContext().manager.query('SELECT id FROM mail_messages WHERE id = $1 FOR UPDATE', [draftId]);
+    if (this.isTenantMail())
+      await requireTenantContext().manager.query('SELECT id FROM mail_messages WHERE id = $1 FOR UPDATE', [draftId]);
     const draft = await this.messagesRepository.findOne({
       where: { id: draftId },
       relations: { thread: { account: { allowedUsers: true } }, attachments: true },

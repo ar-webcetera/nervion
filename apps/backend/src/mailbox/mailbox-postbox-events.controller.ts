@@ -8,7 +8,11 @@ import { TenantDatabaseService } from '../tenancy/tenant-database.service';
 @Controller('mailbox/postbox-events')
 @ApiTags('Почта / Postbox events')
 export class MailboxPostboxEventsController {
-  constructor(private readonly mailDeliveryService: MailDeliveryService, private readonly configuration: TenantMailConfigService, private readonly database: TenantDatabaseService) {}
+  constructor(
+    private readonly mailDeliveryService: MailDeliveryService,
+    private readonly configuration: TenantMailConfigService,
+    private readonly database: TenantDatabaseService,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -28,7 +32,11 @@ export class MailboxPostboxEventsController {
   }
 
   @Post(':routingKey')
-  async ingestTenant(@Param('routingKey') routingKey: string, @Headers('authorization') authorization: string | undefined, @Body() body: PostboxEventsIngestBody) {
+  async ingestTenant(
+    @Param('routingKey') routingKey: string,
+    @Headers('authorization') authorization: string | undefined,
+    @Body() body: PostboxEventsIngestBody,
+  ) {
     if (!this.configuration.isEnabled()) throw new NotFoundException();
     const tenant = await this.configuration.authenticateWebhook(routingKey, authorization);
     return this.database.run(tenant, () => this.mailDeliveryService.ingestPayload(body ?? {}));

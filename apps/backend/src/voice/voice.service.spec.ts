@@ -8,20 +8,27 @@ jest.mock('mediasoup', () => ({ createWorker: jest.fn() }));
 describe('tenant voice SFU ownership', () => {
   let service: VoiceService;
   const routers: Router[] = [];
+  const routerClosers: jest.Mock<void, []>[] = [];
   const tenantA = voiceRoomKey('11111111-1111-4111-8111-111111111111', 7);
   const tenantB = voiceRoomKey('22222222-2222-4222-8222-222222222222', 7);
 
   beforeEach(async () => {
     routers.length = 0;
+    routerClosers.length = 0;
     const worker: Partial<Worker> = {
-      on: jest.fn(), close: jest.fn(),
-      createRouter: jest.fn().mockImplementation(async () => {
+      on: jest.fn(),
+      close: jest.fn(),
+      createRouter: jest.fn().mockImplementation(() => {
+        const close = jest.fn<void, []>();
         const router: Partial<Router> = {
-          close: jest.fn(), closed: false, rtpCapabilities: { codecs: [] },
+          close,
+          closed: false,
+          rtpCapabilities: { codecs: [] },
           canConsume: jest.fn().mockReturnValue(true),
         };
         routers.push(router as Router);
-        return router;
+        routerClosers.push(close);
+        return Promise.resolve(router);
       }),
     };
     jest.mocked(mediasoup.createWorker).mockResolvedValue(worker as Worker);
@@ -41,17 +48,26 @@ describe('tenant voice SFU ownership', () => {
     expect(() => service.assertParticipant(tenantA, 1, 'b')).toThrow('Нет доступа');
     service.removeParticipant(tenantA, 1);
     expect(service.getRoomParticipants(tenantB)).toHaveLength(1);
-    expect(routers[1].close).not.toHaveBeenCalled();
+    expect(routerClosers[1]).not.toHaveBeenCalled();
   });
 
   it('rejects transport belonging to another user in the same room', async () => {
     service.addParticipant(tenantA, 2, 'a2', 'Other user', null);
-    const transport = { id: 'transport-a', connect: jest.fn(), produce: jest.fn(), close: jest.fn() } as Partial<WebRtcTransport> as WebRtcTransport;
+    const connect = jest.fn();
+    const produce = jest.fn();
+    const transport = {
+      id: 'transport-a',
+      connect,
+      produce,
+      close: jest.fn(),
+    } as Partial<WebRtcTransport> as WebRtcTransport;
     service.registerSendTransport(tenantA, 1, transport);
     await expect(service.connectTransport(tenantA, 2, transport.id, { fingerprints: [] })).rejects.toThrow('not found');
-    await expect(service.produce(tenantA, 2, transport.id, 'audio', { codecs: [] }, { source: ProducerSource.Microphone })).rejects.toThrow('Нет доступа');
-    expect(transport.connect).not.toHaveBeenCalled();
-    expect(transport.produce).not.toHaveBeenCalled();
+    await expect(
+      service.produce(tenantA, 2, transport.id, 'audio', { codecs: [] }, { source: ProducerSource.Microphone }),
+    ).rejects.toThrow('Нет доступа');
+    expect(connect).not.toHaveBeenCalled();
+    expect(produce).not.toHaveBeenCalled();
   });
 
   it('rejects producer ID from another tenant even if router.canConsume returns true', async () => {

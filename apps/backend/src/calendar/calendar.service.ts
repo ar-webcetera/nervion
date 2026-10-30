@@ -51,9 +51,9 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     if (this.configService.get<string>('TENANCY_ENABLED') === 'true') {
       this.tenantJobs.register('calendar.reminders', () => this.processDueReminders());
-      this.tenantJobs.schedule('calendar.reminders', () => this.tenantJobs.enqueue(
-        'calendar.reminders', `calendar.reminders:${Math.floor(Date.now() / REMINDER_POLL_INTERVAL_MS)}`,
-      ));
+      this.tenantJobs.schedule('calendar.reminders', () =>
+        this.tenantJobs.enqueue('calendar.reminders', `calendar.reminders:${Math.floor(Date.now() / REMINDER_POLL_INTERVAL_MS)}`),
+      );
       return;
     }
     void this.processDueReminders();

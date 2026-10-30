@@ -14,7 +14,10 @@ function signState(tenant: OAuthTenant, secret: string, timestamp: string, nonce
     .digest('base64url');
 }
 
-export function createTenantYandexState(tenant: OAuthTenant, secret: string): { state: string; verifier: string; challenge: string } {
+export function createTenantYandexState(
+  tenant: OAuthTenant,
+  secret: string,
+): { state: string; verifier: string; challenge: string } {
   const timestamp = String(Date.now());
   const nonce = randomBytes(32).toString('base64url');
   const verifier = randomBytes(32).toString('base64url');
@@ -33,7 +36,13 @@ export function verifyTenantYandexState(
   verifier: string,
 ): boolean {
   const match = STATE_PATTERN.exec(state);
-  if (!secret || !match || !STATE_PATTERN.test(cookieState) || !VERIFIER_PATTERN.test(verifier) || state.length !== cookieState.length)
+  if (
+    !secret ||
+    !match ||
+    !STATE_PATTERN.test(cookieState) ||
+    !VERIFIER_PATTERN.test(verifier) ||
+    state.length !== cookieState.length
+  )
     return false;
   if (!timingSafeEqual(Buffer.from(state), Buffer.from(cookieState))) return false;
   const age = Date.now() - Number(match[1]);

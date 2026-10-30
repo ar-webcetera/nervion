@@ -12,4 +12,6 @@
 **/.env.*
 !**/.env.example
 **/coverage
+**/__pycache__
+**/*.py[cod]
 **/.DS_Store

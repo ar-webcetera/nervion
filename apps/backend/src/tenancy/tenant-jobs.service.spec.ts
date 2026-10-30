@@ -54,7 +54,7 @@ describe('tenant job dispatch boundaries', () => {
   });
 
   it('selects only kinds supported by this process', async () => {
-    service.register('healthchecks.probe', async () => undefined);
+    service.register('healthchecks.probe', () => Promise.resolve());
     await service.tick();
     expect(manager.query).toHaveBeenCalledWith(expect.stringContaining('kind = ANY($1::text[])'), [['healthchecks.probe']]);
     expect(manager.query.mock.calls.some(([sql]) => String(sql).includes("status = 'failed'"))).toBe(false);
@@ -73,7 +73,7 @@ describe('tenant job dispatch boundaries', () => {
     ]);
     const order: string[] = [];
     platform.listRunnableTenants.mockResolvedValue(tenants);
-    platform.getTenant.mockImplementation(async (id: string) => tenants.find((item) => item.id === id));
+    platform.getTenant.mockImplementation((id: string) => Promise.resolve(tenants.find((item) => item.id === id)));
     manager.query.mockImplementation((sql: string) => {
       if (sql.includes('pg_try_advisory_xact_lock')) return Promise.resolve([{ acquired: true }]);
       if (!sql.includes('SELECT * FROM tenant_jobs')) return Promise.resolve([]);
@@ -94,8 +94,9 @@ describe('tenant job dispatch boundaries', () => {
         },
       ]);
     });
-    service.register('probe', async () => {
+    service.register('probe', () => {
       order.push(context.require().tenant.id);
+      return Promise.resolve();
     });
     await service.tick();
     expect(order).toEqual(['a', 'b', 'a', 'b']);
@@ -103,7 +104,7 @@ describe('tenant job dispatch boundaries', () => {
 
   it('checks current read-only state instead of trusting the initial tenant listing', async () => {
     platform.getTenant.mockResolvedValue({ ...tenant, readOnly: true });
-    service.register('healthchecks.probe', async () => undefined);
+    service.register('healthchecks.probe', () => Promise.resolve());
     await service.tick();
     expect(database.run).not.toHaveBeenCalled();
   });
@@ -128,9 +129,10 @@ describe('tenant job dispatch boundaries', () => {
 
   it('restores the actor inside a tenant transaction and checks state again before the next job', async () => {
     const observed: Array<{ tenant: string; actor: number | undefined }> = [];
-    service.register('healthchecks.probe', async () => {
+    service.register('healthchecks.probe', () => {
       observed.push({ tenant: context.require().tenant.id, actor: context.require().actorId });
       platform.getTenant.mockResolvedValue({ ...tenant, readOnly: true });
+      return Promise.resolve();
     });
     queued.push({
       id: 'job',

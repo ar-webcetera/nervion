@@ -35,7 +35,10 @@ export class MailOutboxService implements OnApplicationBootstrap, OnModuleDestro
     const { manager, tenant } = this.context.require();
     if (tenant.readOnly) throw new Error('Read-only tenant cannot queue mail');
     this.configuration.current();
-    await manager.query(`INSERT INTO mail_outbox (id, message_id) VALUES ($1, $2) ON CONFLICT (tenant_id, message_id) DO NOTHING`, [randomUUID(), messageId]);
+    await manager.query(
+      `INSERT INTO mail_outbox (id, message_id) VALUES ($1, $2) ON CONFLICT (tenant_id, message_id) DO NOTHING`,
+      [randomUUID(), messageId],
+    );
   }
 
   onApplicationBootstrap(): void {
@@ -44,7 +47,9 @@ export class MailOutboxService implements OnApplicationBootstrap, OnModuleDestro
     this.timer.unref();
   }
 
-  onModuleDestroy(): void { if (this.timer) clearInterval(this.timer); }
+  onModuleDestroy(): void {
+    if (this.timer) clearInterval(this.timer);
+  }
 
   async tick(): Promise<void> {
     // A caller must not turn a durable claim into a nested, uncommitted request
@@ -70,7 +75,9 @@ export class MailOutboxService implements OnApplicationBootstrap, OnModuleDestro
                 UPDATE mail_outbox SET status = 'uncertain', last_error = 'Worker stopped during delivery'
                 WHERE status = 'sending' AND claimed_at < now() - interval '15 minutes' RETURNING message_id
               ) UPDATE mail_messages SET status = 'uncertain' WHERE id IN (SELECT message_id FROM abandoned) AND status = 'sending'`);
-              const rows = await manager.query<Array<{ id: string; message_id: number }>>(`SELECT id, message_id FROM mail_outbox WHERE status = 'queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED`);
+              const rows = await manager.query<Array<{ id: string; message_id: number }>>(
+                `SELECT id, message_id FROM mail_outbox WHERE status = 'queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED`,
+              );
               if (!rows[0]) return null;
               await manager.query("UPDATE mail_outbox SET status = 'sending', claimed_at = now() WHERE id = $1", [rows[0].id]);
               await this.messages.update(rows[0].message_id, { status: MAIL_MESSAGE_STATUSES.sending });
@@ -82,21 +89,39 @@ export class MailOutboxService implements OnApplicationBootstrap, OnModuleDestro
               const current = await this.platform.getTenant(tenant.id);
               if (current.readOnly || current.featureFlags.mail !== true) throw new Error('Mail was disabled after queue claim');
               await this.database.run(current, async () => {
-                const message = await this.messages.findOne({ where: { id: row.message_id }, relations: { thread: { account: true }, attachments: true } });
-                if (!message || message.deleted_at || !message.thread.account.is_active) throw new Error('Mail no longer available');
+                const message = await this.messages.findOne({
+                  where: { id: row.message_id },
+                  relations: { thread: { account: true }, attachments: true },
+                });
+                if (!message || message.deleted_at || !message.thread.account.is_active)
+                  throw new Error('Mail no longer available');
                 this.configuration.assertSender(message.from_address);
-                const attachments: Array<{ filename: string; content: Buffer; contentType: string; cid?: string; contentDisposition?: 'inline' }> = [];
+                const attachments: Array<{
+                  filename: string;
+                  content: Buffer;
+                  contentType: string;
+                  cid?: string;
+                  contentDisposition?: 'inline';
+                }> = [];
                 let totalBytes = 0;
                 for (const attachment of message.attachments ?? []) {
                   const object = await this.storage.getObjectStream(attachment.s3_key);
                   const chunks: Buffer[] = [];
                   for await (const chunk of object.body as AsyncIterable<Buffer>) {
                     totalBytes += chunk.length;
-                    if (totalBytes > 7_000_000) { object.body.destroy(); throw new Error('Attachments too large'); }
+                    if (totalBytes > 7_000_000) {
+                      object.body.destroy();
+                      throw new Error('Attachments too large');
+                    }
                     chunks.push(chunk);
                   }
-                  attachments.push({ filename: attachment.filename, content: Buffer.concat(chunks), contentType: attachment.content_type,
-                    ...(attachment.content_id ? { cid: attachment.content_id } : {}), ...(attachment.is_inline ? { contentDisposition: 'inline' as const } : {}) });
+                  attachments.push({
+                    filename: attachment.filename,
+                    content: Buffer.concat(chunks),
+                    contentType: attachment.content_type,
+                    ...(attachment.content_id ? { cid: attachment.content_id } : {}),
+                    ...(attachment.is_inline ? { contentDisposition: 'inline' as const } : {}),
+                  });
                 }
                 // Loading S3 objects may take time. Re-read both platform policy
                 // and the account's current ACL immediately before network I/O.
@@ -104,44 +129,85 @@ export class MailOutboxService implements OnApplicationBootstrap, OnModuleDestro
                 if (freshTenant.readOnly || freshTenant.featureFlags.mail !== true)
                   throw new Error('Mail was disabled before delivery');
                 const freshMessage = await this.messages.findOne({
-                  where: { id: message.id }, relations: { thread: { account: { allowedUsers: true } } },
+                  where: { id: message.id },
+                  relations: { thread: { account: { allowedUsers: true } } },
                 });
-                if (!freshMessage || freshMessage.deleted_at || freshMessage.status !== MAIL_MESSAGE_STATUSES.sending ||
-                  !freshMessage.thread.account.is_active || freshMessage.thread.account.address !== message.from_address)
+                if (
+                  !freshMessage ||
+                  freshMessage.deleted_at ||
+                  freshMessage.status !== MAIL_MESSAGE_STATUSES.sending ||
+                  !freshMessage.thread.account.is_active ||
+                  freshMessage.thread.account.address !== message.from_address
+                )
                   throw new Error('Mail sender or queued message is no longer available');
                 await this.assertSenderAccess(freshMessage);
                 dispatched = true;
                 const result = await this.postbox.send({
                   from: { address: message.from_address, name: message.from_name },
-                  to: message.to_addresses.map((address) => address.address), cc: message.cc_addresses.map((address) => address.address),
-                  subject: message.subject || '', text: message.text_body || undefined, html: message.html_body || undefined,
-                  inReplyTo: message.in_reply_to, references: message.references_header, messageId: message.message_id || undefined, attachments,
+                  to: message.to_addresses.map((address) => address.address),
+                  cc: message.cc_addresses.map((address) => address.address),
+                  subject: message.subject || '',
+                  text: message.text_body || undefined,
+                  html: message.html_body || undefined,
+                  inReplyTo: message.in_reply_to,
+                  references: message.references_header,
+                  messageId: message.message_id || undefined,
+                  attachments,
                 });
-                await this.messages.update(message.id, { provider_message_id: result.providerMessageId, status: MAIL_MESSAGE_STATUSES.sent });
-                await this.context.require().manager.query(`UPDATE mail_messages SET delivery_status = $2 WHERE id = $1 AND delivery_status IS NULL`, [message.id, MailDeliveryStatus.SENT]);
-                await this.context.require().manager.query("UPDATE mail_outbox SET status = 'sent', last_error = NULL WHERE id = $1", [row.id]);
+                await this.messages.update(message.id, {
+                  provider_message_id: result.providerMessageId,
+                  status: MAIL_MESSAGE_STATUSES.sent,
+                });
+                await this.context
+                  .require()
+                  .manager.query(`UPDATE mail_messages SET delivery_status = $2 WHERE id = $1 AND delivery_status IS NULL`, [
+                    message.id,
+                    MailDeliveryStatus.SENT,
+                  ]);
+                await this.context
+                  .require()
+                  .manager.query("UPDATE mail_outbox SET status = 'sent', last_error = NULL WHERE id = $1", [row.id]);
               });
             } catch (error) {
               // No blind retry after network I/O: Postbox SendEmail is not idempotent.
-              const rejected = error instanceof SESv2ServiceException &&
-                (error.$metadata.httpStatusCode || 0) >= 400 && (error.$metadata.httpStatusCode || 0) < 500;
+              const rejected =
+                error instanceof SESv2ServiceException &&
+                (error.$metadata.httpStatusCode || 0) >= 400 &&
+                (error.$metadata.httpStatusCode || 0) < 500;
               const status = dispatched && !rejected ? MailOutboxStatus.UNCERTAIN : MailOutboxStatus.FAILED;
               const maintenanceTenant = await this.platform.getTenant(tenant.id);
               // A suspended/read-only tenant cannot be made writable with the
               // old claim snapshot. Its unfinished claim is reconciled on resume.
               if (maintenanceTenant.readOnly) break;
               await this.database.run(maintenanceTenant, async () => {
-                await this.context.require().manager.query(`UPDATE mail_outbox SET status = $2, last_error = $3 WHERE id = $1 AND status = 'sending'`,
-                  [row.id, status, status === MailOutboxStatus.UNCERTAIN ? 'Acceptance could not be confirmed; inspect provider events before retry' : 'Provider rejected the request or delivery preparation failed']);
-                await this.context.require().manager.query(`UPDATE mail_messages SET status = $2::mail_message_status_enum WHERE id = $1 AND status = 'sending'`, [row.message_id, status]);
+                await this.context
+                  .require()
+                  .manager.query(`UPDATE mail_outbox SET status = $2, last_error = $3 WHERE id = $1 AND status = 'sending'`, [
+                    row.id,
+                    status,
+                    status === MailOutboxStatus.UNCERTAIN
+                      ? 'Acceptance could not be confirmed; inspect provider events before retry'
+                      : 'Provider rejected the request or delivery preparation failed',
+                  ]);
+                await this.context
+                  .require()
+                  .manager.query(
+                    `UPDATE mail_messages SET status = $2::mail_message_status_enum WHERE id = $1 AND status = 'sending'`,
+                    [row.message_id, status],
+                  );
               });
               this.logger.warn(`Mail delivery ${status}: tenant=${tenant.id}, outbox=${row.id}`);
             }
           }
-        } catch { this.logger.error(`Mail outbox unavailable: tenant=${snapshot.id}`); }
+        } catch {
+          this.logger.error(`Mail outbox unavailable: tenant=${snapshot.id}`);
+        }
       }
-    } catch { this.logger.error('Mail outbox cannot resolve spaces'); }
-    finally { this.running = false; }
+    } catch {
+      this.logger.error('Mail outbox cannot resolve spaces');
+    } finally {
+      this.running = false;
+    }
   }
 
   private async assertSenderAccess(message: MailMessages): Promise<void> {
@@ -152,8 +218,7 @@ export class MailOutboxService implements OnApplicationBootstrap, OnModuleDestro
         throw new Error('System mail requires the configured notification account');
       return;
     }
-    if (!Number.isSafeInteger(message.sent_by_user_id) || message.sent_by_user_id < 1)
-      throw new Error('Mail actor is missing');
+    if (!Number.isSafeInteger(message.sent_by_user_id) || message.sent_by_user_id < 1) throw new Error('Mail actor is missing');
     const membership = await this.platform.assertMembership(tenant.id, message.sent_by_user_id);
     const actor = await manager.getRepository(Users).findOneBy({ id: message.sent_by_user_id });
     if (!actor || membership.role !== String(actor.role) || !canAccessAccount(actor, message.thread.account))

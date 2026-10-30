@@ -29,32 +29,48 @@ interface MemoryObject {
 function fixture() {
   const original = Buffer.from('{ "image": "https://files.example.com/bucket/tracker-avatars/a.png" }');
   const source: StorageMigrationObject = {
-    size: original.length, etag: '"original"', metadata: {}, contentType: 'application/json',
+    size: original.length,
+    etag: '"original"',
+    metadata: {},
+    contentType: 'application/json',
   };
   const objects = new Map<string, MemoryObject>([
     [sourceKey, { body: original, attributes: source }],
-    [targetKey, { body: Buffer.from(original), attributes: {
-      ...source, metadata: { [STORAGE_SOURCE_MARKER]: storageSourceFingerprint(sourceKey, source) },
-    } }],
+    [
+      targetKey,
+      {
+        body: Buffer.from(original),
+        attributes: {
+          ...source,
+          metadata: { [STORAGE_SOURCE_MARKER]: storageSourceFingerprint(sourceKey, source) },
+        },
+      },
+    ],
   ]);
   const object = (key: string): MemoryObject => {
     const result = objects.get(key);
     if (!result) throw new Error('Object missing');
     return result;
   };
-  const io: StorageDocumentMigrationIO = {
-    head: jest.fn(async (key: string) => ({ ...object(key).attributes, metadata: { ...object(key).attributes.metadata } })),
-    read: jest.fn(async (key: string, etag: string) => {
-      const value = object(key);
-      if (value.attributes.etag !== etag) throw new Error('Precondition failed');
-      return Buffer.from(value.body);
-    }),
-    assertConditionalWrites: jest.fn(async () => {}),
-    write: jest.fn(async (key: string, body: Buffer, attributes: StorageMigrationObject, expectedEtag: string) => {
-      if (object(key).attributes.etag !== expectedEtag) throw new Error('Precondition failed');
-      objects.set(key, { body: Buffer.from(body), attributes: { ...attributes, etag: `"${digest(body)}"` } });
-    }),
-  };
+  const io = {
+    head: jest.fn((key: string) =>
+      Promise.resolve().then(() => ({ ...object(key).attributes, metadata: { ...object(key).attributes.metadata } })),
+    ),
+    read: jest.fn((key: string, etag: string) =>
+      Promise.resolve().then(() => {
+        const value = object(key);
+        if (value.attributes.etag !== etag) throw new Error('Precondition failed');
+        return Buffer.from(value.body);
+      }),
+    ),
+    assertConditionalWrites: jest.fn<Promise<void>, [tenant: string]>().mockResolvedValue(undefined),
+    write: jest.fn((key: string, body: Buffer, attributes: StorageMigrationObject, expectedEtag: string) =>
+      Promise.resolve().then(() => {
+        if (object(key).attributes.etag !== expectedEtag) throw new Error('Precondition failed');
+        objects.set(key, { body: Buffer.from(body), attributes: { ...attributes, etag: `"${digest(body)}"` } });
+      }),
+    ),
+  } satisfies StorageDocumentMigrationIO;
   return { original, source, io, objects, object };
 }
 
@@ -88,9 +104,13 @@ describe('explicit tenant JSON document migration', () => {
     const original = Buffer.from('\uFEFF{ "value": 9007199254740993 }');
     const source = { ...f.source, size: original.length };
     f.objects.set(sourceKey, { body: original, attributes: source });
-    f.objects.set(targetKey, { body: Buffer.from(original), attributes: {
-      ...source, metadata: { [STORAGE_SOURCE_MARKER]: storageSourceFingerprint(sourceKey, source) },
-    } });
+    f.objects.set(targetKey, {
+      body: Buffer.from(original),
+      attributes: {
+        ...source,
+        metadata: { [STORAGE_SOURCE_MARKER]: storageSourceFingerprint(sourceKey, source) },
+      },
+    });
     const result = await rewriteTenantJsonDocuments(f.io, tenantId, [sourceKey], bases, keys, true);
     expect(result[0].operation).toBe(StorageDocumentRewriteOperation.UNCHANGED);
     expect(f.io.write).not.toHaveBeenCalled();
@@ -128,19 +148,26 @@ describe('explicit tenant JSON document migration', () => {
 
   it('refuses concurrent edits using the planned destination ETag', async () => {
     const f = fixture();
-    f.io.assertConditionalWrites = jest.fn(async () => {
+    f.io.assertConditionalWrites = jest.fn<Promise<void>, [tenant: string]>(() => {
       f.object(targetKey).attributes.etag = '"concurrent-edit"';
       f.object(targetKey).body = Buffer.from('user edit');
+      return Promise.resolve();
     });
-    await expect(rewriteTenantJsonDocuments(f.io, tenantId, [sourceKey], bases, keys, true)).rejects.toThrow('Precondition failed');
+    await expect(rewriteTenantJsonDocuments(f.io, tenantId, [sourceKey], bases, keys, true)).rejects.toThrow(
+      'Precondition failed',
+    );
     expect(f.object(targetKey).body.toString()).toBe('user edit');
     expect(f.object(sourceKey).body).toEqual(f.original);
   });
 
   it('fails closed before document writes when conditional PUT cannot be confirmed', async () => {
     const f = fixture();
-    f.io.assertConditionalWrites = jest.fn(async () => { throw new Error('Unsupported IfMatch'); });
-    await expect(rewriteTenantJsonDocuments(f.io, tenantId, [sourceKey], bases, keys, true)).rejects.toThrow('Unsupported IfMatch');
+    f.io.assertConditionalWrites = jest.fn<Promise<void>, [tenant: string]>(() =>
+      Promise.reject(new Error('Unsupported IfMatch')),
+    );
+    await expect(rewriteTenantJsonDocuments(f.io, tenantId, [sourceKey], bases, keys, true)).rejects.toThrow(
+      'Unsupported IfMatch',
+    );
     expect(f.io.write).not.toHaveBeenCalled();
     expect(f.object(targetKey).body).toEqual(f.original);
   });
@@ -151,32 +178,47 @@ describe('explicit tenant JSON document migration', () => {
     const body = Buffer.from('not JSON');
     const source = { size: body.length, etag: '"broken"', metadata: {} };
     f.objects.set(second, { body, attributes: source });
-    f.objects.set(`tenants/${tenantId}/${second}`, { body, attributes: {
-      ...source, metadata: { [STORAGE_SOURCE_MARKER]: storageSourceFingerprint(second, source) },
-    } });
-    await expect(rewriteTenantJsonDocuments(f.io, tenantId, [sourceKey, second], bases, new Set([...keys, second]), true)).rejects.toThrow();
+    f.objects.set(`tenants/${tenantId}/${second}`, {
+      body,
+      attributes: {
+        ...source,
+        metadata: { [STORAGE_SOURCE_MARKER]: storageSourceFingerprint(second, source) },
+      },
+    });
+    await expect(
+      rewriteTenantJsonDocuments(f.io, tenantId, [sourceKey, second], bases, new Set([...keys, second]), true),
+    ).rejects.toThrow();
     expect(f.io.write).not.toHaveBeenCalled();
   });
 });
 
 describe('S3 conditional-write adapter', () => {
-  const serviceError = (status: number) => new S3ServiceException({
-    name: 'ConditionalWrite', $fault: 'client', $metadata: { httpStatusCode: status }, message: 'test',
-  });
+  const serviceError = (status: number) =>
+    new S3ServiceException({
+      name: 'ConditionalWrite',
+      $fault: 'client',
+      $metadata: { httpStatusCode: status },
+      message: 'test',
+    });
 
   it('serializes IfMatch in the installed SDK for both probe and document PUT', async () => {
     const headers: Record<string, string>[] = [];
     const s3 = new S3Client({
-      region: 'us-east-1', endpoint: 'https://storage.example.test', forcePathStyle: true, maxAttempts: 1,
+      region: 'us-east-1',
+      endpoint: 'https://storage.example.test',
+      forcePathStyle: true,
+      maxAttempts: 1,
       credentials: { accessKeyId: 'test-access-key', secretAccessKey: 'test-secret-key' },
       requestHandler: {
-        handle: async (request: { headers: Record<string, string> }) => {
+        handle: (request: { headers: Record<string, string> }) => {
           headers.push(request.headers);
-          return { response: {
-            statusCode: headers.length === 1 ? 412 : 200,
-            headers: { 'content-type': 'application/xml' },
-            body: Buffer.from(headers.length === 1 ? '<Error><Code>PreconditionFailed</Code></Error>' : ''),
-          } };
+          return Promise.resolve({
+            response: {
+              statusCode: headers.length === 1 ? 412 : 200,
+              headers: { 'content-type': 'application/xml' },
+              body: Buffer.from(headers.length === 1 ? '<Error><Code>PreconditionFailed</Code></Error>' : ''),
+            },
+          });
         },
       },
     });
@@ -192,26 +234,24 @@ describe('S3 conditional-write adapter', () => {
   });
 
   it.each([404, 412])('accepts only a rejected probe (%i) and includes SDK IfMatch', async (status) => {
-    const s3 = new S3Client({ region: 'test' });
-    const send = jest.spyOn(s3, 'send').mockImplementation(async () => { throw serviceError(status); });
+    const send = jest.fn<Promise<object>, [PutObjectCommand]>().mockRejectedValue(serviceError(status));
+    const s3 = { send } as object as S3Client;
     await storageDocumentMigrationIO(s3, 'bucket').assertConditionalWrites(tenantId);
-    const command = send.mock.calls[0][0] as PutObjectCommand;
+    const command = send.mock.calls[0][0];
     expect(command).toBeInstanceOf(PutObjectCommand);
     expect(command.input.IfMatch).toMatch(/^"nervion-missing-/);
     expect(command.input.Key).toMatch(new RegExp(`^tenants/${tenantId}/\\.nervion-migration-probes/`));
     expect(command.input.Body).toEqual(Buffer.alloc(0));
-    s3.destroy();
   });
 
   it('refuses a provider that silently ignores IfMatch or rejects the feature', async () => {
     for (const accepted of [true, false]) {
-      const s3 = new S3Client({ region: 'test' });
-      const send = jest.spyOn(s3, 'send');
-      if (accepted) send.mockImplementation(async () => ({}));
-      else send.mockImplementation(async () => { throw serviceError(501); });
+      const send = jest.fn<Promise<object>, [PutObjectCommand]>();
+      const s3 = { send } as object as S3Client;
+      if (accepted) send.mockResolvedValue({});
+      else send.mockRejectedValue(serviceError(501));
       await expect(storageDocumentMigrationIO(s3, 'bucket').assertConditionalWrites(tenantId)).rejects.toThrow(/stopped/);
       expect(send).toHaveBeenCalledTimes(1);
-      s3.destroy();
     }
   });
 });

@@ -11,8 +11,12 @@ describe('tenant Yandex OAuth state', () => {
     expect(flow.challenge).toBe(tenantYandexChallenge(flow.verifier));
     expect(verifyTenantYandexState(tenant, secret, flow.state, flow.state, flow.verifier)).toBe(true);
     expect(createTenantYandexState(tenant, secret).state).not.toBe(flow.state);
-    expect(verifyTenantYandexState({ ...tenant, id: 'another-tenant' }, secret, flow.state, flow.state, flow.verifier)).toBe(false);
-    expect(verifyTenantYandexState({ ...tenant, hostname: 'two.example.test' }, secret, flow.state, flow.state, flow.verifier)).toBe(false);
+    expect(verifyTenantYandexState({ ...tenant, id: 'another-tenant' }, secret, flow.state, flow.state, flow.verifier)).toBe(
+      false,
+    );
+    expect(
+      verifyTenantYandexState({ ...tenant, hostname: 'two.example.test' }, secret, flow.state, flow.state, flow.verifier),
+    ).toBe(false);
     expect(verifyTenantYandexState(tenant, 'different-secret', flow.state, flow.state, flow.verifier)).toBe(false);
     expect(verifyTenantYandexState(tenant, secret, flow.state, flow.state, 'a'.repeat(43))).toBe(false);
   });

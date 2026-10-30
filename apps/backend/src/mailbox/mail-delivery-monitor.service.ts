@@ -37,7 +37,11 @@ export class MailDeliveryMonitorService implements OnModuleInit, OnModuleDestroy
       this.jobs.schedule('mail.delivery-monitor', async () => {
         const { tenant } = this.context!.require();
         if (tenant.featureFlags.mail !== true) return;
-        try { if (!this.tenantMail!.current().configurationSet) return; } catch { return; }
+        try {
+          if (!this.tenantMail!.current().configurationSet) return;
+        } catch {
+          return;
+        }
         await this.jobs!.enqueue('mail.delivery-monitor', `mail.delivery-monitor:${Math.floor(Date.now() / CHECK_INTERVAL_MS)}`);
       });
       return;
@@ -53,13 +57,17 @@ export class MailDeliveryMonitorService implements OnModuleInit, OnModuleDestroy
   }
 
   async check(): Promise<void> {
-    if (this.config.get<string>('TENANCY_ENABLED') === 'true' && this.context?.require().tenant.featureFlags.mail !== true) return;
+    if (this.config.get<string>('TENANCY_ENABLED') === 'true' && this.context?.require().tenant.featureFlags.mail !== true)
+      return;
     if (this.checking) return;
     this.checking = true;
     const now = Date.now();
     const tenantId = this.config.get<string>('TENANCY_ENABLED') === 'true' ? this.context?.require().tenant.id : undefined;
     const previous = tenantId ? this.alerts.get(tenantId) : undefined;
-    if (tenantId) { this.lastMissingAlert = previous?.missing || 0; this.lastCheckErrorAlert = previous?.error || 0; }
+    if (tenantId) {
+      this.lastMissingAlert = previous?.missing || 0;
+      this.lastCheckErrorAlert = previous?.error || 0;
+    }
     try {
       const missing = await this.messages.count({
         where: {

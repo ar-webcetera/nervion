@@ -1,0 +1,19 @@
+[Unit]
+Description=Nervion encrypted PostgreSQL backup
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=nervion-ops-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+EnvironmentFile=/etc/nervion-backup/job.env
+ExecStart=/usr/local/libexec/nervion-backup-job scheduled
+# pgBackRest controls connection timeouts. Do not orphan a running backup by
+# killing its attached Docker client after an arbitrary backup-size deadline.
+TimeoutStartSec=infinity
+
+[Install]
+WantedBy=multi-user.target

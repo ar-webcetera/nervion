@@ -7,7 +7,8 @@ export class CommentsGateway {
   server: Server;
 
   afterInit(server: Server): void {
-    if (process.env.TENANCY_ENABLED === 'true') server.use((_client, next) => next(new Error('Use the authenticated /ws namespace')));
+    if (process.env.TENANCY_ENABLED === 'true')
+      server.use((_client, next) => next(new Error('Use the authenticated /ws namespace')));
   }
 
   /**

@@ -20,7 +20,8 @@ describe('socket tenant and audience isolation', () => {
     delete process.env.TENANCY_ENABLED;
     const makeClient = (cookie?: string) => ({
       handshake: { headers: cookie ? { cookie } : {}, auth: { user_id: '1' } },
-      emit: jest.fn(), disconnect: jest.fn(),
+      emit: jest.fn(),
+      disconnect: jest.fn(),
     });
     const admin = makeClient('authToken=valid-admin');
     const employee = makeClient('authToken=valid-employee');
@@ -28,23 +29,27 @@ describe('socket tenant and audience isolation', () => {
     const anonymous = makeClient();
     const findOneBy = jest.fn(({ id }: { id: number }) => Promise.resolve({ id, role: id === 1 ? 'admin' : 'employee' }));
     const source = Object.assign(new DataSource({ type: 'postgres' }), { getRepository: () => ({ findOneBy }) });
-    const jwt = { verifyToken: (token: string) => {
-      if (token === 'valid-admin') return { id: 1 };
-      if (token === 'valid-employee') return { id: 2 };
-      throw new Error('Invalid signature');
-    } } as JwtAuthService;
+    const jwt = {
+      verifyToken: (token: string) => {
+        if (token === 'valid-admin') return { id: 1 };
+        if (token === 'valid-employee') return { id: 2 };
+        throw new Error('Invalid signature');
+      },
+    } as JwtAuthService;
     const context = new TenantContextService();
     const platform = {} as PlatformService;
     const database = new TenantDatabaseService(context);
     const sockets = new TenantSocketService(jwt, platform, database, context, source);
     const gateway = new WebsocketGateway(source, context, database, platform, sockets);
-    gateway.server = Object.assign(new Server(), { in: () => ({ fetchSockets: async () => [admin, employee, forged, anonymous] }) });
+    gateway.server = Object.assign(new Server(), {
+      in: () => ({ fetchSockets: () => Promise.resolve([admin, employee, forged, anonymous]) }),
+    });
     await gateway.sendCrmChanged();
     expect(admin.emit).toHaveBeenCalledWith('crm:changed', undefined);
     expect(employee.emit).not.toHaveBeenCalled();
     expect(forged.emit).not.toHaveBeenCalled();
     expect(anonymous.emit).not.toHaveBeenCalled();
-    findOneBy.mockImplementation(async ({ id }) => ({ id, role: 'employee' }));
+    findOneBy.mockImplementation(({ id }) => Promise.resolve({ id, role: 'employee' }));
     admin.emit.mockClear();
     await gateway.sendCrmChanged();
     expect(admin.emit).not.toHaveBeenCalled();
@@ -55,24 +60,39 @@ describe('socket tenant and audience isolation', () => {
     const context = new TenantContextService();
     const source = new DataSource({ type: 'postgres' });
     const tenant: TenantDescriptor = {
-      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', slug: 'a', hostname: 'a.nervion.ru',
-      databaseShardId: 'data_1', readOnly: false, status: TenantStatus.ACTIVE,
-      featureFlags: {}, storageNamespace: 'tenants/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/',
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      slug: 'a',
+      hostname: 'a.nervion.ru',
+      databaseShardId: 'data_1',
+      readOnly: false,
+      status: TenantStatus.ACTIVE,
+      featureFlags: {},
+      storageNamespace: 'tenants/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/',
     };
-    const state: TenantExecutionContext = { tenant, manager: source.manager, active: true, afterCommit: [], afterRollback: [], pending: new Set() };
+    const state: TenantExecutionContext = {
+      tenant,
+      manager: source.manager,
+      active: true,
+      afterCommit: [],
+      afterRollback: [],
+      pending: new Set(),
+    };
     const recipient = { handshake: { headers: { host: 'a.nervion.ru' } }, emit: jest.fn(), disconnect: jest.fn() };
     const otherTenant = { handshake: { headers: { host: 'b.nervion.ru' } }, emit: jest.fn(), disconnect: jest.fn() };
-    const platform = { getTenant: async () => tenant } as object as PlatformService;
+    const platform = { getTenant: () => Promise.resolve(tenant) } as object as PlatformService;
     const database = Object.assign(new TenantDatabaseService(context), {
       run: async <T>(_tenant: TenantDescriptor, callback: () => Promise<T>) => callback(),
     });
     const sockets = Object.assign(new TenantSocketService({} as JwtAuthService, platform, database, context, source), {
-      authenticate: async (handshake: { headers: { host?: string } }) => ({
-        tenantId: handshake.headers.host === tenant.hostname ? tenant.id : 'other', userId: 7, role: 'employee',
-      }),
+      authenticate: (handshake: { headers: { host?: string } }) =>
+        Promise.resolve({
+          tenantId: handshake.headers.host === tenant.hostname ? tenant.id : 'other',
+          userId: 7,
+          role: 'employee',
+        }),
     });
     const gateway = new WebsocketGateway(source, context, database, platform, sockets);
-    const room = jest.fn(() => ({ fetchSockets: async () => [recipient, otherTenant] }));
+    const room = jest.fn(() => ({ fetchSockets: () => Promise.resolve([recipient, otherTenant]) }));
     gateway.server = Object.assign(new Server(), { in: room });
     context.run(state, () => gateway.sendNotificationAdded({ id: 5 } as Notifications, 7));
     expect(recipient.emit).not.toHaveBeenCalled();
@@ -89,12 +109,14 @@ describe('socket tenant and audience isolation', () => {
     const source = new DataSource({ type: 'postgres' });
     const jwt = { verifyToken: () => ({ id: 7, tenantId: 'other' }) } as object as JwtAuthService;
     const platform = {
-      resolveTenant: async () => ({ id: 'current' }),
-      assertSession: async () => { throw new Error('Session belongs to another tenant'); },
+      resolveTenant: () => Promise.resolve({ id: 'current' }),
+      assertSession: () => Promise.reject(new Error('Session belongs to another tenant')),
     } as object as PlatformService;
     const sockets = new TenantSocketService(jwt, platform, new TenantDatabaseService(context), context, source);
-    await expect(sockets.authenticate({
-      headers: { host: 'a.nervion.ru', origin: 'https://a.nervion.ru', cookie: 'authToken=signed' },
-    })).rejects.toThrow('Session belongs to another tenant');
+    await expect(
+      sockets.authenticate({
+        headers: { host: 'a.nervion.ru', origin: 'https://a.nervion.ru', cookie: 'authToken=signed' },
+      }),
+    ).rejects.toThrow('Session belongs to another tenant');
   });
 });

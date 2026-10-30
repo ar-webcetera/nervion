@@ -16,6 +16,14 @@ export interface GitConnection {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SAFE_CONFIG = '[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = true\n';
 
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if (code < 32 || code === 127) return true;
+  }
+  return false;
+}
+
 export function gitTenantPath(tenantId: string, repositoryKey: string): string {
   if (!UUID.test(tenantId) || !UUID.test(repositoryKey))
     throw new BadRequestException('Некорректный идентификатор Git-хранилища');
@@ -73,7 +81,7 @@ export function decryptGitConnection(value: string, tenantId: string, repository
 }
 
 export function validateGitRemote(rawUrl: string): URL {
-  if (rawUrl.length > 2048 || /[\s\\\x00-\x1f\x7f]/.test(rawUrl))
+  if (rawUrl.length > 2048 || /[\s\\]/.test(rawUrl) || hasControlCharacter(rawUrl))
     throw new BadRequestException('Укажите HTTPS-адрес репозитория');
   let url: URL;
   try {
@@ -113,7 +121,12 @@ async function prepareGitNetwork(connection: GitConnection): Promise<{ env: Node
   const address = endpoint.family === 6 ? `[${endpoint.address}]` : endpoint.address;
   const settings: Array<[string, string]> = [['http.curloptResolve', `${url.hostname}:443:${address}`]];
   if (connection.token) {
-    if (!connection.username || /[:\x00-\x1f\x7f]/.test(connection.username) || /[\x00-\x1f\x7f]/.test(connection.token)) {
+    if (
+      !connection.username ||
+      connection.username.includes(':') ||
+      hasControlCharacter(connection.username) ||
+      hasControlCharacter(connection.token)
+    ) {
       throw new BadRequestException('Некорректные учетные данные Git');
     }
     settings.push([

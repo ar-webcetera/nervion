@@ -47,7 +47,10 @@ export class PostboxService {
   private client: SESv2Client | null = null;
   private readonly tenantClients = new Map<string, SESv2Client>();
 
-  constructor(private readonly configService: ConfigService, @Optional() private readonly tenantMail?: TenantMailConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() private readonly tenantMail?: TenantMailConfigService,
+  ) {}
 
   private getClient(): SESv2Client {
     if (this.configService.get<string>('TENANCY_ENABLED') === 'true') {
@@ -86,9 +89,10 @@ export class PostboxService {
   }
 
   generateMessageId(): string {
-    const domain = this.configService.get<string>('TENANCY_ENABLED') === 'true'
-      ? this.tenantMail?.current().domains[0]
-      : this.configService.get<string>('MAILBOX_DOMAIN') || 'example.com';
+    const domain =
+      this.configService.get<string>('TENANCY_ENABLED') === 'true'
+        ? this.tenantMail?.current().domains[0]
+        : this.configService.get<string>('MAILBOX_DOMAIN') || 'example.com';
     if (!domain) throw new ServiceUnavailableException('Почта пространства не настроена');
 
     return `${randomUUID()}@${domain}`;
@@ -98,9 +102,10 @@ export class PostboxService {
     this.tenantMail?.assertSender(params.from.address);
     const client = this.getClient();
     const messageId = (params.messageId || this.generateMessageId()).replace(/^<|>$/g, '').trim();
-    const configurationSetName = this.configService.get<string>('TENANCY_ENABLED') === 'true'
-      ? this.tenantMail?.current().configurationSet
-      : this.configService.get<string>('POSTBOX_CONFIGURATION_SET')?.trim() || undefined;
+    const configurationSetName =
+      this.configService.get<string>('TENANCY_ENABLED') === 'true'
+        ? this.tenantMail?.current().configurationSet
+        : this.configService.get<string>('POSTBOX_CONFIGURATION_SET')?.trim() || undefined;
 
     const composer = new MailComposer({
       from: params.from.name ? { name: params.from.name, address: params.from.address } : params.from.address,
@@ -133,8 +138,7 @@ export class PostboxService {
 
     const providerMessageId = response.MessageId?.trim() || null;
     this.logger.log(
-      `Письмо отправлено через Postbox: ${messageId}` +
-        (providerMessageId ? ` (provider=${providerMessageId})` : ''),
+      `Письмо отправлено через Postbox: ${messageId}` + (providerMessageId ? ` (provider=${providerMessageId})` : ''),
     );
 
     return { messageId, providerMessageId };

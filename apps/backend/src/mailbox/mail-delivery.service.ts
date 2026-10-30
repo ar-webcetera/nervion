@@ -163,7 +163,8 @@ export class MailDeliveryService {
       message = await this.messagesRepository.findOneBy({ id: message.id });
       if (!message) return false;
     }
-    const providerEventId = event.eventId?.trim() || (tenantMode ? `sha256:${createHash('sha256').update(JSON.stringify(event)).digest('hex')}` : null);
+    const providerEventId =
+      event.eventId?.trim() || (tenantMode ? `sha256:${createHash('sha256').update(JSON.stringify(event)).digest('hex')}` : null);
     if (providerEventId) {
       const existing = await this.eventsRepository.findOne({ where: { provider_event_id: providerEventId } });
       if (existing) {
@@ -193,9 +194,14 @@ export class MailDeliveryService {
 
     await this.updateMessageSnapshot(message, eventType, occurredAt);
     if (tenantMode && this.asDeliveryEventType(eventType)) {
-      await this.messagesRepository.update(message.id, { status: MAIL_MESSAGE_STATUSES.sent,
-        ...(event.mail?.messageId ? { provider_message_id: event.mail.messageId } : {}) });
-      await requireTenantContext().manager.query("UPDATE mail_outbox SET status = 'sent', last_error = NULL WHERE message_id = $1", [message.id]);
+      await this.messagesRepository.update(message.id, {
+        status: MAIL_MESSAGE_STATUSES.sent,
+        ...(event.mail?.messageId ? { provider_message_id: event.mail.messageId } : {}),
+      });
+      await requireTenantContext().manager.query(
+        "UPDATE mail_outbox SET status = 'sent', last_error = NULL WHERE message_id = $1",
+        [message.id],
+      );
     }
     return true;
   }
@@ -473,7 +479,8 @@ export class MailDeliveryService {
       }>();
 
     const problems: MailStatsProblemMessage[] = problemRows.map((row) => {
-      const toAddresses = typeof row.to_addresses === 'string' ? JSON.parse(row.to_addresses) : row.to_addresses;
+      const toAddresses =
+        typeof row.to_addresses === 'string' ? (JSON.parse(row.to_addresses) as Array<{ address: string }>) : row.to_addresses;
       return {
         id: Number(row.id),
         thread_id: Number(row.thread_id),
@@ -534,10 +541,26 @@ export class MailDeliveryService {
     return rows.map((row) => Number(row.id));
   }
 
-  async attachDeliverySummaries(
-    threadIds: number[],
-  ): Promise<Map<number, { delivery_status: MailDeliveryStatus | null; message_status: MAIL_MESSAGE_STATUSES; open_count: number; click_count: number }>> {
-    const result = new Map<number, { delivery_status: MailDeliveryStatus | null; message_status: MAIL_MESSAGE_STATUSES; open_count: number; click_count: number }>();
+  async attachDeliverySummaries(threadIds: number[]): Promise<
+    Map<
+      number,
+      {
+        delivery_status: MailDeliveryStatus | null;
+        message_status: MAIL_MESSAGE_STATUSES;
+        open_count: number;
+        click_count: number;
+      }
+    >
+  > {
+    const result = new Map<
+      number,
+      {
+        delivery_status: MailDeliveryStatus | null;
+        message_status: MAIL_MESSAGE_STATUSES;
+        open_count: number;
+        click_count: number;
+      }
+    >();
     if (threadIds.length === 0) return result;
 
     const latestMessageOrder = 'message.created_at DESC, message.id DESC';

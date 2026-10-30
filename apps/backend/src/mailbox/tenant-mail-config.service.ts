@@ -1,4 +1,10 @@
-import { ForbiddenException, Injectable, NotFoundException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'node:crypto';
 import type { TenantDescriptor } from '@tracker/contracts';
@@ -24,25 +30,43 @@ const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2
 
 export function parseTenantMailConfigurations(raw: string): TenantMailConfiguration[] {
   let entries: TenantMailConfiguration[];
-  try { entries = JSON.parse(raw); } catch { throw new Error('MAILBOX_TENANTS_JSON must contain valid JSON'); }
+  try {
+    entries = JSON.parse(raw) as TenantMailConfiguration[];
+  } catch {
+    throw new Error('MAILBOX_TENANTS_JSON must contain valid JSON');
+  }
   if (!Array.isArray(entries)) throw new Error('MAILBOX_TENANTS_JSON must be an array');
   const tenants = new Set<string>();
   const domains = new Set<string>();
   const routes = new Set<string>();
   for (const item of entries) {
-    if (!item || !UUID.test(item.tenantId) || tenants.has(item.tenantId) || item.domainOwnershipVerified !== true ||
-      !Array.isArray(item.domains) || !item.domains.length || !UUID.test(item.webhookRoutingKey) || routes.has(item.webhookRoutingKey) ||
-      typeof item.webhookSecret !== 'string' || item.webhookSecret.length < 32 ||
-      typeof item.accessKeyId !== 'string' || !item.accessKeyId.trim() ||
-      typeof item.secretAccessKey !== 'string' || !item.secretAccessKey.trim() ||
-      (item.configurationSet !== undefined && (typeof item.configurationSet !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(item.configurationSet)))) {
+    if (
+      !item ||
+      !UUID.test(item.tenantId) ||
+      tenants.has(item.tenantId) ||
+      item.domainOwnershipVerified !== true ||
+      !Array.isArray(item.domains) ||
+      !item.domains.length ||
+      !UUID.test(item.webhookRoutingKey) ||
+      routes.has(item.webhookRoutingKey) ||
+      typeof item.webhookSecret !== 'string' ||
+      item.webhookSecret.length < 32 ||
+      typeof item.accessKeyId !== 'string' ||
+      !item.accessKeyId.trim() ||
+      typeof item.secretAccessKey !== 'string' ||
+      !item.secretAccessKey.trim() ||
+      (item.configurationSet !== undefined &&
+        (typeof item.configurationSet !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(item.configurationSet)))
+    ) {
       throw new Error('Invalid or duplicate tenant mail configuration');
     }
     for (const domain of item.domains) {
-      if (typeof domain !== 'string' || !DOMAIN.test(domain) || domains.has(domain)) throw new Error('Mail domains must be valid, lowercase and globally unique');
+      if (typeof domain !== 'string' || !DOMAIN.test(domain) || domains.has(domain))
+        throw new Error('Mail domains must be valid, lowercase and globally unique');
       domains.add(domain);
     }
-    const ownsAddress = (address: string) => typeof address === 'string' && /^[^\s@<>]+@[^\s@<>]+$/.test(address) && item.domains.includes(address.split('@')[1]);
+    const ownsAddress = (address: string) =>
+      typeof address === 'string' && /^[^\s@<>]+@[^\s@<>]+$/.test(address) && item.domains.includes(address.split('@')[1]);
     if (!ownsAddress(item.notificationAccount) || (item.taskAliasAccount !== undefined && !ownsAddress(item.taskAliasAccount))) {
       throw new Error('Configured mail accounts must belong to verified tenant domains');
     }
@@ -56,11 +80,17 @@ export function parseTenantMailConfigurations(raw: string): TenantMailConfigurat
 export class TenantMailConfigService {
   private readonly entries: TenantMailConfiguration[];
 
-  constructor(private readonly config: ConfigService, private readonly context: TenantContextService, private readonly platform: PlatformService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly context: TenantContextService,
+    private readonly platform: PlatformService,
+  ) {
     this.entries = this.isEnabled() ? parseTenantMailConfigurations(config.get<string>('MAILBOX_TENANTS_JSON') || '[]') : [];
   }
 
-  isEnabled(): boolean { return this.config.get<string>('TENANCY_ENABLED') === 'true'; }
+  isEnabled(): boolean {
+    return this.config.get<string>('TENANCY_ENABLED') === 'true';
+  }
 
   current(): TenantMailConfiguration {
     const { tenant } = this.context.require();
@@ -93,7 +123,8 @@ export class TenantMailConfigService {
     const token = /^Bearer\s+(.+)$/i.exec(header || '')?.[1] || '';
     const expected = Buffer.from(configuration?.webhookSecret || 'invalid-unconfigured-webhook-secret');
     const actual = Buffer.from(token);
-    if (!configuration || actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw new UnauthorizedException('Неверный webhook');
+    if (!configuration || actual.length !== expected.length || !timingSafeEqual(actual, expected))
+      throw new UnauthorizedException('Неверный webhook');
     const tenant = await this.platform.getTenant(configuration.tenantId);
     if (tenant.featureFlags.mail !== true) throw new NotFoundException();
     if (tenant.readOnly) throw new ServiceUnavailableException('Пространство временно недоступно для событий почты');

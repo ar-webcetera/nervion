@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Nervion backup, full on Sunday and differential otherwise
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+Persistent=true
+Unit=nervion-backup.service
+
+[Install]
+WantedBy=timers.target

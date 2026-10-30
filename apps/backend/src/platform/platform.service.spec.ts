@@ -1,10 +1,11 @@
 import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { DataSource } from 'typeorm';
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
-import { MembershipStatus, TenantStatus } from '@tracker/contracts';
+import { BadRequestException, ForbiddenException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { CreatePlatformTenantRequest, MembershipStatus, TenantStatus } from '@tracker/contracts';
 import { PlatformTenant } from './entities/platform.platform-entity';
 import { PlatformService } from './platform.service';
+import { CreatePlatformTenantDto, UpdatePlatformTenantDto } from './dto/platform-tenant.dto';
 
 describe('platform tenant isolation and entitlements', () => {
   const tenantId = '36cb37c5-221c-487d-bca0-81ba6af2f7ca';
@@ -26,6 +27,57 @@ describe('platform tenant isolation and entitlements', () => {
       graceUntil: null,
     });
     repository.findOneBy.mockResolvedValue(tenant);
+  });
+
+  const createInput = (slug: string): CreatePlatformTenantRequest => ({
+    slug,
+    name: 'Fixture tenant',
+    plan: 'fixture',
+    seatLimit: 5,
+    paidUntil: null,
+    featureFlags: {},
+    admin: {
+      email: 'fixture@example.test',
+      firstName: 'Fixture',
+      lastName: 'Admin',
+      password: 'fixture-only-password',
+    },
+  });
+
+  it.each(['admin', 'auth', 'api', 'app', 'preprod', 'www', 'mail', 'smtp', 'media', 'status', 'static'])(
+    'rejects infrastructure slug %s before any provisioning or database access',
+    async (slug) => {
+      await expect(service.createTenant(createInput(slug), 'operator')).rejects.toBeInstanceOf(BadRequestException);
+      expect(source.getRepository).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['slug', 'hostname'])('does not expose an update path for %s', async (field) => {
+    const pipe = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true });
+    await expect(
+      pipe.transform(
+        { name: 'Allowed display name', [field]: field === 'slug' ? 'app' : 'app.nervion.ru' },
+        {
+          type: 'body',
+          metatype: UpdatePlatformTenantDto,
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(source.getRepository).not.toHaveBeenCalled();
+  });
+
+  it('does not let a create caller override the generated hostname', async () => {
+    const pipe = new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true });
+    await expect(
+      pipe.transform(
+        { ...createInput('client'), hostname: 'app.nervion.ru' },
+        {
+          type: 'body',
+          metatype: CreatePlatformTenantDto,
+        },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(source.getRepository).not.toHaveBeenCalled();
   });
 
   it('resolves only the exact registered hostname', async () => {

@@ -114,6 +114,93 @@ function fixture(t, options = {}) {
   return { root, manifest, write, execute, success, failure, commands };
 }
 
+function productionFixture(f) {
+  const config = JSON.parse(readFileSync(join(f.root, 'compose.json')));
+  const tenant = '11111111-1111-4111-8111-111111111111';
+  for (const name of ['backend', 'frontend', 'migrate', 'smtp']) config.services[name].environment = {
+    ...config.services[name].environment, NERVION_DEPLOYMENT_PHASE: 'precutover',
+    TENANCY_BOOTSTRAP_TENANT_ID: tenant, TENANT_JOBS_WORKER_ENABLED: 'false',
+  };
+  config.services.backend.labels = { 'io.nervion.release.production': 'true' };
+  config.services.backend.network_mode = 'host'; config.services.frontend.network_mode = 'host';
+  config.services.backend.environment.BACKEND_BIND_HOST = '127.0.0.1';
+  config.services.frontend.environment.NITRO_HOST = '127.0.0.1';
+  f.write('compose.json', config);
+  const evidence = { schemaVersion: 1, project: f.manifest.project, commit, phase: 'precutover', bootstrapTenantId: tenant,
+    checkedAt: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'), expiresAt: new Date(Date.now() + 3600000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    checks: { privateIngressVerified: true, backupRestoreVerified: true, legacyStillPrimary: true, noVoiceJoins: true },
+    checkpoints: { backupId: 'fixture-backup', restoreVerificationId: 'fixture-restore', storageCheckpoint: 'fixture-storage' } };
+  f.write('evidence.json', evidence);
+  f.manifest.dataState = { phase: 'precutover', evidenceFile: join(f.root, 'evidence.json') };
+  f.write('manifest.json', f.manifest);
+  return { config, evidence };
+}
+
+test('production requires a phase-bound evidence file', t => {
+  const f = fixture(t); productionFixture(f);
+  delete f.manifest.dataState; f.write('manifest.json', f.manifest);
+  f.failure('prepare');
+  assert.equal(f.commands().some(c => c.includes('up') || c.includes('run')), false);
+});
+
+test('production rejects stale evidence', t => {
+  const f = fixture(t); const { evidence } = productionFixture(f);
+  evidence.checkedAt = '2020-01-01T00:00:00Z'; evidence.expiresAt = '2020-01-01T01:00:00Z'; f.write('evidence.json', evidence);
+  f.failure('prepare');
+});
+
+test('production rejects evidence for another tenant, phase or commit', t => {
+  for (const field of ['bootstrapTenantId', 'phase', 'commit']) {
+    const f = fixture(t); const { evidence } = productionFixture(f);
+    evidence[field] = field === 'phase' ? 'live' : 'wrong'; f.write('evidence.json', evidence); f.failure('prepare');
+  }
+});
+
+test('production evidence is hashed and cannot change between migration and deployment', t => {
+  const f = fixture(t); const { evidence } = productionFixture(f);
+  f.success('prepare'); f.success('migrate');
+  evidence.checkpoints.backupId = 'changed'; f.write('evidence.json', evidence);
+  f.failure('deploy'); assert.equal(f.commands().some(c => c.includes('up')), false);
+});
+
+test('production refuses bootstrap-schema command in the normal release job', t => {
+  const f = fixture(t); const { config } = productionFixture(f);
+  config.services.migrate.command = ['--bootstrap-schema']; f.write('compose.json', config); f.failure('prepare');
+});
+
+test('production live evidence requires all stopped legacy writers', t => {
+  const f = fixture(t); const { config, evidence } = productionFixture(f);
+  for (const name of ['backend', 'frontend', 'migrate', 'smtp']) config.services[name].environment.NERVION_DEPLOYMENT_PHASE = 'live';
+  f.write('compose.json', config); f.manifest.dataState.phase = 'live'; f.write('manifest.json', f.manifest);
+  evidence.phase = 'live'; f.write('evidence.json', evidence); f.failure('prepare');
+  Object.assign(evidence.checks, { legacyApiStopped: true, legacySmtpStopped: true, legacyWorkersStopped: true, singleWriterConfirmed: true });
+  evidence.checkpoints.legacyStopReceipt = 'fixture-stop'; f.write('evidence.json', evidence); f.success('prepare');
+});
+
+test('unmounted infrastructure secrets are not read by the application runner', t => {
+  const f = fixture(t);
+  const config = JSON.parse(readFileSync(join(f.root, 'compose.json')));
+  config.secrets = { backup_only: { file: '/no-access/infrastructure-backup-secret' } };
+  config.services.postgres.secrets = [{ source: 'backup_only' }]; f.write('compose.json', config);
+  f.success('prepare');
+});
+
+test('production rejects an SMTP phase or tenant override', t => {
+  for (const change of [{ NERVION_DEPLOYMENT_PHASE: 'live' }, { TENANCY_BOOTSTRAP_TENANT_ID: '22222222-2222-4222-8222-222222222222' }, { TENANT_JOBS_WORKER_ENABLED: 'true' }]) {
+    const f = fixture(t); const { config } = productionFixture(f);
+    Object.assign(config.services.smtp.environment, change); f.write('compose.json', config); f.failure('prepare');
+  }
+});
+
+test('mounted application secrets remain protected by the release fingerprint', t => {
+  const f = fixture(t); f.write('app-secret', 'fixture-secret');
+  const config = JSON.parse(readFileSync(join(f.root, 'compose.json')));
+  config.secrets = { app_secret: { file: join(f.root, 'app-secret') } };
+  config.services.backend.secrets = [{ source: 'app_secret' }]; f.write('compose.json', config);
+  f.success('prepare'); f.write('app-secret', 'changed'); f.failure('migrate');
+  assert.equal(f.commands().some(c => c.includes('run')), false);
+});
+
 test('pins immutable images, gates migrations and deploys only approved application services', t => {
   const f = fixture(t);
   f.success('prepare');

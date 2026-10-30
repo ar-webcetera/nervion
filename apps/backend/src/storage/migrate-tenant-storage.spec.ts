@@ -53,12 +53,15 @@ describe('rewriteStorageUrls', () => {
     const keys = new Set([key]);
     const path = key.split('/').map(encodeURIComponent).join('/');
     const target = `/api/files/raw?key=${encodeURIComponent(key)}`;
-    expect(rewriteStorageUrls(`https://files.example.com/bucket/${path}?download=1#page=2`, bases, keys))
-      .toBe(`${target}&download=1#page=2`);
-    expect(rewriteStorageUrls(`<a href="https://files.example.com/bucket/${path}?a=1&amp;b=2#page=2">PDF</a>`, bases, keys))
-      .toBe(`<a href="${target}&amp;a=1&amp;b=2#page=2">PDF</a>`);
-    expect(rewriteStorageUrls(`[PDF](https://files.example.com/bucket/${path}#page=2)`, bases, keys))
-      .toBe(`[PDF](${target}#page=2)`);
+    expect(rewriteStorageUrls(`https://files.example.com/bucket/${path}?download=1#page=2`, bases, keys)).toBe(
+      `${target}&download=1#page=2`,
+    );
+    expect(rewriteStorageUrls(`<a href="https://files.example.com/bucket/${path}?a=1&amp;b=2#page=2">PDF</a>`, bases, keys)).toBe(
+      `<a href="${target}&amp;a=1&amp;b=2#page=2">PDF</a>`,
+    );
+    expect(rewriteStorageUrls(`[PDF](https://files.example.com/bucket/${path}#page=2)`, bases, keys)).toBe(
+      `[PDF](${target}#page=2)`,
+    );
   });
 
   it('does not decode twice or rewrite a URL nested inside a foreign URL query', () => {
@@ -71,7 +74,8 @@ describe('rewriteStorageUrls', () => {
   });
 
   it('keeps JSON formatting, large integers and keys while rewriting escaped string values', () => {
-    const source = '{\n  "large": 9007199254740993123, "https://files.example.com/bucket/tracker-avatars/a.png": "keep",\n  "document": "https:\\/\\/files.example.com\\/bucket\\/tracker-avatars\\/a.png"\n}';
+    const source =
+      '{\n  "large": 9007199254740993123, "https://files.example.com/bucket/tracker-avatars/a.png": "keep",\n  "document": "https:\\/\\/files.example.com\\/bucket\\/tracker-avatars\\/a.png"\n}';
     const result = rewriteJsonDocumentText(source, bases, copied);
     expect(result).toContain('"large": 9007199254740993123');
     expect(result).toContain('"https://files.example.com/bucket/tracker-avatars/a.png": "keep"');

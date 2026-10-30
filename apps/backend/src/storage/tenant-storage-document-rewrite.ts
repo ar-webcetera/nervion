@@ -12,6 +12,7 @@ const MAX_DOCUMENT_BYTES = 16 * 1024 * 1024;
 export interface StorageMigrationObject {
   size: number;
   etag: string;
+  versionId?: string;
   metadata: Record<string, string>;
   contentType?: string;
   contentDisposition?: string;
@@ -59,8 +60,13 @@ function targetKeyFor(tenantId: string, key: string): string {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(tenantId)) {
     throw new Error('Invalid storage migration tenant UUID');
   }
-  if (!key || key.startsWith('/') || key.startsWith('tenants/') || key.includes('\\') ||
-    key.split('/').some((part) => part === '.' || part === '..')) {
+  if (
+    !key ||
+    key.startsWith('/') ||
+    key.startsWith('tenants/') ||
+    key.includes('\\') ||
+    key.split('/').some((part) => part === '.' || part === '..')
+  ) {
     throw new Error('Invalid legacy storage key');
   }
   return `tenants/${tenantId}/${key}`;
@@ -88,14 +94,23 @@ export async function verifyMigratedStorageObject(
   }
   const rewrittenHash = target.metadata[STORAGE_REWRITE_MARKER];
   if (rewrittenHash === undefined) {
-    if (target.size !== source.size || target.metadata[VERSION_MARKER] || target.metadata[SOURCE_SIZE_MARKER] || target.metadata[TENANT_MARKER]) {
+    if (
+      target.size !== source.size ||
+      target.metadata[VERSION_MARKER] ||
+      target.metadata[SOURCE_SIZE_MARKER] ||
+      target.metadata[TENANT_MARKER]
+    ) {
       throw new Error(`Destination differs from the original copy; no overwrite: ${targetKey}`);
     }
     return;
   }
-  if (!/^[a-f0-9]{64}$/.test(rewrittenHash) || target.metadata[VERSION_MARKER] !== REWRITE_VERSION ||
-    target.metadata[TENANT_MARKER] !== tenantId || target.metadata[SOURCE_SIZE_MARKER] !== String(source.size) ||
-    target.size > MAX_DOCUMENT_BYTES) {
+  if (
+    !/^[a-f0-9]{64}$/.test(rewrittenHash) ||
+    target.metadata[VERSION_MARKER] !== REWRITE_VERSION ||
+    target.metadata[TENANT_MARKER] !== tenantId ||
+    target.metadata[SOURCE_SIZE_MARKER] !== String(source.size) ||
+    target.size > MAX_DOCUMENT_BYTES
+  ) {
     throw new Error(`Invalid rewritten destination metadata: ${targetKey}`);
   }
   const body = await io.read(targetKey, target.etag);
@@ -172,7 +187,10 @@ export async function rewriteTenantJsonDocuments(
     for (const plan of plans) {
       if (plan.result.operation !== StorageDocumentRewriteOperation.PLAN) continue;
       const currentSource = await io.head(plan.result.sourceKey);
-      if (storageSourceFingerprint(plan.result.sourceKey, currentSource) !== storageSourceFingerprint(plan.result.sourceKey, plan.source)) {
+      if (
+        storageSourceFingerprint(plan.result.sourceKey, currentSource) !==
+        storageSourceFingerprint(plan.result.sourceKey, plan.source)
+      ) {
         throw new Error(`Source changed after planning: ${plan.result.sourceKey}`);
       }
       await io.write(plan.result.targetKey, plan.body, plan.attributes, plan.target.etag);

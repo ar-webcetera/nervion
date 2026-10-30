@@ -48,7 +48,8 @@ export class SmtpServerService {
     const port = Number(this.configService.get<string>('SMTP_PORT')) || DEFAULT_SMTP_PORT;
     const certPath = this.configService.get<string>('SMTP_TLS_CERT_FILE');
     const keyPath = this.configService.get<string>('SMTP_TLS_KEY_FILE');
-    if (Boolean(certPath) !== Boolean(keyPath)) throw new Error('SMTP TLS certificate and private key must be configured together');
+    if (Boolean(certPath) !== Boolean(keyPath))
+      throw new Error('SMTP TLS certificate and private key must be configured together');
     if (this.tenantMail.isEnabled() && this.configService.get<string>('NODE_ENV') === 'production' && (!certPath || !keyPath)) {
       throw new Error('Production SaaS SMTP requires SMTP_TLS_CERT_FILE and SMTP_TLS_KEY_FILE');
     }
@@ -112,7 +113,9 @@ export class SmtpServerService {
   }
 
   private async accountForRecipient(recipient: string): Promise<MailAccounts | null> {
-    return parseTaskIdFromAddress(recipient) !== null ? this.mailboxService.findTaskAliasAccount() : this.mailboxService.findAccountByAddress(recipient);
+    return parseTaskIdFromAddress(recipient) !== null
+      ? this.mailboxService.findTaskAliasAccount()
+      : this.mailboxService.findAccountByAddress(recipient);
   }
 
   private async handleMessage(stream: SMTPServerDataStream, session: SMTPServerSession): Promise<void> {
@@ -240,7 +243,7 @@ export class SmtpServerService {
       await this.storageService.uploadObject(key, raw, 'message/rfc822');
 
       return key;
-    } catch (error) {
+    } catch {
       this.logger.error('Не удалось сохранить raw-письмо в S3');
       if (this.tenantMail.isEnabled()) throw new Error('Incoming mail storage unavailable');
       return null;

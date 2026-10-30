@@ -1,0 +1,8 @@
+{
+  "hostname": "mail.example.com",
+  "caddyStorageRoot": "/var/lib/caddy",
+  "bundleDirectory": "/var/lib/nervion/smtp-tls",
+  "composeProject": "nervion-saas",
+  "composeService": "smtp",
+  "minimumValiditySeconds": 1209600
+}

@@ -1,0 +1,413 @@
+# Dedicated target primary on one host. Never merge with an existing stack.
+# All images are built/verified elsewhere; this file cannot build or pull them.
+name: ${PRODUCTION_PROJECT_NAME:?Set an isolated production project name}
+
+x-service: &service
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "3"}
+
+x-runtime: &runtime
+  <<: *service
+  user: "0:0"
+  init: true
+  read_only: true
+  cap_drop: [ALL]
+  stop_grace_period: 25s
+  tmpfs: ["/tmp:size=256m,mode=1777"]
+
+x-business-environment: &business-environment
+  NODE_ENV: production
+  NERVION_DEPLOYMENT_PHASE: ${PRODUCTION_DEPLOYMENT_PHASE:?Explicitly select precutover or live}
+  TENANCY_BOOTSTRAP_TENANT_ID: ${PRODUCTION_BOOTSTRAP_TENANT_ID:?Set the preserved tenant UUID}
+  TENANCY_ENABLED: "true"
+  TENANCY_ROOT_DOMAIN: ${PRODUCTION_ROOT_DOMAIN:?Set the tenant root domain}
+  PLATFORM_ADMIN_HOST: ${PRODUCTION_ADMIN_HOST:?Set the admin hostname}
+  APP_DOMAIN: ${PRODUCTION_ROOT_DOMAIN}
+  APP_PUBLIC_ORIGIN: https://${PRODUCTION_ROOT_DOMAIN}
+  AUTH_PUBLIC_ORIGIN: ""
+  POSTGRES_DB: nervion_data_1
+  POSTGRES_USER: nervion_data
+  PLATFORM_POSTGRES_DB: nervion_platform
+  PLATFORM_POSTGRES_USER: nervion_platform
+  AWS_ENDPOINT: ${PRODUCTION_STORAGE_ENDPOINT:?Set the external HTTPS S3 endpoint}
+  AWS_REGION: ${PRODUCTION_STORAGE_REGION:?Set the S3 region}
+  AWS_BUCKET_ID: ${PRODUCTION_STORAGE_BUCKET:?Set the application S3 bucket}
+  PUSH_ENABLED: ${PRODUCTION_PUSH_ENABLED:-false}
+  PROXY_ENABLE: "0"
+  DEMO_AUTH_ENABLED: "false"
+
+services:
+  postgres:
+    <<: *service
+    image: ${PRODUCTION_POSTGRES_IMAGE:?Set the immutable PostgreSQL+pgBackRest image}
+    mem_limit: 512m
+    cpus: 0.75
+    pids_limit: 150
+    shm_size: 128m
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --data-checksums
+    command:
+      - postgres
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - max_connections=60
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=/usr/local/bin/nervion-archive-push "%p"
+      - -c
+      - archive_timeout=60s
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_size=512MB
+    tmpfs: ["/var/run/pgbackrest/archive:uid=999,gid=999,mode=0700,size=64m"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_socket:/var/run/postgresql
+      - ../saas/postgres/001-bootstrap.sh:/docker-entrypoint-initdb.d/001-bootstrap.sh:ro
+      - ../saas/postgres/bootstrap.sql:/opt/nervion/bootstrap.sql:ro
+      - ./postgres/extensions.sql:/docker-entrypoint-initdb.d/002-extensions.sql:ro
+    secrets:
+      - postgres_password
+      - source: bootstrap_data_password
+        target: data_password
+      - source: bootstrap_platform_password
+        target: platform_password
+      - data_migrator_password
+      - platform_migrator_password
+      - pgbackrest_config
+    networks: [database, backup_outbound]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d postgres]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  backup:
+    image: ${PRODUCTION_POSTGRES_IMAGE}
+    profiles: [backup]
+    restart: "no"
+    user: postgres
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    cpus: 0.35
+    pids_limit: 50
+    environment: {PGDATA: /var/lib/postgresql/data/pgdata}
+    entrypoint: [/usr/local/bin/nervion-backup]
+    command: [info]
+    tmpfs: ["/tmp:size=16m,mode=1777", "/var/run/pgbackrest/backup:uid=999,gid=999,mode=0700,size=64m"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data:ro
+      - postgres_socket:/var/run/postgresql:ro
+    secrets: [pgbackrest_config]
+    networks: [backup_outbound]
+
+  pgbouncer:
+    <<: *service
+    image: ${PRODUCTION_PGBOUNCER_IMAGE:?Set the immutable PgBouncer image}
+    user: "10001:10001"
+    mem_limit: 64m
+    cpus: 0.20
+    pids_limit: 40
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: ["/run/pgbouncer:uid=10001,gid=10001,mode=0700"]
+    volumes: ["../preprod/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro"]
+    secrets: [data_password, platform_password]
+    ports: ["127.0.0.1:${PRODUCTION_PGBOUNCER_PORT:?Reserve a new loopback PgBouncer port}:6432"]
+    networks: [database, edge]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -p, "6432"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    <<: *service
+    image: ${PRODUCTION_REDIS_IMAGE:?Set the immutable Redis image}
+    mem_limit: 128m
+    cpus: 0.20
+    pids_limit: 40
+    read_only: true
+    tmpfs: ["/run/nervion:mode=0700"]
+    entrypoint: [/bin/sh, /opt/nervion/redis-entrypoint.sh]
+    volumes:
+      - redis_data:/data
+      - ../preprod/redis-entrypoint.sh:/opt/nervion/redis-entrypoint.sh:ro
+    secrets: [redis_password]
+    ports: ["127.0.0.1:${PRODUCTION_REDIS_PORT:?Reserve a new loopback Redis port}:6379"]
+    networks: [edge]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    image: ${PRODUCTION_BACKEND_IMAGE:?Set the immutable backend image}
+    user: "0:0"
+    profiles: [deployment]
+    restart: "no"
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    cpus: 0.70
+    pids_limit: 100
+    tmpfs: ["/tmp:size=128m,mode=1777"]
+    labels: {io.nervion.release.migration: tenant-only}
+    entrypoint: [node, /opt/nervion/migrate.mjs]
+    environment:
+      NODE_ENV: production
+      TENANCY_ENABLED: "true"
+      NERVION_DEPLOYMENT_PHASE: ${PRODUCTION_DEPLOYMENT_PHASE}
+      TENANT_JOBS_WORKER_ENABLED: ${PRODUCTION_TENANT_JOBS_ENABLED}
+      TENANCY_BOOTSTRAP_TENANT_ID: ${PRODUCTION_BOOTSTRAP_TENANT_ID:?Set the preserved tenant UUID}
+      POSTGRES_DB: nervion_data_1
+      POSTGRES_USER: nervion_data
+      MIGRATION_POSTGRES_HOST: postgres
+      MIGRATION_POSTGRES_PORT: "5432"
+      MIGRATION_POSTGRES_USER: nervion_data_migrator
+      PLATFORM_POSTGRES_DB: nervion_platform
+      PLATFORM_POSTGRES_USER: nervion_platform
+      PLATFORM_MIGRATION_POSTGRES_HOST: postgres
+      PLATFORM_MIGRATION_POSTGRES_PORT: "5432"
+      PLATFORM_MIGRATION_POSTGRES_USER: nervion_platform_migrator
+    volumes:
+      - ./migrate.mjs:/opt/nervion/migrate.mjs:ro
+      - ./config.mjs:/opt/nervion/config.mjs:ro
+      - ./legacy-baseline-v1.json:/opt/nervion/legacy-baseline-v1.json:ro
+      - ./preflight.mjs:/opt/nervion/preflight.mjs:ro
+    secrets: [data_migrator_password, platform_migrator_password]
+    networks: [database]
+
+  backend:
+    <<: *runtime
+    image: ${PRODUCTION_BACKEND_IMAGE}
+    network_mode: host
+    mem_limit: 640m
+    cpus: 0.90
+    pids_limit: 200
+    labels: {io.nervion.release.production: "true"}
+    entrypoint: [node, /opt/nervion/runtime.mjs, backend]
+    environment:
+      <<: *business-environment
+      NODE_OPTIONS: --max-old-space-size=384
+      PORT: ${PRODUCTION_BACKEND_PORT:?Reserve a new backend HTTP loopback port}
+      BACKEND_BIND_HOST: 127.0.0.1
+      PLATFORM_ADMIN_EMAIL: ${PRODUCTION_ADMIN_EMAIL:?Set the platform administrator email}
+      CORS_ALLOWED_ORIGINS: https://${PRODUCTION_ADMIN_HOST}
+      CORS_ALLOWED_ROOT_HOST: ${PRODUCTION_ROOT_DOMAIN}
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: ${PRODUCTION_PGBOUNCER_PORT}
+      PLATFORM_POSTGRES_HOST: 127.0.0.1
+      PLATFORM_POSTGRES_PORT: ${PRODUCTION_PGBOUNCER_PORT}
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: ${PRODUCTION_REDIS_PORT}
+      DB_POOL_MAX: "8"
+      TENANT_JOBS_CONCURRENCY: "2"
+      TENANT_JOBS_WORKER_ENABLED: ${PRODUCTION_TENANT_JOBS_ENABLED:?Explicitly disable jobs before cutover}
+      GIT_TENANT_ROOT: /var/nervion/git
+      GIT_EXTERNAL_ROOT: /var/git
+      GIT_ALLOWED_HOSTS: ${PRODUCTION_GIT_ALLOWED_HOSTS:-}
+      GIT_MAX_REPO_BYTES: ${PRODUCTION_GIT_MAX_REPO_BYTES:-536870912}
+      GIT_MAX_TENANT_BYTES: ${PRODUCTION_GIT_MAX_TENANT_BYTES:-2147483648}
+      GIT_MAX_REPOS_PER_TENANT: ${PRODUCTION_GIT_MAX_REPOS_PER_TENANT:-100}
+      HEALTHCHECK_ALLOWED_HOSTS: ${PRODUCTION_HEALTHCHECK_ALLOWED_HOSTS:-}
+      HEALTHCHECK_TENANT_LIMIT: ${PRODUCTION_HEALTHCHECK_TENANT_LIMIT:-100}
+      MEDIASOUP_ANNOUNCED_IP: ${PRODUCTION_MEDIA_PUBLIC_IP:?Set the actual public media IP}
+      MEDIASOUP_LISTEN_IP: 0.0.0.0
+      MEDIASOUP_MIN_PORT: ${PRODUCTION_MEDIA_MIN_PORT:?Set the reserved media range}
+      MEDIASOUP_MAX_PORT: ${PRODUCTION_MEDIA_MAX_PORT:?Set the reserved media range}
+      MEDIASOUP_ICE_SERVERS: ${PRODUCTION_ICE_SERVERS:-[]}
+      MEDIASOUP_TURN_URLS: ${PRODUCTION_TURN_URLS:-}
+      MEDIASOUP_TURN_TTL_SECONDS: "3600"
+      YANDEX_OAUTH_CLIENT_ID: ${PRODUCTION_YANDEX_CLIENT_ID:-}
+      YANDEX_OAUTH_TENANT_HOSTS: ${PRODUCTION_YANDEX_TENANT_HOSTS:-}
+      AI_ENABLED: ${PRODUCTION_AI_ENABLED:-false}
+      OPENROUTER_MODEL: ${PRODUCTION_OPENROUTER_MODEL:-google/gemini-2.0-flash-001}
+      OPENROUTER_TRANSCRIBE_MODEL: ${PRODUCTION_OPENROUTER_TRANSCRIBE_MODEL:-openai/whisper-large-v3-turbo}
+    volumes:
+      - git_data:/var/nervion/git
+      - type: bind
+        source: ${PRODUCTION_EXTERNAL_GIT_ROOT:?Set the approved read-only external repository root}
+        target: /var/git
+        read_only: true
+        bind: {create_host_path: false, propagation: rprivate}
+      - ./runtime.mjs:/opt/nervion/runtime.mjs:ro
+      - ./config.mjs:/opt/nervion/config.mjs:ro
+      - ./health.mjs:/opt/nervion/health.mjs:ro
+      - ./preflight.mjs:/opt/nervion/preflight.mjs:ro
+    secrets: [data_password, platform_password, redis_password, jwt_secret, tenancy_proxy_secret, platform_admin_password_hash, storage_access_key, storage_secret_key, git_credential_key, git_external_repositories_json, turn_secret, mail_tenants_json, vapid_public_key, vapid_private_key, yandex_client_secret, openai_api_key, openrouter_api_key, sentry_dsn]
+    healthcheck:
+      test: [CMD, node, /opt/nervion/health.mjs, backend]
+      interval: 20s
+      timeout: 15s
+      retries: 3
+      start_period: 120s
+
+  frontend:
+    <<: *runtime
+    image: ${PRODUCTION_FRONTEND_IMAGE:?Set the immutable frontend image}
+    network_mode: host
+    mem_limit: 320m
+    cpus: 0.40
+    pids_limit: 100
+    entrypoint: [node, /opt/nervion/runtime.mjs, frontend]
+    environment:
+      NODE_ENV: production
+      NERVION_DEPLOYMENT_PHASE: ${PRODUCTION_DEPLOYMENT_PHASE}
+      NODE_OPTIONS: --max-old-space-size=192
+      NITRO_HOST: 127.0.0.1
+      PORT: ${PRODUCTION_FRONTEND_PORT:?Reserve a new frontend loopback port}
+      NUXT_API_INTERNAL_URL: http://127.0.0.1:${PRODUCTION_BACKEND_PORT}
+      NUXT_PUBLIC_API_URL: /api
+      NUXT_PUBLIC_TENANCY_ENABLED: "true"
+      NUXT_PUBLIC_TENANCY_ROOT_DOMAIN: ${PRODUCTION_ROOT_DOMAIN}
+      NUXT_PUBLIC_PLATFORM_ADMIN_HOST: ${PRODUCTION_ADMIN_HOST}
+      NUXT_PUBLIC_SENTRY_DSN: ${PRODUCTION_FRONTEND_SENTRY_DSN:-}
+      NUXT_PUBLIC_METRIKA_ID: ${PRODUCTION_METRIKA_ID:-}
+      NUXT_PUBLIC_AWS_ENDPOINT: ""
+      NUXT_TELEMETRY_DISABLED: "1"
+    volumes:
+      - ./runtime.mjs:/opt/nervion/runtime.mjs:ro
+      - ./config.mjs:/opt/nervion/config.mjs:ro
+      - ./health.mjs:/opt/nervion/health.mjs:ro
+      - ./preflight.mjs:/opt/nervion/preflight.mjs:ro
+    secrets: [tenancy_proxy_secret]
+    healthcheck:
+      test: [CMD, node, /opt/nervion/health.mjs, frontend]
+      interval: 20s
+      timeout: 15s
+      retries: 3
+      start_period: 45s
+
+  smtp:
+    <<: *runtime
+    image: ${PRODUCTION_BACKEND_IMAGE}
+    stop_grace_period: 60s
+    mem_limit: 512m
+    cpus: 0.50
+    pids_limit: 100
+    entrypoint: [node, /opt/nervion/runtime.mjs, smtp]
+    environment:
+      <<: *business-environment
+      NODE_OPTIONS: --max-old-space-size=320
+      POSTGRES_HOST: pgbouncer
+      POSTGRES_PORT: "6432"
+      PLATFORM_POSTGRES_HOST: pgbouncer
+      PLATFORM_POSTGRES_PORT: "6432"
+      SMTP_DB_POOL_MAX: "3"
+      TENANT_JOBS_WORKER_ENABLED: "false"
+      SMTP_PORT: "2525"
+      SMTP_TLS_CERT_FILE: /run/nervion/smtp-tls/current/fullchain.pem
+      SMTP_TLS_KEY_FILE: /run/nervion/smtp-tls/current/privkey.pem
+      SMTP_TLS_SERVER_NAME: ${PRODUCTION_SMTP_HOST:?Set the certificate SMTP hostname}
+      AI_ENABLED: "false"
+    ports: ["${PRODUCTION_SMTP_BIND_IP:-127.0.0.1}:${PRODUCTION_SMTP_PORT:?Use a non-production SMTP port before cutover}:2525"]
+    volumes:
+      - type: bind
+        source: ${PRODUCTION_SMTP_TLS_DIR:?Set the private SMTP certificate bundle directory}
+        target: /run/nervion/smtp-tls
+        read_only: true
+        bind: {create_host_path: false}
+      - ./runtime.mjs:/opt/nervion/runtime.mjs:ro
+      - ./config.mjs:/opt/nervion/config.mjs:ro
+      - ./health.mjs:/opt/nervion/health.mjs:ro
+      - ./preflight.mjs:/opt/nervion/preflight.mjs:ro
+    secrets: [data_password, platform_password, jwt_secret, storage_access_key, storage_secret_key, mail_tenants_json, vapid_public_key, vapid_private_key, sentry_dsn]
+    networks: [database, edge]
+    healthcheck:
+      test: [CMD, node, /opt/nervion/health.mjs, smtp]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 90s
+
+  gateway:
+    <<: *service
+    image: ${PRODUCTION_GATEWAY_IMAGE:?Set the immutable Nginx image}
+    user: "101:101"
+    network_mode: host
+    mem_limit: 32m
+    cpus: 0.20
+    pids_limit: 50
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: ["/var/cache/nginx:uid=101,gid=101,mode=0700,size=16m", "/var/run:uid=101,gid=101,mode=0700,size=1m", "/etc/nginx/conf.d:uid=101,gid=101,mode=0700,size=1m"]
+    entrypoint: [/bin/sh, /opt/nervion/gateway-entrypoint.sh]
+    command: [nginx, -g, "daemon off;"]
+    environment:
+      PRODUCTION_ROOT_DOMAIN: ${PRODUCTION_ROOT_DOMAIN}
+      PRODUCTION_ADMIN_HOST: ${PRODUCTION_ADMIN_HOST}
+      PRODUCTION_INGRESS_BIND_IP: ${PRODUCTION_INGRESS_BIND_IP:?Set the verified loopback or RFC1918 ingress interface}
+      PRODUCTION_HTTP_PORT: ${PRODUCTION_HTTP_PORT:?Reserve a new ingress loopback port}
+      PRODUCTION_BACKEND_PORT: ${PRODUCTION_BACKEND_PORT}
+      PRODUCTION_FRONTEND_PORT: ${PRODUCTION_FRONTEND_PORT}
+      NGINX_ENVSUBST_FILTER: ^PRODUCTION_
+    volumes:
+      - ./gateway-entrypoint.sh:/opt/nervion/gateway-entrypoint.sh:ro
+      - ./gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: [CMD-SHELL, 'wget -q -O /dev/null "http://$${PRODUCTION_INGRESS_BIND_IP}:$${PRODUCTION_HTTP_PORT}/__nervion_health"']
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
+networks:
+  database: {internal: true}
+  edge: {}
+  backup_outbound: {}
+
+volumes:
+  postgres_data:
+  postgres_socket:
+  redis_data:
+  git_data:
+
+secrets:
+  postgres_password: {file: "${PRODUCTION_SECRETS_DIR:?Set a private external secrets directory}/postgres_password"}
+  bootstrap_data_password: {file: "${PRODUCTION_SECRETS_DIR}/bootstrap_data_password"}
+  bootstrap_platform_password: {file: "${PRODUCTION_SECRETS_DIR}/bootstrap_platform_password"}
+  data_password: {file: "${PRODUCTION_SECRETS_DIR}/data_password"}
+  platform_password: {file: "${PRODUCTION_SECRETS_DIR}/platform_password"}
+  data_migrator_password: {file: "${PRODUCTION_SECRETS_DIR}/data_migrator_password"}
+  platform_migrator_password: {file: "${PRODUCTION_SECRETS_DIR}/platform_migrator_password"}
+  pgbackrest_config: {file: "${PRODUCTION_SECRETS_DIR}/pgbackrest_config"}
+  redis_password: {file: "${PRODUCTION_SECRETS_DIR}/redis_password"}
+  jwt_secret: {file: "${PRODUCTION_SECRETS_DIR}/jwt_secret"}
+  tenancy_proxy_secret: {file: "${PRODUCTION_SECRETS_DIR}/tenancy_proxy_secret"}
+  platform_admin_password_hash: {file: "${PRODUCTION_SECRETS_DIR}/platform_admin_password_hash"}
+  storage_access_key: {file: "${PRODUCTION_SECRETS_DIR}/storage_access_key"}
+  storage_secret_key: {file: "${PRODUCTION_SECRETS_DIR}/storage_secret_key"}
+  git_credential_key: {file: "${PRODUCTION_SECRETS_DIR}/git_credential_key"}
+  git_external_repositories_json: {file: "${PRODUCTION_SECRETS_DIR}/git_external_repositories_json"}
+  turn_secret: {file: "${PRODUCTION_SECRETS_DIR}/turn_secret"}
+  mail_tenants_json: {file: "${PRODUCTION_SECRETS_DIR}/mail_tenants_json"}
+  vapid_public_key: {file: "${PRODUCTION_SECRETS_DIR}/vapid_public_key"}
+  vapid_private_key: {file: "${PRODUCTION_SECRETS_DIR}/vapid_private_key"}
+  yandex_client_secret: {file: "${PRODUCTION_SECRETS_DIR}/yandex_client_secret"}
+  openai_api_key: {file: "${PRODUCTION_SECRETS_DIR}/openai_api_key"}
+  openrouter_api_key: {file: "${PRODUCTION_SECRETS_DIR}/openrouter_api_key"}
+  sentry_dsn: {file: "${PRODUCTION_SECRETS_DIR}/sentry_dsn"}

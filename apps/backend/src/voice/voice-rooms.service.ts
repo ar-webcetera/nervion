@@ -146,11 +146,13 @@ export class VoiceRoomsService {
       members: room.member_links
         .map((member) => this.toUser(member.user))
         .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, 'ru')),
-      active_participants: presence ?? this.voiceService.getRoomParticipants(key).map((participant) => ({
-        userId: participant.userId,
-        displayName: participant.displayName,
-        photoUrl: participant.photoUrl,
-      })),
+      active_participants:
+        presence ??
+        this.voiceService.getRoomParticipants(key).map((participant) => ({
+          userId: participant.userId,
+          displayName: participant.displayName,
+          photoUrl: participant.photoUrl,
+        })),
       can_manage: room.owner_id === currentUser.id || currentUser.role === ROLES.admin,
       created_at: room.created_at.toISOString(),
       updated_at: room.updated_at.toISOString(),

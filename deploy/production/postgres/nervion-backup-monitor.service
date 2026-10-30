@@ -1,0 +1,14 @@
+[Unit]
+Description=Check Nervion encrypted backup freshness
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+OnFailure=nervion-ops-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+EnvironmentFile=/etc/nervion-backup/job.env
+ExecStart=/usr/local/libexec/nervion-backup-job monitor
+TimeoutStartSec=120s

@@ -70,9 +70,9 @@ describe('PushService test notification', () => {
   });
 
   it('rechecks disabled state before sending previously loaded subscriptions', async () => {
-    repo.findBy.mockImplementation(async () => {
+    repo.findBy.mockImplementation(() => {
       configGet.mockImplementation((key) => (key === 'PUSH_ENABLED' ? 'false' : undefined));
-      return [subscription];
+      return Promise.resolve([subscription]);
     });
     await service.sendToUser(7, { title: 'Test', body: 'Test' });
     expect(repo.findBy).toHaveBeenCalled();

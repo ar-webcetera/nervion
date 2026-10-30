@@ -86,6 +86,48 @@ bash deploy/release/run.sh deploy \
 manifest/compose/env и файловых bind/config/secret источников. Содержимое
 изменяемых data directories не обходится. Повторное чтение frozen Compose
 должно давать ту же конфигурацию. Секреты остаются только в закрытом state.
+Хешируются только config/secret файлы выбранных приложений и `migrate`.
+Неиспользуемые ими инфраструктурные secrets runner не читает.
+
+Для Compose с backend label `io.nervion.release.production=true` дополнительно
+обязателен `manifest.dataState` с `phase` (`precutover`/`live`) и абсолютным
+`evidenceFile`. При каждом шаге проверяется private evidence следующей формы:
+
+```json
+{
+  "schemaVersion": 1,
+  "project": "example-saas-production",
+  "commit": "1111111111111111111111111111111111111111",
+  "phase": "precutover",
+  "bootstrapTenantId": "11111111-1111-4111-8111-111111111111",
+  "checkedAt": "2026-01-01T10:00:00Z",
+  "expiresAt": "2026-01-01T11:00:00Z",
+  "checks": {
+    "privateIngressVerified": true,
+    "backupRestoreVerified": true,
+    "legacyStillPrimary": true,
+    "noVoiceJoins": true
+  },
+  "checkpoints": {
+    "backupId": "verified-backup-id",
+    "restoreVerificationId": "verified-restore-receipt",
+    "storageCheckpoint": "verified-storage-checkpoint"
+  }
+}
+```
+
+Даты в примере не разрешают деплой. Evidence должен быть актуальным, со сроком
+действия не больше 24 часов и соответствовать точному project/commit/tenant/phase.
+Для `live` вместо `legacyStillPrimary`/`noVoiceJoins` обязательны
+`legacyApiStopped`, `legacySmtpStopped`, `legacyWorkersStopped`,
+`singleWriterConfirmed` и непустой `checkpoints.legacyStopReceipt`.
+Эти поля являются подтверждением оператора, не автоматическим выполнением действий.
+Runner проверяет loopback HTTP, совпадение phase и выключенные precutover jobs,
+запрещает override команды `migrate` и добавляет evidence file в fingerprint.
+Реальные precutover SQL-проверки выполняют production migration/runtime entrypoints.
+Общий внешний proxy нельзя проверить из application container: private ingress
+проверяется оператором отдельно. Подробный [first-cutover runbook](../production/README.md)
+не заменяется наличием evidence.
 
 `migrate` запускает только `migrate` с `--no-deps`, проверяет его image и labels,
 ждет код завершения `0`, сохраняет receipt. При таймауте или прерывании runner

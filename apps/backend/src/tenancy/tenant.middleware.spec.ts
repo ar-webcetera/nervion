@@ -57,7 +57,7 @@ describe('Tenant HTTP boundary', () => {
         }
       },
     } as TenantDatabaseService;
-    const platform = { resolveTenant: jest.fn(async () => selected) } as object as PlatformService;
+    const platform = { resolveTenant: jest.fn(() => Promise.resolve(selected)) } as object as PlatformService;
     middleware = new TenantMiddleware(new TenantContextService(), database, platform);
   });
   afterAll(() => {

@@ -2,13 +2,14 @@ import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import * as Sentry from '@sentry/nestjs';
+import type { FindManyOptions } from 'typeorm';
 import { MailDeliveryMonitorService } from './mail-delivery-monitor.service';
 import { MailMessages, MAIL_DIRECTIONS, MAIL_MESSAGE_STATUSES } from './entities/mail-message.entity';
 
 jest.mock('@sentry/nestjs', () => ({ captureMessage: jest.fn() }));
 
 describe('MailDeliveryMonitorService', () => {
-  const count = jest.fn<Promise<number>, []>();
+  const count = jest.fn<Promise<number>, [FindManyOptions<MailMessages>?]>();
   let service: MailDeliveryMonitorService;
   let enabled: boolean;
   beforeEach(async () => {
@@ -33,14 +34,15 @@ describe('MailDeliveryMonitorService', () => {
   it('не тревожит без писем без событий и проверяет только отправленные через провайдера', async () => {
     await service.check();
     expect(Sentry.captureMessage).not.toHaveBeenCalled();
-    expect(count).toHaveBeenCalledWith({
-      where: expect.objectContaining({
+    expect(count).toHaveBeenCalledTimes(1);
+    expect(count.mock.calls[0]?.[0]).toMatchObject({
+      where: {
         direction: MAIL_DIRECTIONS.outbound,
         status: MAIL_MESSAGE_STATUSES.sent,
-        createdAt: expect.objectContaining({ _value: [new Date('2026-09-04T12:00:00Z'), new Date('2026-09-05T11:45:00Z')] }),
-        last_delivery_event_at: expect.objectContaining({ _type: 'isNull' }),
-        provider_message_id: expect.objectContaining({ _type: 'not' }),
-      }),
+        createdAt: { _value: [new Date('2026-09-04T12:00:00Z'), new Date('2026-09-05T11:45:00Z')] },
+        last_delivery_event_at: { _type: 'isNull' },
+        provider_message_id: { _type: 'not' },
+      },
     });
   });
   it('сообщает о сбое, ограничивает повторы и снова тревожит после восстановления', async () => {

@@ -116,6 +116,54 @@ verify_sources() {
 }
 compose() { docker_command compose --project-name "$project" --project-directory "$release" --env-file /dev/null -f "$release/compose.json" --profile deployment "$@"; }
 
+production_gate() {
+  local config=$1 evidence phase tenant now
+  if ! jq -e '.services.backend.labels["io.nervion.release.production"] == "true"' "$config" >/dev/null; then
+    jq -e '.dataState == null' "$manifest" >/dev/null || fail 'Production evidence requires a production-labelled Compose'
+    return
+  fi
+  jq -e '.dataState | type == "object" and (.phase == "precutover" or .phase == "live") and (.evidenceFile | type == "string")' "$manifest" >/dev/null || fail 'Production data-state evidence is required'
+  evidence=$(jq -r .dataState.evidenceFile "$manifest"); phase=$(jq -r .dataState.phase "$manifest")
+  regular "$evidence" private
+  (( $(stat -c %s -- "$evidence") <= 16384 )) || fail 'Production evidence is too large'
+  tenant=$(jq -r .services.migrate.environment.TENANCY_BOOTSTRAP_TENANT_ID "$config")
+  [[ "$tenant" =~ ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$ ]] || fail 'Invalid production bootstrap tenant'
+  jq -e --arg phase "$phase" --arg tenant "$tenant" '
+    .services.backend.environment.BACKEND_BIND_HOST == "127.0.0.1" and
+    .services.frontend.environment.NITRO_HOST == "127.0.0.1" and
+    .services.backend.network_mode == "host" and .services.frontend.network_mode == "host" and
+    .services.migrate.command == null and
+    ([.services.backend.environment.NERVION_DEPLOYMENT_PHASE,
+      .services.frontend.environment.NERVION_DEPLOYMENT_PHASE,
+      .services.migrate.environment.NERVION_DEPLOYMENT_PHASE] | all(. == $phase)) and
+    .services.backend.environment.TENANCY_BOOTSTRAP_TENANT_ID == $tenant and
+    (if .services.smtp != null then
+      .services.smtp.environment.NERVION_DEPLOYMENT_PHASE == $phase and
+      .services.smtp.environment.TENANCY_BOOTSTRAP_TENANT_ID == $tenant and
+      .services.smtp.environment.TENANCY_ENABLED == "true" and
+      .services.smtp.environment.TENANT_JOBS_WORKER_ENABLED == "false"
+     else true end) and
+    (if $phase == "precutover" then
+      .services.backend.environment.TENANT_JOBS_WORKER_ENABLED == "false" and
+      .services.migrate.environment.TENANT_JOBS_WORKER_ENABLED == "false"
+     else true end)
+  ' "$config" >/dev/null || fail 'Production phase, loopback binding or migration mode does not match evidence'
+  now=$(date -u +%s)
+  jq -e --arg project "$project" --arg commit "$commit" --arg phase "$phase" --arg tenant "$tenant" --argjson now "$now" '
+    def checkpoint: type == "string" and length > 0 and length <= 512;
+    .schemaVersion == 1 and .project == $project and .commit == $commit and .phase == $phase and .bootstrapTenantId == $tenant and
+    (.checkedAt | fromdateiso8601) <= ($now + 60) and (.expiresAt | fromdateiso8601) > $now and
+    ((.expiresAt | fromdateiso8601) - (.checkedAt | fromdateiso8601)) > 0 and
+    ((.expiresAt | fromdateiso8601) - (.checkedAt | fromdateiso8601)) <= 86400 and
+    .checks.privateIngressVerified == true and .checks.backupRestoreVerified == true and
+    ([.checkpoints.backupId,.checkpoints.restoreVerificationId,.checkpoints.storageCheckpoint] | all(checkpoint)) and
+    (if $phase == "precutover" then .checks.legacyStillPrimary == true and .checks.noVoiceJoins == true
+     else .checks.legacyApiStopped == true and .checks.legacySmtpStopped == true and
+       .checks.legacyWorkersStopped == true and .checks.singleWriterConfirmed == true and
+       (.checkpoints.legacyStopReceipt | checkpoint) end)
+  ' "$evidence" >/dev/null || fail 'Production evidence is missing, stale or belongs to another release'
+}
+
 if [[ "$action" == prepare ]]; then
   stage=prepare
   work=$(mktemp -d "$state/.prepare.XXXXXXXX")
@@ -143,6 +191,7 @@ if [[ "$action" == prepare ]]; then
     ([$selected[] as $name | .services[$name].healthcheck |
       . != null and .disable != true and (.test | type == "array" and length > 0 and .[0] != "NONE")] | all)
   ' "$work/compose.json" >/dev/null || fail 'Compose lacks required healthchecks or an approved tenant-only migration job'
+  production_gate "$work/compose.json"
   # Validate that freezing Compose does not change interpolation or path resolution.
   docker_command compose --project-name "$project" --project-directory "$work" --env-file /dev/null \
     -f "$work/compose.json" --profile deployment config --format json >"$work/roundtrip.json" 2>>"$log" || fail 'Frozen Compose configuration cannot be read'
@@ -151,10 +200,14 @@ if [[ "$action" == prepare ]]; then
   # Include mounted script/secret files, but never walk mutable data directories.
   jq -r --arg manifest "$manifest" --arg compose "$compose_file" --arg env "$env_file" \
     --argjson selected "$(jq .services "$manifest")" '
+    . as $config |
     [$manifest,$compose,$env] +
     [($selected + ["migrate"])[] as $name | .services[$name].volumes[]? | select(.type == "bind") | .source] +
-    [.secrets[]?.file, .configs[]?.file] | map(select(. != null)) | unique[]
+    [($selected + ["migrate"])[] as $name | .services[$name].secrets[]? | (if type == "string" then . else .source end) as $source | $config.secrets[$source].file] +
+    [($selected + ["migrate"])[] as $name | .services[$name].configs[]? | (if type == "string" then . else .source end) as $source | $config.configs[$source].file] |
+    map(select(. != null)) | unique[]
   ' "$work/compose.json" >"$work/input-paths"
+  jq -r '.dataState.evidenceFile // empty' "$manifest" >>"$work/input-paths"
   : >"$work/inputs.jsonl"
   while IFS= read -r path; do
     canonical "$path"
@@ -195,6 +248,7 @@ jq -e --arg commit "$commit" --arg project "$project" --arg manifest "$manifest"
   '.commit == $commit and .project == $project and .manifest == $manifest' "$release/prepared.json" >/dev/null || fail 'Prepared release does not match the request'
 [[ "$(sha256sum "$release/compose.json" | cut -d ' ' -f1)" == "$(jq -r .configHash "$release/prepared.json")" ]] || fail 'Frozen Compose configuration changed'
 verify_sources "$release/prepared.json"
+production_gate "$release/compose.json"
 backend_id=$(image_id "$backend_image" "$state/backend-check.json")
 frontend_id=$(image_id "$frontend_image" "$state/frontend-check.json")
 jq -e --arg backend "$backend_id" --arg frontend "$frontend_id" \

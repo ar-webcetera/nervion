@@ -65,6 +65,9 @@ describe('YandexOauthService', () => {
     expect(legacy.searchParams.has('code_challenge')).toBe(false);
     fetchDirectMock.mockResolvedValue({ ok: true, json: () => Promise.resolve({ access_token: 'test-token' }) } as Response);
     await expect(service.exchangeCode('code', redirectUri, 'test-verifier')).resolves.toBe('test-token');
-    expect(String(fetchDirectMock.mock.calls[0][1]?.body)).toContain('code_verifier=test-verifier');
+    const body = fetchDirectMock.mock.calls[0][1]?.body;
+    expect(body).toBeInstanceOf(URLSearchParams);
+    if (!(body instanceof URLSearchParams)) throw new Error('Expected form-encoded OAuth request');
+    expect(body.get('code_verifier')).toBe('test-verifier');
   });
 });

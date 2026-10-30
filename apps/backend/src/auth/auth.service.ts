@@ -448,7 +448,7 @@ export class AuthService {
       const user = await this.userRepository.findOneBy({ yandex_id: info.yandexId });
       if (!user || user.deletedAt) throw new ForbiddenException();
       const membership = await this.platform.assertMembership(tenant.id, user.id);
-      if (membership.localUserId !== user.id || membership.role !== user.role) throw new ForbiddenException();
+      if (membership.localUserId !== user.id || membership.role !== String(user.role)) throw new ForbiddenException();
       await this.auditLogsService.record({
         actionType: AuditActionType.AUTH_LOGIN_SUCCESS,
         entityType: AuditEntityType.AUTH,
@@ -458,7 +458,10 @@ export class AuthService {
         summary: 'Успешный вход через Яндекс',
         afterPayload: { method: 'yandex' },
       });
-      const token = this.jwtAuthService.generateToken({ ...this.buildJwtPayload(user), ...this.platform.sessionClaims(membership) });
+      const token = this.jwtAuthService.generateToken({
+        ...this.buildJwtPayload(user),
+        ...this.platform.sessionClaims(membership),
+      });
       clearAuthCookie(this.configService, res, tenant.hostname);
       res.cookie('authToken', token, getAuthCookieOptions(this.configService, true));
       return res.redirect('/');

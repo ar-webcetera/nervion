@@ -87,6 +87,25 @@ describe('tenant Git boundary', () => {
     expect(() => validateGitRemote(url)).toThrow();
   });
 
+  it.each([...Array.from({ length: 32 }, (_, code) => code), 127])('rejects raw ASCII control code %i in a clone URL', (code) => {
+    expect(() => validateGitRemote(`https://github.com/team/repo${String.fromCharCode(code)}`)).toThrow();
+  });
+
+  it.each([
+    ['reader:other', 'pat'],
+    ['reader\u0000', 'pat'],
+    ['reader\u001f', 'pat'],
+    ['reader\u007f', 'pat'],
+    ['reader', 'pat\u0000'],
+    ['reader', 'pat\u001f'],
+    ['reader', 'pat\u007f'],
+  ])('rejects unsafe credential characters without a clone', async (username, token) => {
+    await expect(
+      createTenantGitCopy(tenantA, { remoteUrl: 'https://github.com/team/repo.git', username, token }),
+    ).rejects.toThrow('учетные данные');
+    expect(jest.mocked(executeGit).mock.calls.some(([args]) => args[0] === 'clone')).toBe(false);
+  });
+
   it('pins the verified IP and keeps authentication out of URLs and arguments', async () => {
     await createTenantGitCopy(tenantA, { remoteUrl: 'https://github.com/team/repo.git', username: 'reader', token: 'pat' });
     const invocation = jest.mocked(executeGit).mock.calls.find(([args]) => args[0] === 'clone');

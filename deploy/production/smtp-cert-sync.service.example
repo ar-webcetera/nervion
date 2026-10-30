@@ -1,0 +1,19 @@
+[Unit]
+Description=Publish Caddy certificate to the isolated Nervion SMTP TLS bundle
+After=docker.service
+Requires=docker.service
+OnFailure=nervion-ops-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/nervion/deploy/production/smtp-cert-sync.py --config /etc/nervion/smtp-cert-sync.json --restart
+TimeoutStartSec=330
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/nervion/smtp-tls
+RestrictAddressFamilies=AF_UNIX

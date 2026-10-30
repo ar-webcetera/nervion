@@ -134,8 +134,11 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
     const ports = voicePortRange();
     voiceIceServers('configuration', 0);
-    if (process.env.TENANCY_ENABLED === 'true' && process.env.NODE_ENV === 'production' &&
-      (!process.env.MEDIASOUP_ANNOUNCED_IP || ['127.0.0.1', '0.0.0.0', '::1'].includes(process.env.MEDIASOUP_ANNOUNCED_IP)))
+    if (
+      process.env.TENANCY_ENABLED === 'true' &&
+      process.env.NODE_ENV === 'production' &&
+      (!process.env.MEDIASOUP_ANNOUNCED_IP || ['127.0.0.1', '0.0.0.0', '::1'].includes(process.env.MEDIASOUP_ANNOUNCED_IP))
+    )
       throw new Error('MEDIASOUP_ANNOUNCED_IP must be reachable by clients in production');
     this.worker = await mediasoup.createWorker({
       logLevel: 'warn',
@@ -167,13 +170,18 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     const token = {};
     this.creationTokens.set(roomId, token);
     const create = this.worker.createRouter({ mediaCodecs: MEDIA_CODECS }).then((router) => {
-      if (this.creationTokens.get(roomId) !== token) { router.close(); throw new Error('Голосовая сессия завершена'); }
+      if (this.creationTokens.get(roomId) !== token) {
+        router.close();
+        throw new Error('Голосовая сессия завершена');
+      }
       const room: Room = { router, participants: new Map() };
       this.rooms.set(roomId, room);
       return room;
     });
     this.creating.set(roomId, create);
-    try { return await create; } finally {
+    try {
+      return await create;
+    } finally {
       if (this.creating.get(roomId) === create) this.creating.delete(roomId);
       if (this.creationTokens.get(roomId) === token) this.creationTokens.delete(roomId);
     }
@@ -223,8 +231,7 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
 
     const transport = participant.sendTransport;
     if (!transport || transport.id !== transportId) throw new Error('Нет доступа к транспорту');
-    if ([...participant.producers.values()].some((item) => item.kind === kind))
-      throw new Error('Поток этого типа уже запущен');
+    if ([...participant.producers.values()].some((item) => item.kind === kind)) throw new Error('Поток этого типа уже запущен');
 
     const producer = await transport.produce({ kind, rtpParameters, appData });
 
@@ -258,7 +265,10 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
       paused: true,
     });
 
-    const closeConsumer = () => { consumer.close(); participant.consumers.delete(producerId); };
+    const closeConsumer = () => {
+      consumer.close();
+      participant.consumers.delete(producerId);
+    };
     consumer.on('transportclose', closeConsumer);
     consumer.on('producerclose', closeConsumer);
 
@@ -355,13 +365,19 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
 
   registerSendTransport(roomId: string, userId: number, transport: WebRtcTransport): void {
     const participant = this.rooms.get(roomId)?.participants.get(userId);
-    if (!participant || participant.sendTransport) { transport.close(); throw new Error('Транспорт уже создан'); }
+    if (!participant || participant.sendTransport) {
+      transport.close();
+      throw new Error('Транспорт уже создан');
+    }
     participant.sendTransport = transport;
   }
 
   registerRecvTransport(roomId: string, userId: number, transport: WebRtcTransport): void {
     const participant = this.rooms.get(roomId)?.participants.get(userId);
-    if (!participant || participant.recvTransport) { transport.close(); throw new Error('Транспорт уже создан'); }
+    if (!participant || participant.recvTransport) {
+      transport.close();
+      throw new Error('Транспорт уже создан');
+    }
     participant.recvTransport = transport;
   }
 

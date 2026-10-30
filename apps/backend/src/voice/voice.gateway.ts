@@ -1,4 +1,11 @@
-import { ConnectedSocket, MessageBody, OnGatewayDisconnect, SubscribeMessage, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
+import {
+  ConnectedSocket,
+  MessageBody,
+  OnGatewayDisconnect,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
 import { ForbiddenException, HttpException, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -38,30 +45,38 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
     private readonly cluster: VoiceClusterService,
     @InjectRepository(Users) private readonly userRepository: Repository<Users>,
   ) {
-    this.cluster.bind((request) => this.execute(request), (key) => this.closeOwnedRoom(key));
+    this.cluster.bind(
+      (request) => this.execute(request),
+      (key) => this.closeOwnedRoom(key),
+    );
   }
 
   afterInit(server: Server): void {
     server.use((client, next) => {
-      this.sockets.connect(client).then(() => next(), () => next(new Error('Нет доступа к голосовой связи')));
+      this.sockets.connect(client).then(
+        () => next(),
+        () => next(new Error('Нет доступа к голосовой связи')),
+      );
     });
   }
 
   onModuleInit(): void {
     // No request EntityManager is captured by long-lived SFU/timer callbacks.
-    this.sweep = tenantStorage.exit(() => setInterval(() => {
-      // Synchronous safety deadline also applies when database checks hang.
-      for (const [key, peers] of this.peers) {
-        if ([...peers.values()].some((peer) => Date.now() - (this.authorizedAt.get(peer.socketId) ?? 0) >= 20000)) {
-          this.closeOwnedRoom(key);
-          void this.cluster.release(key).catch(() => undefined);
+    this.sweep = tenantStorage.exit(() =>
+      setInterval(() => {
+        // Synchronous safety deadline also applies when database checks hang.
+        for (const [key, peers] of this.peers) {
+          if ([...peers.values()].some((peer) => Date.now() - (this.authorizedAt.get(peer.socketId) ?? 0) >= 20000)) {
+            this.closeOwnedRoom(key);
+            void this.cluster.release(key).catch(() => undefined);
+          }
         }
-      }
-      if (Date.now() - this.lastSweep >= 5000) {
-        this.lastSweep = Date.now();
-        void this.revalidate().catch(() => this.logger.warn('Voice session revalidation failed'));
-      }
-    }, 1000));
+        if (Date.now() - this.lastSweep >= 5000) {
+          this.lastSweep = Date.now();
+          void this.revalidate().catch(() => this.logger.warn('Voice session revalidation failed'));
+        }
+      }, 1000),
+    );
     this.sweep.unref();
   }
 
@@ -76,7 +91,9 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
     if (!identity || !roomId) return;
     try {
       await this.cluster.execute({ command: VoiceCommand.Leave, body: { roomId }, peer: this.peer(client) });
-    } catch { /* The owner watchdog also removes missing sockets. */ }
+    } catch {
+      /* The owner watchdog also removes missing sockets. */
+    }
   }
 
   @SubscribeMessage(VoiceCommand.Join)
@@ -87,7 +104,9 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
       const result = await this.dispatch(client, VoiceCommand.Join, body);
       if (!result.error) client.data.voiceRoomId = body.roomId;
       return result;
-    } finally { client.data.voiceJoining = false; }
+    } finally {
+      client.data.voiceJoining = false;
+    }
   }
 
   @SubscribeMessage(VoiceCommand.Leave)
@@ -98,19 +117,33 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
   }
 
   @SubscribeMessage(VoiceCommand.CreateTransport)
-  onCreateTransport(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) { return this.dispatch(client, VoiceCommand.CreateTransport, body); }
+  onCreateTransport(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) {
+    return this.dispatch(client, VoiceCommand.CreateTransport, body);
+  }
   @SubscribeMessage(VoiceCommand.ConnectTransport)
-  onConnectTransport(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) { return this.dispatch(client, VoiceCommand.ConnectTransport, body); }
+  onConnectTransport(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) {
+    return this.dispatch(client, VoiceCommand.ConnectTransport, body);
+  }
   @SubscribeMessage(VoiceCommand.Produce)
-  onProduce(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) { return this.dispatch(client, VoiceCommand.Produce, body); }
+  onProduce(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) {
+    return this.dispatch(client, VoiceCommand.Produce, body);
+  }
   @SubscribeMessage(VoiceCommand.Consume)
-  onConsume(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) { return this.dispatch(client, VoiceCommand.Consume, body); }
+  onConsume(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) {
+    return this.dispatch(client, VoiceCommand.Consume, body);
+  }
   @SubscribeMessage(VoiceCommand.ResumeConsumer)
-  onResumeConsumer(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) { return this.dispatch(client, VoiceCommand.ResumeConsumer, body); }
+  onResumeConsumer(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) {
+    return this.dispatch(client, VoiceCommand.ResumeConsumer, body);
+  }
   @SubscribeMessage(VoiceCommand.Mute)
-  onSetMute(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) { return this.dispatch(client, VoiceCommand.Mute, body); }
+  onSetMute(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) {
+    return this.dispatch(client, VoiceCommand.Mute, body);
+  }
   @SubscribeMessage(VoiceCommand.StopScreen)
-  onStopScreenShare(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) { return this.dispatch(client, VoiceCommand.StopScreen, body); }
+  onStopScreenShare(@ConnectedSocket() client: Socket, @MessageBody() body: VoiceBody) {
+    return this.dispatch(client, VoiceCommand.StopScreen, body);
+  }
 
   private peer(client: Socket): VoicePeer {
     const identity = this.sockets.identity(client);
@@ -130,7 +163,8 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
       if (Buffer.byteLength(JSON.stringify(body)) > 65536) throw new Error('Слишком большая голосовая команда');
       const previous = this.sockets.identity(client);
       const current = await this.sockets.authenticateConnected(client);
-      if (!previous || previous.tenantId !== current.tenantId || previous.userId !== current.userId) throw new ForbiddenException();
+      if (!previous || previous.tenantId !== current.tenantId || previous.userId !== current.userId)
+        throw new ForbiddenException();
       if (command !== VoiceCommand.Join && client.data.voiceRoomId !== body.roomId) throw new ForbiddenException();
       return await this.cluster.execute({ peer: this.peer(client), command, body });
     } catch (error) {
@@ -143,11 +177,15 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
     const [live] = await this.server.in(peer.socketId).fetchSockets();
     if (!live) throw new ForbiddenException('Голосовая сессия завершена');
     const identity = await this.sockets.authenticateConnected(live);
-    if (identity.tenantId !== peer.tenantId || identity.userId !== peer.userId ||
-      ![String(ROLES.admin), String(ROLES.employee)].includes(identity.role)) throw new ForbiddenException('Нет доступа к голосовой связи');
+    if (
+      identity.tenantId !== peer.tenantId ||
+      identity.userId !== peer.userId ||
+      ![String(ROLES.admin), String(ROLES.employee)].includes(identity.role)
+    )
+      throw new ForbiddenException('Нет доступа к голосовой связи');
     if (live.handshake.headers.cookie !== peer.headers.cookie) throw new ForbiddenException('Голосовая сессия завершена');
     const run = async () => {
-      if (!await this.voiceRoomsService.canJoin(roomId, identity.userId)) throw new ForbiddenException('Нет доступа к комнате');
+      if (!(await this.voiceRoomsService.canJoin(roomId, identity.userId))) throw new ForbiddenException('Нет доступа к комнате');
       this.authorizedAt.set(peer.socketId, Date.now());
       return work();
     };
@@ -173,12 +211,22 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
           if (!(await this.server.in(peer.socketId).fetchSockets()).length) throw new Error('Соединение закрыто');
           const user = await this.userRepository.findOneByOrFail({ id: peer.userId });
           await this.voiceService.getOrCreateRoom(key);
-          this.voiceService.addParticipant(key, peer.userId, peer.socketId, `${user.first_name} ${user.last_name}`, user.photo_url ?? null);
+          this.voiceService.addParticipant(
+            key,
+            peer.userId,
+            peer.socketId,
+            `${user.first_name} ${user.last_name}`,
+            user.photo_url ?? null,
+          );
           if (!this.peers.has(key)) this.peers.set(key, new Map());
           this.peers.get(key)!.set(peer.userId, peer);
           this.server.in(peer.socketId).socketsJoin(voiceSocketRoom(key));
           await this.emitParticipants(key, body.roomId);
-          this.server.to(voiceSocketRoom(key)).emit('participant-joined', { userId: peer.userId, displayName: `${user.first_name} ${user.last_name}`, photoUrl: user.photo_url ?? null });
+          this.server.to(voiceSocketRoom(key)).emit('participant-joined', {
+            userId: peer.userId,
+            displayName: `${user.first_name} ${user.last_name}`,
+            photoUrl: user.photo_url ?? null,
+          });
           return {
             rtpCapabilities: this.voiceService.getRouterRtpCapabilities(key)!,
             existingProducers: this.voiceService.getExistingProducers(key, peer.userId),
@@ -192,19 +240,31 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
             const transport = await this.voiceService.createTransport(key);
             if (body.direction === 'send') this.voiceService.registerSendTransport(key, peer.userId, transport);
             else this.voiceService.registerRecvTransport(key, peer.userId, transport);
-            return { id: transport.id, iceParameters: transport.iceParameters, iceCandidates: transport.iceCandidates, dtlsParameters: transport.dtlsParameters, iceServers: voiceIceServers(peer.tenantId, peer.userId) };
+            return {
+              id: transport.id,
+              iceParameters: transport.iceParameters,
+              iceCandidates: transport.iceCandidates,
+              dtlsParameters: transport.dtlsParameters,
+              iceServers: voiceIceServers(peer.tenantId, peer.userId),
+            };
           }
           case VoiceCommand.ConnectTransport:
             if (!body.transportId || !body.dtlsParameters) throw new Error('Некорректный транспорт');
             await this.voiceService.connectTransport(key, peer.userId, body.transportId, body.dtlsParameters);
             return { connected: true };
           case VoiceCommand.Produce: {
-            if (!body.transportId || !body.rtpParameters || !['audio', 'video'].includes(body.kind ?? '')) throw new Error('Некорректный поток');
+            if (!body.transportId || !body.rtpParameters || !['audio', 'video'].includes(body.kind ?? ''))
+              throw new Error('Некорректный поток');
             const kind = body.kind!;
             const source = kind === 'audio' ? ProducerSource.Microphone : ProducerSource.Screen;
             if (body.appData && body.appData.source !== source) throw new Error('Некорректный источник потока');
-            const producer = await this.voiceService.produce(key, peer.userId, body.transportId, kind, body.rtpParameters, { source });
-            this.server.to(voiceSocketRoom(key)).except(peer.socketId).emit('new-producer', { producerId: producer.id, userId: peer.userId, kind });
+            const producer = await this.voiceService.produce(key, peer.userId, body.transportId, kind, body.rtpParameters, {
+              source,
+            });
+            this.server
+              .to(voiceSocketRoom(key))
+              .except(peer.socketId)
+              .emit('new-producer', { producerId: producer.id, userId: peer.userId, kind });
             return { producerId: producer.id };
           }
           case VoiceCommand.Consume: {
@@ -224,18 +284,27 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
             return { muted: body.muted };
           case VoiceCommand.StopScreen: {
             if (!body.producerId) throw new Error('Некорректный поток');
-            const ownProducer = this.voiceService.getRoomParticipants(key).find((item) => item.userId === peer.userId)?.producers.get(body.producerId);
+            const ownProducer = this.voiceService
+              .getRoomParticipants(key)
+              .find((item) => item.userId === peer.userId)
+              ?.producers.get(body.producerId);
             if (ownProducer?.kind !== 'video') throw new Error('Нет доступа к демонстрации');
             this.voiceService.closeProducer(key, peer.userId, body.producerId);
-            this.server.to(voiceSocketRoom(key)).emit('producer-closed', { producerId: body.producerId, userId: peer.userId, kind: 'video' });
+            this.server
+              .to(voiceSocketRoom(key))
+              .emit('producer-closed', { producerId: body.producerId, userId: peer.userId, kind: 'video' });
             return { stopped: true };
           }
-          default: throw new Error('Неизвестное действие');
+          default:
+            throw new Error('Неизвестное действие');
         }
       });
     } catch (error) {
-      if (error instanceof HttpException && [401, 403, 404].includes(error.getStatus()) &&
-        this.peers.get(key)?.get(peer.userId)?.socketId === peer.socketId) {
+      if (
+        error instanceof HttpException &&
+        [401, 403, 404].includes(error.getStatus()) &&
+        this.peers.get(key)?.get(peer.userId)?.socketId === peer.socketId
+      ) {
         await this.removePeer(key, peer, body.roomId);
         this.server.to(peer.socketId).emit('voice-session-ended', { reason: 'Доступ к голосовой комнате закрыт' });
         this.server.in(peer.socketId).disconnectSockets(true);
@@ -251,7 +320,9 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
   }
 
   private summaries(key: string) {
-    return this.voiceService.getRoomParticipants(key).map(({ userId, displayName, photoUrl }) => ({ userId, displayName, photoUrl }));
+    return this.voiceService
+      .getRoomParticipants(key)
+      .map(({ userId, displayName, photoUrl }) => ({ userId, displayName, photoUrl }));
   }
 
   private async emitParticipants(key: string, roomId: number): Promise<void> {
@@ -270,10 +341,16 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
     this.server.to(voiceSocketRoom(key)).emit('participant-left', { userId: peer.userId });
     const notify = () => this.emitParticipants(key, roomId);
     try {
-      if (this.context.isEnabled()) await this.database.run(await this.platform.getTenant(peer.tenantId), notify, { readOnly: true });
+      if (this.context.isEnabled())
+        await this.database.run(await this.platform.getTenant(peer.tenantId), notify, { readOnly: true });
       else await notify();
-    } catch { /* Tenant may already be blocked. Resource cleanup still completes. */ }
-    if (!this.peers.get(key)?.size) { this.peers.delete(key); await this.cluster.release(key).catch(() => undefined); }
+    } catch {
+      /* Tenant may already be blocked. Resource cleanup still completes. */
+    }
+    if (!this.peers.get(key)?.size) {
+      this.peers.delete(key);
+      await this.cluster.release(key).catch(() => undefined);
+    }
   }
 
   private closeOwnedRoom(key: string): void {
@@ -297,8 +374,9 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
           await this.cluster.inspect(key, async () => {
             const roomId = Number(key.slice(key.lastIndexOf(':') + 1));
             for (const peer of [...(this.peers.get(key)?.values() ?? [])]) {
-              try { await this.authorize(peer, roomId, async () => undefined); }
-              catch {
+              try {
+                await this.authorize(peer, roomId, () => Promise.resolve(undefined));
+              } catch {
                 await this.removePeer(key, peer, roomId);
                 this.server.to(peer.socketId).emit('voice-session-ended', { reason: 'Доступ к голосовой комнате закрыт' });
                 this.server.in(peer.socketId).disconnectSockets(true);
@@ -306,8 +384,12 @@ export class VoiceGateway implements OnGatewayDisconnect, OnModuleInit, OnModule
             }
             if (this.peers.has(key)) await this.cluster.publishPresence(key, this.summaries(key));
           });
-        } catch { this.closeOwnedRoom(key); }
+        } catch {
+          this.closeOwnedRoom(key);
+        }
       }
-    } finally { this.sweeping = false; }
+    } finally {
+      this.sweeping = false;
+    }
   }
 }

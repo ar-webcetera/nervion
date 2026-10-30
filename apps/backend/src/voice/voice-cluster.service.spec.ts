@@ -6,7 +6,12 @@ describe('voice SFU leases and RPC fencing', () => {
   const originalTenancy = process.env.TENANCY_ENABLED;
   const request: VoiceRequest = {
     command: VoiceCommand.Join,
-    peer: { tenantId: 'tenant-a', userId: 1, socketId: 'socket-a', headers: { host: 'a.example.test', cookie: 'authToken=test' } },
+    peer: {
+      tenantId: 'tenant-a',
+      userId: 1,
+      socketId: 'socket-a',
+      headers: { host: 'a.example.test', cookie: 'authToken=test' },
+    },
     body: { roomId: 7 },
   };
   const key = voiceRoomKey(request.peer.tenantId, request.body.roomId);
@@ -19,7 +24,12 @@ describe('voice SFU leases and RPC fencing', () => {
   beforeEach(() => {
     process.env.TENANCY_ENABLED = 'true';
     cluster = new VoiceClusterService();
-    redis = { isReady: true, get: jest.fn().mockResolvedValue(cluster.nodeId), eval: jest.fn().mockResolvedValue(1), publish: jest.fn() };
+    redis = {
+      isReady: true,
+      get: jest.fn().mockResolvedValue(cluster.nodeId),
+      eval: jest.fn().mockResolvedValue(1),
+      publish: jest.fn(),
+    };
     leases = new Map([[key, Date.now()]]);
     handler = jest.fn().mockResolvedValue({ connected: true });
     lost = jest.fn();
@@ -27,7 +37,10 @@ describe('voice SFU leases and RPC fencing', () => {
     cluster.bind(handler, lost);
   });
 
-  afterEach(() => { if (originalTenancy === undefined) delete process.env.TENANCY_ENABLED; else process.env.TENANCY_ENABLED = originalTenancy; });
+  afterEach(() => {
+    if (originalTenancy === undefined) delete process.env.TENANCY_ENABLED;
+    else process.env.TENANCY_ENABLED = originalTenancy;
+  });
 
   it('checks Redis ownership before every local command', async () => {
     redis.get.mockResolvedValue('another-owner');
@@ -44,10 +57,15 @@ describe('voice SFU leases and RPC fencing', () => {
   });
 
   it('does not execute an RPC envelope that claims a different owner', async () => {
-    await cluster['receive'](JSON.stringify({
-      id: '11111111-1111-4111-8111-111111111111', source: '22222222-2222-4222-8222-222222222222',
-      owner: 'spoofed-owner', deadline: Date.now() + 5000, request,
-    }));
+    await cluster['receive'](
+      JSON.stringify({
+        id: '11111111-1111-4111-8111-111111111111',
+        source: '22222222-2222-4222-8222-222222222222',
+        owner: 'spoofed-owner',
+        deadline: Date.now() + 5000,
+        request,
+      }),
+    );
     expect(handler).not.toHaveBeenCalled();
     expect(redis.publish).not.toHaveBeenCalled();
   });
@@ -55,12 +73,23 @@ describe('voice SFU leases and RPC fencing', () => {
   it('serializes commands within a tenant room', async () => {
     const order: string[] = [];
     let unblock: () => void = () => undefined;
-    const pending = new Promise<void>((resolve) => { unblock = resolve; });
-    handler.mockImplementationOnce(async () => { order.push('first'); await pending; return {}; });
-    handler.mockImplementationOnce(async () => { order.push('second'); return {}; });
+    const pending = new Promise<void>((resolve) => {
+      unblock = resolve;
+    });
+    handler.mockImplementationOnce(async () => {
+      order.push('first');
+      await pending;
+      return {};
+    });
+    handler.mockImplementationOnce(() => {
+      order.push('second');
+      return Promise.resolve({});
+    });
     const first = cluster.execute(request);
     const second = cluster.execute(request);
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(order).not.toContain('second');
     unblock();
     await Promise.all([first, second]);

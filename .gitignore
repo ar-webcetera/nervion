@@ -22,6 +22,10 @@ generated/
 /coverage
 /.nyc_output
 
+# Python deployment helpers
+__pycache__/
+*.py[cod]
+
 # IDEs and editors
 /.idea
 .project

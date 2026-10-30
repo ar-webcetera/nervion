@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly Nervion backup freshness check
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Unit=nervion-backup-monitor.service
+
+[Install]
+WantedBy=timers.target

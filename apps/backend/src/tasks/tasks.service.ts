@@ -133,7 +133,12 @@ export class TasksService {
     return dto;
   }
 
-  private async notifyResponsibleAssigned({ taskId, taskTitle, responsibleId, actorId }: ResponsibleAssignedNotificationPayload): Promise<void> {
+  private async notifyResponsibleAssigned({
+    taskId,
+    taskTitle,
+    responsibleId,
+    actorId,
+  }: ResponsibleAssignedNotificationPayload): Promise<void> {
     if (actorId === responsibleId) return;
 
     const subject = `Вам назначена задача: ${taskTitle}`;

@@ -27,9 +27,17 @@ describe('voice owner authorization', () => {
   let live: { handshake: { headers: { cookie: string } }; data: object };
 
   beforeEach(() => {
-    sockets = { authenticateConnected: jest.fn().mockResolvedValue({ tenantId: peer.tenantId, userId: peer.userId, role: ROLES.employee }), identity: jest.fn() };
+    sockets = {
+      authenticateConnected: jest.fn().mockResolvedValue({ tenantId: peer.tenantId, userId: peer.userId, role: ROLES.employee }),
+      identity: jest.fn(),
+    };
     rooms = { canJoin: jest.fn().mockResolvedValue(true) };
-    voice = { getRoomParticipants: jest.fn().mockReturnValue([]), closeRoom: jest.fn(), assertParticipant: jest.fn(), createTransport: jest.fn() };
+    voice = {
+      getRoomParticipants: jest.fn().mockReturnValue([]),
+      closeRoom: jest.fn(),
+      assertParticipant: jest.fn(),
+      createTransport: jest.fn(),
+    };
     platform = { getTenant: jest.fn().mockResolvedValue({ id: peer.tenantId, readOnly: false, featureFlags: { voice: true } }) };
     database = { run: jest.fn().mockImplementation(async (_tenant: object, callback: () => Promise<object>) => callback()) };
     const context = { isEnabled: () => true };
@@ -46,7 +54,9 @@ describe('voice owner authorization', () => {
       {} as Repository<Users>,
     );
     live = { handshake: { headers: { cookie: 'authToken=a' } }, data: {} };
-    gateway.server = { in: jest.fn().mockReturnValue({ fetchSockets: jest.fn().mockResolvedValue([live]) }) } as Partial<Server> as Server;
+    gateway.server = {
+      in: jest.fn().mockReturnValue({ fetchSockets: jest.fn().mockResolvedValue([live]) }),
+    } as Partial<Server> as Server;
   });
 
   it('rejects an internal request whose tenant differs from the real live socket', async () => {
@@ -85,7 +95,10 @@ describe('voice owner authorization', () => {
     rooms.canJoin.mockResolvedValue(false);
     const result = await gateway['execute'](request);
     expect(result.error).toBeTruthy();
-    expect(database.run).toHaveBeenCalledWith(expect.objectContaining({ id: peer.tenantId }), expect.any(Function), { readOnly: true, actorId: 1 });
+    expect(database.run).toHaveBeenCalledWith(expect.objectContaining({ id: peer.tenantId }), expect.any(Function), {
+      readOnly: true,
+      actorId: 1,
+    });
     expect(voice.createTransport).not.toHaveBeenCalled();
   });
 });

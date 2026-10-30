@@ -22,7 +22,8 @@ describe('connected socket tenant host', () => {
   };
   const platform = { resolveTenant: jest.fn(), assertSession: jest.fn() };
   const database = { run: (_tenant: object, work: () => Promise<object>) => work() };
-  const db = { getRepository: () => ({ findOneBy: async () => ({ id: 1, role: 'admin' }) }) };
+  const db = { getRepository: () => ({ findOneBy: () => Promise.resolve({ id: 1, role: 'admin' }) }) };
+  const clientJoin = jest.fn();
   const jwt = { verifyToken: jest.fn(() => ({ id: 1 })) };
   let service: TenantSocketService;
   beforeEach(() => {
@@ -51,7 +52,7 @@ describe('connected socket tenant host', () => {
     const timestamp = String(Date.now());
     return {
       data: {},
-      join: jest.fn(),
+      join: clientJoin,
       handshake: {
         headers: {
           host: 'internal-backend',
@@ -83,7 +84,7 @@ describe('connected socket tenant host', () => {
     socket.handshake.headers['x-nervion-signature'] = '0'.repeat(64);
     await expect(service.connect(socket)).rejects.toThrow();
     expect(socket.data.nervionHostname).toBeUndefined();
-    expect(socket.join).not.toHaveBeenCalled();
+    expect(clientJoin).not.toHaveBeenCalled();
     await expect(service.authenticateConnected(socket)).rejects.toThrow();
   });
 });

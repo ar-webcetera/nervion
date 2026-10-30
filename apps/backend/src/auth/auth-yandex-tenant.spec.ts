@@ -35,10 +35,14 @@ describe('SaaS Yandex login', () => {
   const jwt = { generateToken: jest.fn() };
   const audit = { record: jest.fn() };
 
-  const request = (cookies: Record<string, string> = {}, host = hostname) => ({
-    headers: { host }, hostname: host, protocol: 'https', cookies,
-    get: (name: string) => name === 'host' ? host : undefined,
-  }) as Request & { cookies: Record<string, string> };
+  const request = (cookies: Record<string, string> = {}, host = hostname) =>
+    ({
+      headers: { host },
+      hostname: host,
+      protocol: 'https',
+      cookies,
+      get: (name: string) => (name === 'host' ? host : undefined),
+    }) as Request & { cookies: Record<string, string> };
 
   const response = () => {
     const cookies: Record<string, string> = {};
@@ -51,7 +55,10 @@ describe('SaaS Yandex login', () => {
       options[name] = cookieOptions;
       return res;
     };
-    res.clearCookie = (name: string) => { cleared.push(name); return res; };
+    res.clearCookie = (name: string) => {
+      cleared.push(name);
+      return res;
+    };
     res.redirect = (urlOrStatus: string | number, location?: string) => {
       redirects.push(typeof urlOrStatus === 'string' ? urlOrStatus : location || '');
     };
@@ -67,19 +74,36 @@ describe('SaaS Yandex login', () => {
   beforeEach(async () => {
     jest.resetAllMocks();
     config = new ConfigService({
-      NODE_ENV: 'production', JWT_SECRET: 'test-only-secret-with-at-least-32-characters',
-      YANDEX_OAUTH_TENANT_HOSTS: hostname, AUTH_PUBLIC_ORIGIN: 'https://do-not-use.example.test',
+      NODE_ENV: 'production',
+      JWT_SECRET: 'test-only-secret-with-at-least-32-characters',
+      YANDEX_OAUTH_TENANT_HOSTS: hostname,
+      AUTH_PUBLIC_ORIGIN: 'https://do-not-use.example.test',
     });
     tenant = {
-      id: '7a9da7b8-0824-459a-93a8-a60ad7c17330', slug: 'one', hostname,
-      status: TenantStatus.ACTIVE, readOnly: false, featureFlags: {}, databaseShardId: 'data_1', storageNamespace: 'tenants/one/',
+      id: '7a9da7b8-0824-459a-93a8-a60ad7c17330',
+      slug: 'one',
+      hostname,
+      status: TenantStatus.ACTIVE,
+      readOnly: false,
+      featureFlags: {},
+      databaseShardId: 'data_1',
+      storageNamespace: 'tenants/one/',
     };
     user = Object.assign(new Users(), {
-      id: 42, email: 'existing@example.test', role: ROLES.admin, yandex_id: 'provider-id', deletedAt: null,
+      id: 42,
+      email: 'existing@example.test',
+      role: ROLES.admin,
+      yandex_id: 'provider-id',
+      deletedAt: null,
     });
     membership = Object.assign(new PlatformMembership(), {
-      id: 'membership-id', identityId: 'identity-id', tenantId: tenant.id, localUserId: user.id,
-      role: user.role, status: MembershipStatus.ACTIVE, identityVersion: 1,
+      id: 'membership-id',
+      identityId: 'identity-id',
+      tenantId: tenant.id,
+      localUserId: user.id,
+      role: user.role,
+      status: MembershipStatus.ACTIVE,
+      identityVersion: 1,
     });
     context.isEnabled.mockReturnValue(true);
     context.require.mockImplementation(() => ({ tenant }));
@@ -91,7 +115,10 @@ describe('SaaS Yandex login', () => {
     oauth.fetchUser.mockResolvedValue({ yandexId: user.yandex_id, email: 'untrusted-other-email@example.test' });
     platform.assertMembership.mockResolvedValue(membership);
     platform.sessionClaims.mockImplementation(() => ({
-      tenantId: tenant.id, identityId: membership.identityId, membershipId: membership.id, identityVersion: 1,
+      tenantId: tenant.id,
+      identityId: membership.identityId,
+      membershipId: membership.id,
+      identityVersion: 1,
     }));
     jwt.generateToken.mockReturnValue('tenant-session-token');
     audit.record.mockResolvedValue(undefined);
@@ -129,7 +156,9 @@ describe('SaaS Yandex login', () => {
     const start = response();
     service.startYandexOAuth(start.res, req);
     expect(oauth.buildAuthorizeUrl).toHaveBeenCalledWith(
-      start.cookies[TENANT_YANDEX_OAUTH_STATE_COOKIE], `https://${hostname}/api/auth/yandex/callback`, expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
+      start.cookies[TENANT_YANDEX_OAUTH_STATE_COOKIE],
+      `https://${hostname}/api/auth/yandex/callback`,
+      expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
     );
     for (const name of [TENANT_YANDEX_OAUTH_STATE_COOKIE, TENANT_YANDEX_OAUTH_PKCE_COOKIE]) {
       expect(start.options[name]).toMatchObject({ secure: true, httpOnly: true, sameSite: 'lax', path: '/', maxAge: 600000 });
@@ -156,27 +185,42 @@ describe('SaaS Yandex login', () => {
     expect(users.update).not.toHaveBeenCalled();
     expect(users.save).not.toHaveBeenCalled();
     expect(platform.assertMembership).toHaveBeenCalledWith(tenant.id, user.id);
-    expect(oauth.exchangeCode).toHaveBeenCalledWith('code', `https://${hostname}/api/auth/yandex/callback`, start.cookies[TENANT_YANDEX_OAUTH_PKCE_COOKIE]);
-    expect(jwt.generateToken).toHaveBeenCalledWith(expect.objectContaining({ id: user.id, tenantId: tenant.id, membershipId: membership.id, identityId: membership.identityId }));
+    expect(oauth.exchangeCode).toHaveBeenCalledWith(
+      'code',
+      `https://${hostname}/api/auth/yandex/callback`,
+      start.cookies[TENANT_YANDEX_OAUTH_PKCE_COOKIE],
+    );
+    expect(jwt.generateToken).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: user.id,
+        tenantId: tenant.id,
+        membershipId: membership.id,
+        identityId: membership.identityId,
+      }),
+    );
     expect(finish.cookies.authToken).toBe('tenant-session-token');
     expect(finish.redirects).toEqual(['/']);
     expect(finish.cleared).toEqual(expect.arrayContaining([TENANT_YANDEX_OAUTH_STATE_COOKIE, TENANT_YANDEX_OAUTH_PKCE_COOKIE]));
   });
 
-  it.each(['missing-user', 'archived-user', 'revoked-membership', 'role-mismatch', 'suspended-tenant'])('rejects %s without creating or linking an account', async (failure) => {
-    const start = begin();
-    if (failure === 'missing-user') users.findOneBy.mockResolvedValue(null);
-    if (failure === 'archived-user') user.deletedAt = new Date();
-    if (failure === 'revoked-membership' || failure === 'suspended-tenant') platform.assertMembership.mockRejectedValue(new ForbiddenException());
-    if (failure === 'role-mismatch') membership.role = ROLES.employee;
-    const finish = response();
-    await service.handleYandexCallback(request(start.cookies), finish.res, { code: 'code', state: start.state });
-    expect(finish.cookies.authToken).toBeUndefined();
-    expect(jwt.generateToken).not.toHaveBeenCalled();
-    expect(users.update).not.toHaveBeenCalled();
-    expect(users.save).not.toHaveBeenCalled();
-    expect(finish.redirects[0]).toMatch(/^\/login\?oauth_error=/);
-  });
+  it.each(['missing-user', 'archived-user', 'revoked-membership', 'role-mismatch', 'suspended-tenant'])(
+    'rejects %s without creating or linking an account',
+    async (failure) => {
+      const start = begin();
+      if (failure === 'missing-user') users.findOneBy.mockResolvedValue(null);
+      if (failure === 'archived-user') user.deletedAt = new Date();
+      if (failure === 'revoked-membership' || failure === 'suspended-tenant')
+        platform.assertMembership.mockRejectedValue(new ForbiddenException());
+      if (failure === 'role-mismatch') membership.role = ROLES.employee;
+      const finish = response();
+      await service.handleYandexCallback(request(start.cookies), finish.res, { code: 'code', state: start.state });
+      expect(finish.cookies.authToken).toBeUndefined();
+      expect(jwt.generateToken).not.toHaveBeenCalled();
+      expect(users.update).not.toHaveBeenCalled();
+      expect(users.save).not.toHaveBeenCalled();
+      expect(finish.redirects[0]).toMatch(/^\/login\?oauth_error=/);
+    },
+  );
 
   it('rejects missing, cross-tenant and substituted state before code exchange', async () => {
     const start = begin();
@@ -218,10 +262,16 @@ describe('SaaS Yandex login', () => {
     service.startYandexOAuth(start.res, request(), true);
     expect(start.cookies[YANDEX_OAUTH_LINK_COOKIE]).toBe('1');
     expect(start.cookies[TENANT_YANDEX_OAUTH_PKCE_COOKIE]).toBeUndefined();
-    expect(oauth.buildAuthorizeUrl).toHaveBeenCalledWith(start.cookies[YANDEX_OAUTH_STATE_COOKIE], 'https://do-not-use.example.test/api/auth/yandex/callback');
+    expect(oauth.buildAuthorizeUrl).toHaveBeenCalledWith(
+      start.cookies[YANDEX_OAUTH_STATE_COOKIE],
+      'https://do-not-use.example.test/api/auth/yandex/callback',
+    );
     delete start.cookies[YANDEX_OAUTH_LINK_COOKIE];
     const finish = response();
-    await service.handleYandexCallback(request(start.cookies), finish.res, { code: 'legacy-code', state: start.cookies[YANDEX_OAUTH_STATE_COOKIE] });
+    await service.handleYandexCallback(request(start.cookies), finish.res, {
+      code: 'legacy-code',
+      state: start.cookies[YANDEX_OAUTH_STATE_COOKIE],
+    });
     expect(finish.cookies.authToken).toBe('tenant-session-token');
     expect(oauth.exchangeCode).toHaveBeenCalledWith('legacy-code', 'https://do-not-use.example.test/api/auth/yandex/callback');
     expect(platform.assertMembership).not.toHaveBeenCalled();
