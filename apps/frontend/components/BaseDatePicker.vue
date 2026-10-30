@@ -326,6 +326,7 @@ const checkArrowActivity = (month: number, year: number) => {
   }
 
   &__inline {
+    display: block;
     width: 100%;
     min-width: 0;
     --dp-menu-min-width: 0;
