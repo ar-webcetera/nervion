@@ -11,6 +11,7 @@ export * from "./calendar";
 export * from "./voice";
 export * from "./tenancy";
 export * from "./git";
+export * from "./healthchecks";
 
 export * from "./project-realtime-event.enum";
 export * from "./crm/crm.constants";

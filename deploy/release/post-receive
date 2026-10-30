@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Install outside a writable checkout. This replaces, never chains, a legacy hook.
+set -Eeuo pipefail
+umask 077
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+# The operator installs this private JSON file; it is never sourced as shell code.
+config=/etc/nervion-release/hook.json
+[[ -f "$config" && ! -L "$config" && "$(realpath -e -- "$config")" == "$config" ]] || { printf 'Push received; deployment not configured.\n' >&2; exit 1; }
+mode=$(stat -c %a -- "$config"); owner=$(stat -c %u -- "$config")
+(( (8#$mode & 0077) == 0 )) && [[ "$owner" == "$EUID" || "$owner" == 0 ]] || { printf 'Push received; deployment configuration is not private.\n' >&2; exit 1; }
+jq -e '
+  .schemaVersion == 1 and .branch == "master" and
+  (.project | type == "string" and test("^[a-z][a-z0-9_-]{2,62}$")) and
+  ([.runner,.manifestDirectory,.stateDirectory] | all(type == "string" and startswith("/") and (test("[\\r\\n]") | not)))
+' "$config" >/dev/null || { printf 'Push received; invalid deployment configuration.\n' >&2; exit 1; }
+runner=$(jq -r .runner "$config")
+manifests=$(jq -r .manifestDirectory "$config")
+state=$(jq -r .stateDirectory "$config")
+project=$(jq -r .project "$config")
+[[ -f "$runner" && ! -L "$runner" && "$(realpath -e -- "$runner")" == "$runner" ]] || { printf 'Push received; runner is unavailable.\n' >&2; exit 1; }
+runner_mode=$(stat -c %a -- "$runner"); runner_owner=$(stat -c %u -- "$runner")
+(( (8#$runner_mode & 0022) == 0 )) && [[ "$runner_owner" == "$EUID" || "$runner_owner" == 0 ]] || { printf 'Push received; runner ownership is invalid.\n' >&2; exit 1; }
+[[ -d "$manifests" && ! -L "$manifests" && "$(realpath -e -- "$manifests")" == "$manifests" ]] || { printf 'Push received; manifest directory is unavailable.\n' >&2; exit 1; }
+manifest_mode=$(stat -c %a -- "$manifests"); manifest_owner=$(stat -c %u -- "$manifests")
+(( (8#$manifest_mode & 0077) == 0 )) && [[ "$manifest_owner" == "$EUID" || "$manifest_owner" == 0 ]] || { printf 'Push received; manifest directory is not private.\n' >&2; exit 1; }
+
+failed=0
+while read -r old new ref; do
+  [[ "$ref" == refs/heads/master ]] || continue
+  if [[ ! "$new" =~ ^[0-9a-f]{40}$ || "$new" == 0000000000000000000000000000000000000000 ]]; then
+    printf 'Push received; deletion or invalid commit is not a deployment.\n' >&2
+    failed=1
+    continue
+  fi
+  manifest="$manifests/$new.json"
+  completed=true
+  for action in prepare migrate deploy; do
+    # Synchronous execution makes the deployment result observable to the pusher.
+    # A post-receive failure cannot undo or reject an already accepted Git ref.
+    if ! bash "$runner" "$action" --manifest "$manifest" --state-dir "$state" --project "$project" --expected-commit "$new"; then
+      completed=false
+      failed=1
+      printf 'Commit %s was accepted by Git, but deployment failed at %s. The release is not confirmed.\n' "$new" "$action" >&2
+      break
+    fi
+  done
+  if [[ "$completed" == true ]]; then printf 'Commit %s was deployed and passed health checks.\n' "$new"; fi
+done
+exit "$failed"

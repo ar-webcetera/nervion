@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { definePageMeta } from '#imports';
+import { HEALTHCHECK_MAX_TIMEOUT_SECONDS } from '@tracker/contracts';
 import PlatformDialog from '~/components/Platform/PlatformDialog.vue';
 import { ROLES } from '~/types/user';
 import { useHealthcheckStore, type HealthCheck, type CreateHealthCheckDto } from '~/stores/healthcheckStore';
@@ -28,7 +29,7 @@ const formError = ref('');
 const actionError = ref('');
 const deleteError = ref('');
 const errorSummary = ref<HTMLElement | null>(null);
-const timeoutMax = computed(() => (tenantStore.enabled ? 20 : 60));
+const timeoutMax = HEALTHCHECK_MAX_TIMEOUT_SECONDS;
 const canWrite = computed(
   () => !tenantStore.readOnly && (!tenantStore.enabled || Boolean(tenantStore.tenant)) && tenantStore.canUse('healthchecks'),
 );
@@ -122,8 +123,8 @@ const save = async () => {
     return;
   }
   const timeout = form.value.timeout_seconds ?? 10;
-  if (!Number.isInteger(timeout) || timeout < 1 || timeout > timeoutMax.value) {
-    await showFormError(`Таймаут должен быть целым числом от 1 до ${timeoutMax.value} секунд.`);
+  if (!Number.isInteger(timeout) || timeout < 1 || timeout > timeoutMax) {
+    await showFormError(`Таймаут должен быть целым числом от 1 до ${timeoutMax} секунд.`);
     return;
   }
   const status = form.value.expected_status ?? 200;

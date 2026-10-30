@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsString, IsUrl, IsInt, IsOptional, Min, Max, MaxLength, IsNotEmpty, IsUUID } from 'class-validator';
+import { HEALTHCHECK_MAX_TIMEOUT_SECONDS } from '@tracker/contracts';
 
 export class CreateHealthCheckDto {
   @ApiProperty({ example: 'Procarbon API' })
@@ -19,10 +20,15 @@ export class CreateHealthCheckDto {
   @Max(86400)
   interval_seconds: number;
 
-  @ApiPropertyOptional({ example: 10, description: 'Таймаут запроса в секундах' })
+  @ApiPropertyOptional({
+    example: 10,
+    description: 'Таймаут запроса в секундах',
+    minimum: 1,
+    maximum: HEALTHCHECK_MAX_TIMEOUT_SECONDS,
+  })
   @IsInt()
   @Min(1)
-  @Max(60)
+  @Max(HEALTHCHECK_MAX_TIMEOUT_SECONDS)
   @IsOptional()
   timeout_seconds?: number;
 

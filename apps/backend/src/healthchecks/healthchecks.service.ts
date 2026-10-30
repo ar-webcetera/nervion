@@ -20,6 +20,7 @@ import { TenantJobsService, TenantJob } from '../tenancy/tenant-jobs.service';
 import { parseAllowedHosts, resolvePublicEndpoint, validatePublicEndpoint } from '../common/network/public-endpoint';
 import { ChatMember } from '../chats/entities/chat-member.entity';
 import { Users } from '../users/entities/users.entity';
+import { HEALTHCHECK_MAX_TIMEOUT_SECONDS } from '@tracker/contracts';
 
 @Injectable()
 export class HealthchecksService implements OnModuleInit, OnModuleDestroy {
@@ -68,6 +69,7 @@ export class HealthchecksService implements OnModuleInit, OnModuleDestroy {
 
   async create(dto: CreateHealthCheckDto): Promise<HealthCheck> {
     this.assertTenantAccess(true);
+    this.assertTimeout(dto.timeout_seconds);
     if (this.context.isEnabled()) {
       const { manager, tenant } = this.context.require();
       await manager.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`${tenant.id}:healthchecks`]);
@@ -88,6 +90,7 @@ export class HealthchecksService implements OnModuleInit, OnModuleDestroy {
   async update(id: number, dto: UpdateHealthCheckDto): Promise<HealthCheck> {
     this.assertTenantAccess(true);
     const hc = await this.findOne(id);
+    this.assertTimeout(dto.timeout_seconds ?? hc.timeout_seconds);
     if (this.context.isEnabled()) await this.validateTenantMonitor({ ...hc, ...dto });
     this.stopTimer(id);
 
@@ -169,7 +172,8 @@ export class HealthchecksService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async httpGet(url: string, timeoutSeconds: number): Promise<number> {
-    if (this.context.isEnabled()) return this.publicHttpGet(url, Math.min(timeoutSeconds, 20));
+    timeoutSeconds = Math.min(timeoutSeconds, HEALTHCHECK_MAX_TIMEOUT_SECONDS);
+    if (this.context.isEnabled()) return this.publicHttpGet(url, timeoutSeconds);
     return new Promise((resolve, reject) => {
       const lib = url.startsWith('https') ? https : http;
       const req = lib.request(url, { method: 'GET' }, (res) => {
@@ -193,7 +197,6 @@ export class HealthchecksService implements OnModuleInit, OnModuleDestroy {
 
   private async validateTenantMonitor(dto: CreateHealthCheckDto): Promise<void> {
     validatePublicEndpoint(dto.url, { allowedHosts: parseAllowedHosts(process.env.HEALTHCHECK_ALLOWED_HOSTS) });
-    if ((dto.timeout_seconds ?? 10) > 20) throw new BadRequestException('Максимальный таймаут в облачной версии: 20 секунд');
     const { manager, actorId } = this.context.require();
     const members = manager.getRepository(ChatMember);
     const sender = await manager.getRepository(Users).findOneBy({ id: dto.sender_user_id });
@@ -201,6 +204,12 @@ export class HealthchecksService implements OnModuleInit, OnModuleDestroy {
     const actorMember = actorId ? await members.findOneBy({ chat_id: dto.chat_id, user_id: actorId, left_at: IsNull() }) : null;
     if (!sender || !senderMember || !actorMember) {
       throw new ForbiddenException('Чат и отправитель должны быть доступны в текущем пространстве');
+    }
+  }
+
+  private assertTimeout(timeoutSeconds = 10): void {
+    if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > HEALTHCHECK_MAX_TIMEOUT_SECONDS) {
+      throw new BadRequestException(`Таймаут должен быть целым числом от 1 до ${HEALTHCHECK_MAX_TIMEOUT_SECONDS} секунд`);
     }
   }
 

@@ -1,0 +1,1 @@
+export const HEALTHCHECK_MAX_TIMEOUT_SECONDS = 30;
