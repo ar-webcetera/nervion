@@ -22,6 +22,7 @@ import { UpdateCalendarEventDto } from './dto/update-calendar-event.dto';
 import { CalendarEventEntity } from './entities/calendar-event.entity';
 import { CalendarEventParticipant } from './entities/calendar-event-participant.entity';
 import { CalendarEventReminder } from './entities/calendar-event-reminder.entity';
+import { TenantJobsService } from '../tenancy/tenant-jobs.service';
 
 const REMINDER_POLL_INTERVAL_MS = 30_000;
 const MAX_RANGE_MS = 62 * 24 * 60 * 60 * 1000;
@@ -44,9 +45,17 @@ export class CalendarService implements OnModuleInit, OnModuleDestroy {
     private readonly dataSource: DataSource,
     private readonly notificationsService: NotificationsService,
     private readonly configService: ConfigService,
+    private readonly tenantJobs: TenantJobsService,
   ) {}
 
   onModuleInit(): void {
+    if (this.configService.get<string>('TENANCY_ENABLED') === 'true') {
+      this.tenantJobs.register('calendar.reminders', () => this.processDueReminders());
+      this.tenantJobs.schedule('calendar.reminders', () => this.tenantJobs.enqueue(
+        'calendar.reminders', `calendar.reminders:${Math.floor(Date.now() / REMINDER_POLL_INTERVAL_MS)}`,
+      ));
+      return;
+    }
     void this.processDueReminders();
     this.reminderTimer = setInterval(() => void this.processDueReminders(), REMINDER_POLL_INTERVAL_MS);
     this.reminderTimer.unref();

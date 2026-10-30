@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { definePageMeta } from '#imports';
-import BaseModal from '~/components/BaseModal.vue';
+import PlatformDialog from '~/components/Platform/PlatformDialog.vue';
 import { ROLES } from '~/types/user';
 import { useHealthcheckStore, type HealthCheck, type CreateHealthCheckDto } from '~/stores/healthcheckStore';
 import { useChatStore } from '~/stores/chatStore';
+import { getErrorMessage } from '~/utils/error';
 
 definePageMeta({
   middleware: ['auth', 'role'],
@@ -14,10 +15,25 @@ const { $toast } = useNuxtApp();
 const healthcheckStore = useHealthcheckStore();
 const chatStore = useChatStore();
 const userStore = useUserStore();
+const tenantStore = useTenantStore();
 
-const modal = ref<InstanceType<typeof BaseModal> | null>(null);
+const modalOpen = ref(false);
+const deleteOpen = ref(false);
+const deleteTarget = ref<HealthCheck | null>(null);
 const editingId = ref<number | null>(null);
 const saving = ref(false);
+const deleting = ref(false);
+const pendingIds = ref(new Set<number>());
+const formError = ref('');
+const actionError = ref('');
+const deleteError = ref('');
+const errorSummary = ref<HTMLElement | null>(null);
+const timeoutMax = computed(() => (tenantStore.enabled ? 20 : 60));
+const canWrite = computed(
+  () => !tenantStore.readOnly && (!tenantStore.enabled || Boolean(tenantStore.tenant)) && tenantStore.canUse('healthchecks'),
+);
+const actionPending = computed(() => saving.value || deleting.value || pendingIds.value.size > 0);
+const formId = `healthcheck-${useId()}`;
 
 const defaultForm = (): CreateHealthCheckDto & { is_active?: boolean } => ({
   name: '',
@@ -31,19 +47,31 @@ const defaultForm = (): CreateHealthCheckDto & { is_active?: boolean } => ({
 
 const form = ref(defaultForm());
 
-await useAsyncData('healthchecks-init', async () => {
-  await healthcheckStore.fetchAll();
+const {
+  error: loadError,
+  pending: loading,
+  refresh: reload,
+} = await useAsyncData('healthchecks-init', async () => {
+  await Promise.all([
+    healthcheckStore.fetchAll(),
+    ...(tenantStore.canUse('chat') ? [chatStore.fetchChatList()] : []),
+    userStore.fetchUsers(),
+  ]);
   return true;
 });
 
 const openCreate = () => {
+  if (!canWrite.value || actionPending.value || loadError.value) return;
   editingId.value = null;
+  formError.value = '';
   form.value = defaultForm();
-  modal.value?.open();
+  modalOpen.value = true;
 };
 
 const openEdit = (hc: HealthCheck) => {
+  if (!canWrite.value || actionPending.value || loadError.value) return;
   editingId.value = hc.id;
+  formError.value = '';
   form.value = {
     name: hc.name,
     url: hc.url,
@@ -53,24 +81,54 @@ const openEdit = (hc: HealthCheck) => {
     chat_id: hc.chat_id,
     sender_user_id: hc.sender_user_id,
   };
-  modal.value?.open();
+  modalOpen.value = true;
+};
+
+const showFormError = async (message: string) => {
+  formError.value = message;
+  await nextTick();
+  errorSummary.value?.focus();
 };
 
 const save = async () => {
+  if (saving.value) return;
+  if (!canWrite.value) {
+    await showFormError(
+      tenantStore.readOnly
+        ? 'Пространство доступно только для чтения. Изменения не сохранены.'
+        : 'Управление мониторингом сейчас недоступно. Обновите страницу.',
+    );
+    return;
+  }
+  formError.value = '';
   if (!form.value.name.trim()) {
-    $toast.error('Введите название');
+    await showFormError('Введите название монитора.');
     return;
   }
   if (!form.value.url.trim()) {
-    $toast.error('Введите URL');
+    await showFormError('Введите полный URL для проверки.');
     return;
   }
   if (!form.value.chat_id) {
-    $toast.error('Выберите чат');
+    await showFormError('Выберите чат для уведомлений.');
     return;
   }
   if (!form.value.sender_user_id) {
-    $toast.error('Выберите пользователя-бота');
+    await showFormError('Выберите пользователя, от имени которого будут приходить уведомления.');
+    return;
+  }
+  if (!Number.isInteger(form.value.interval_seconds) || form.value.interval_seconds < 30 || form.value.interval_seconds > 86400) {
+    await showFormError('Интервал проверки должен быть целым числом от 30 до 86400 секунд.');
+    return;
+  }
+  const timeout = form.value.timeout_seconds ?? 10;
+  if (!Number.isInteger(timeout) || timeout < 1 || timeout > timeoutMax.value) {
+    await showFormError(`Таймаут должен быть целым числом от 1 до ${timeoutMax.value} секунд.`);
+    return;
+  }
+  const status = form.value.expected_status ?? 200;
+  if (!Number.isInteger(status) || status < 100 || status > 599) {
+    await showFormError('Укажите ожидаемый HTTP-статус от 100 до 599.');
     return;
   }
 
@@ -83,29 +141,54 @@ const save = async () => {
       await healthcheckStore.create(form.value);
       $toast.success('Монитор создан');
     }
-    modal.value?.close();
-  } catch {
-    $toast.error('Не удалось сохранить');
+    modalOpen.value = false;
+  } catch (error) {
+    await showFormError(getErrorMessage(error));
   } finally {
     saving.value = false;
   }
 };
 
 const handleToggle = async (hc: HealthCheck) => {
+  if (!canWrite.value || actionPending.value) return;
+  pendingIds.value = new Set(pendingIds.value).add(hc.id);
+  actionError.value = '';
   try {
     await healthcheckStore.toggle(hc.id);
-  } catch {
-    $toast.error('Не удалось переключить');
+  } catch (error) {
+    actionError.value = getErrorMessage(error);
+  } finally {
+    const next = new Set(pendingIds.value);
+    next.delete(hc.id);
+    pendingIds.value = next;
   }
 };
 
-const handleDelete = async (hc: HealthCheck) => {
-  if (!confirm(`Удалить монитор "${hc.name}"?`)) return;
+const openDelete = (hc: HealthCheck) => {
+  if (!canWrite.value || actionPending.value) return;
+  deleteTarget.value = hc;
+  deleteError.value = '';
+  deleteOpen.value = true;
+};
+
+const handleDelete = async () => {
+  if (!deleteTarget.value || deleting.value) return;
+  if (!canWrite.value) {
+    deleteError.value = tenantStore.readOnly
+      ? 'Пространство доступно только для чтения. Монитор не удален.'
+      : 'Управление мониторингом сейчас недоступно. Монитор не удален.';
+    return;
+  }
+  deleting.value = true;
+  deleteError.value = '';
   try {
-    await healthcheckStore.remove(hc.id);
+    await healthcheckStore.remove(deleteTarget.value.id);
+    deleteOpen.value = false;
     $toast.trash('Удалено');
-  } catch {
-    $toast.error('Не удалось удалить');
+  } catch (error) {
+    deleteError.value = getErrorMessage(error);
+  } finally {
+    deleting.value = false;
   }
 };
 
@@ -125,15 +208,31 @@ const formatInterval = (s: number) => {
   <div class="hc-page">
     <header class="hc-page__header">
       <h1>Healthcheck-мониторы</h1>
-      <button class="button" @click="openCreate">
+      <button
+        type="button"
+        class="button"
+        :disabled="!canWrite || actionPending || loading || Boolean(loadError)"
+        @click="openCreate"
+      >
         <IconsIconPlus />
         Добавить монитор
       </button>
     </header>
     <hr />
+    <p v-if="tenantStore.readOnly" class="hc-page__notice" role="status">
+      Пространство доступно только для чтения. Настройки мониторинга нельзя менять.
+    </p>
+    <div v-if="loadError" class="hc-page__error" role="alert">
+      <p>{{ getErrorMessage(loadError) }}</p>
+      <button type="button" class="button_secondary" :disabled="loading || actionPending" @click="reload()">
+        Повторить загрузку
+      </button>
+    </div>
+    <p v-if="actionError" class="hc-page__error" role="alert">{{ actionError }}</p>
 
-    <div class="hc-list">
-      <div v-if="!healthcheckStore.items.length" class="hc-list__empty">Мониторов нет. Добавьте первый!</div>
+    <div class="hc-list" :aria-busy="loading">
+      <div v-if="loading" class="hc-list__empty" role="status">Загрузка мониторов...</div>
+      <div v-else-if="!healthcheckStore.items.length && !loadError" class="hc-list__empty">Мониторов пока нет.</div>
 
       <div v-for="hc in healthcheckStore.items" :key="hc.id" class="hc-item">
         <div class="hc-item__left">
@@ -155,88 +254,178 @@ const formatInterval = (s: number) => {
               'hc-item__status_unknown': hc.last_status === 'unknown',
             }"
           >
-            {{ hc.last_status === 'ok' ? 'OK' : hc.last_status === 'fail' ? 'Fail' : '—' }}
+            {{ hc.last_status === 'ok' ? 'Доступен' : hc.last_status === 'fail' ? 'Ошибка' : 'Нет данных' }}
           </span>
           <button
             class="button_secondary hc-item__btn"
+            type="button"
             :class="{ 'hc-item__btn_active': hc.is_active }"
+            :disabled="!canWrite || actionPending"
+            :aria-pressed="hc.is_active"
             @click="handleToggle(hc)"
           >
-            {{ hc.is_active ? 'Активен' : 'Выключен' }}
+            {{ pendingIds.has(hc.id) ? 'Сохранение...' : hc.is_active ? 'Активен' : 'Выключен' }}
           </button>
-          <button class="button_secondary hc-item__btn" @click="openEdit(hc)">Редактировать</button>
-          <button class="button_danger hc-item__btn" @click="handleDelete(hc)">Удалить</button>
+          <button
+            type="button"
+            class="button_secondary hc-item__btn"
+            :disabled="!canWrite || actionPending || Boolean(loadError)"
+            @click="openEdit(hc)"
+          >
+            Редактировать
+          </button>
+          <button type="button" class="button_danger hc-item__btn" :disabled="!canWrite || actionPending" @click="openDelete(hc)">
+            Удалить
+          </button>
         </div>
       </div>
     </div>
 
-    <BaseModal ref="modal" @close="editingId = null">
-      <div class="hc-modal">
-        <header class="hc-modal__header">
-          <div class="hc-modal__icon">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2 12H5L8 5L11 19L14 9L17 14L19 12H22" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </div>
-          <div>
-            <h2 class="hc-modal__title">{{ editingId !== null ? 'Редактировать монитор' : 'Новый монитор' }}</h2>
-            <p class="hc-modal__subtitle">Заполните параметры проверки</p>
-          </div>
-        </header>
-
-        <div class="hc-modal__form">
+    <PlatformDialog
+      v-model="modalOpen"
+      :title="editingId !== null ? 'Редактировать монитор' : 'Новый монитор'"
+      description="Проверка доступности и уведомления в чат"
+      :busy="saving"
+    >
+      <form :id="formId" class="hc-modal" :aria-busy="saving" @submit.prevent="save">
+        <p v-if="tenantStore.readOnly" class="hc-modal__hint" role="status">
+          Пространство перешло в режим только чтения. Изменения недоступны.
+        </p>
+        <p v-if="formError" :id="`${formId}-error`" ref="errorSummary" class="hc-modal__error" role="alert" tabindex="-1">
+          {{ formError }}
+        </p>
+        <fieldset
+          class="hc-modal__form"
+          :disabled="saving || !canWrite"
+          :aria-describedby="formError ? `${formId}-error` : undefined"
+        >
+          <legend class="hc-modal__legend">Параметры монитора</legend>
           <div class="form-group">
-            <label>Название</label>
-            <input v-model="form.name" type="text" placeholder="Procarbon API" />
+            <label :for="`${formId}-name`">Название</label>
+            <input
+              :id="`${formId}-name`"
+              v-model="form.name"
+              name="name"
+              type="text"
+              maxlength="255"
+              required
+              placeholder="Сайт компании"
+              data-autofocus
+            />
           </div>
 
           <div class="form-group">
-            <label>URL для проверки</label>
-            <input v-model="form.url" type="url" placeholder="https://example.com/health" />
+            <label :for="`${formId}-url`">URL для проверки</label>
+            <input
+              :id="`${formId}-url`"
+              v-model="form.url"
+              name="url"
+              type="url"
+              maxlength="1000"
+              required
+              placeholder="https://example.com/health"
+              :aria-describedby="tenantStore.enabled ? `${formId}-url-hint` : undefined"
+            />
+            <p v-if="tenantStore.enabled" :id="`${formId}-url-hint`" class="hc-modal__hint">
+              Домен должен быть разрешен оператором платформы для вашего пространства.
+            </p>
           </div>
 
           <div class="hc-modal__row">
             <div class="form-group">
-              <label>Интервал (сек, мин. 30)</label>
-              <input v-model.number="form.interval_seconds" type="number" min="30" />
+              <label :for="`${formId}-interval`">Интервал, сек.</label>
+              <input
+                :id="`${formId}-interval`"
+                v-model.number="form.interval_seconds"
+                name="interval"
+                type="number"
+                inputmode="numeric"
+                min="30"
+                max="86400"
+                step="1"
+                required
+                :aria-describedby="`${formId}-interval-hint`"
+              />
+              <p :id="`${formId}-interval-hint`" class="hc-modal__hint">От 30 до 86400</p>
             </div>
             <div class="form-group">
-              <label>Таймаут (сек)</label>
-              <input v-model.number="form.timeout_seconds" type="number" min="1" max="60" />
+              <label :for="`${formId}-timeout`">Таймаут, сек.</label>
+              <input
+                :id="`${formId}-timeout`"
+                v-model.number="form.timeout_seconds"
+                name="timeout"
+                type="number"
+                inputmode="numeric"
+                min="1"
+                :max="timeoutMax"
+                step="1"
+                required
+                :aria-describedby="`${formId}-timeout-hint`"
+              />
+              <p :id="`${formId}-timeout-hint`" class="hc-modal__hint">От 1 до {{ timeoutMax }}</p>
             </div>
             <div class="form-group">
-              <label>HTTP-статус</label>
-              <input v-model.number="form.expected_status" type="number" min="100" max="599" />
+              <label :for="`${formId}-status`">HTTP-статус</label>
+              <input
+                :id="`${formId}-status`"
+                v-model.number="form.expected_status"
+                name="expected-status"
+                type="number"
+                inputmode="numeric"
+                min="100"
+                max="599"
+                step="1"
+                required
+              />
             </div>
           </div>
 
           <div class="form-group">
-            <label>Чат для алертов</label>
-            <select v-model="form.chat_id">
+            <label :for="`${formId}-chat`">Чат для уведомлений</label>
+            <select :id="`${formId}-chat`" v-model="form.chat_id" name="chat" required :aria-describedby="`${formId}-chat-hint`">
               <option value="" disabled>Выберите чат...</option>
               <option v-for="c in chatStore.chatList" :key="c.chatId!" :value="c.chatId!">
                 {{ c.chatName }}
               </option>
             </select>
+            <p :id="`${formId}-chat-hint`" class="hc-modal__hint">Отправитель должен состоять в выбранном чате.</p>
           </div>
 
           <div class="form-group">
-            <label>Пользователь-бот (отправитель алертов)</label>
-            <select v-model.number="form.sender_user_id">
+            <label :for="`${formId}-sender`">Отправитель уведомлений</label>
+            <select :id="`${formId}-sender`" v-model.number="form.sender_user_id" name="sender" required>
               <option :value="0" disabled>Выберите пользователя...</option>
               <option v-for="u in userStore.users" :key="u.id" :value="u.id">{{ u.first_name }} {{ u.last_name }}</option>
             </select>
           </div>
-        </div>
+        </fieldset>
+      </form>
+      <template #footer>
+        <button type="button" class="button_secondary" :disabled="saving" @click="modalOpen = false">Отмена</button>
+        <button type="submit" class="button" :form="formId" :disabled="saving || !canWrite">
+          {{ saving ? 'Сохранение...' : editingId !== null ? 'Сохранить' : 'Создать' }}
+        </button>
+      </template>
+    </PlatformDialog>
 
-        <footer class="hc-modal__footer">
-          <button class="button_secondary" @click="modal?.close()">Отменить</button>
-          <button :disabled="saving" @click="save">
-            {{ saving ? 'Сохранение...' : editingId !== null ? 'Сохранить' : 'Создать' }}
-          </button>
-        </footer>
-      </div>
-    </BaseModal>
+    <PlatformDialog v-model="deleteOpen" title="Удалить монитор?" :busy="deleting">
+      <p v-if="tenantStore.readOnly" class="hc-modal__hint" role="status">
+        Пространство доступно только для чтения. Удаление недоступно.
+      </p>
+      <p class="hc-modal__description">
+        Проверки "{{ deleteTarget?.name }}" и уведомления о его доступности прекратятся. Восстановить монитор после удаления
+        нельзя.
+      </p>
+      <p v-if="deleteError" class="hc-modal__error" role="alert">{{ deleteError }}</p>
+      <template #footer>
+        <button type="button" class="button_secondary" :disabled="deleting" data-autofocus @click="deleteOpen = false">
+          Отмена
+        </button>
+        <button type="button" class="button_danger" :disabled="deleting || !canWrite" @click="handleDelete">
+          {{ deleting ? 'Удаление...' : 'Удалить монитор' }}
+        </button>
+      </template>
+    </PlatformDialog>
   </div>
 </template>
 
@@ -259,6 +448,36 @@ const formatInterval = (s: number) => {
     @include flex(rn, between, a-center);
     gap: 16px;
     width: 100%;
+  }
+
+  &__notice,
+  &__error {
+    @extend %text-s-regular;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__notice {
+    color: var(--light-text-backgroung-primary-50);
+  }
+
+  &__error {
+    color: var(--danger-delete);
+
+    p {
+      margin: 0 0 12px;
+    }
+  }
+
+  button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  @media (max-width: $screen-tablet) {
+    &__header {
+      @include flex(cn, a-start);
+    }
   }
 }
 
@@ -292,6 +511,7 @@ const formatInterval = (s: number) => {
   &__name {
     @extend %text-s-medium;
     color: var(--light-text-backgroung-primary);
+    overflow-wrap: anywhere;
   }
 
   &__url {
@@ -312,6 +532,7 @@ const formatInterval = (s: number) => {
     @extend %text-xs-regular;
     color: var(--light-text-backgroung-primary-50);
     margin-top: 2px;
+    font-variant-numeric: tabular-nums;
   }
 
   &__error {
@@ -355,6 +576,7 @@ const formatInterval = (s: number) => {
 
   &__btn {
     white-space: nowrap;
+    min-height: 44px;
 
     &_active {
       background: var(--green-10);
@@ -362,47 +584,65 @@ const formatInterval = (s: number) => {
       border-color: var(--green-25);
     }
   }
+
+  @media (max-width: $screen-desktop-l) {
+    @include flex(cn, a-start);
+
+    &__left {
+      width: 100%;
+    }
+
+    &__right {
+      @include flex(rw, a-center);
+      max-width: 100%;
+    }
+  }
 }
 
 .hc-modal {
-  padding: 0 24px;
   width: 100%;
-
-  &__header {
-    @include flex(rn, a-center);
-    gap: 8px;
-    margin-bottom: 30px;
-  }
-
-  &__icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 8px;
-    background-color: var(--light-text-backgroung-primary-5);
-    @include flex(center);
-    flex-shrink: 0;
-
-    svg {
-      stroke: var(--light-text-backgroung-primary-50);
-    }
-  }
-
-  &__title {
-    @extend %text-l-bold;
-    color: var(--light-text-backgroung-primary);
-    margin: 0;
-  }
-
-  &__subtitle {
-    margin-top: 4px;
-    @extend %text-s-regular;
-    color: var(--light-text-backgroung-primary-50);
-  }
+  min-width: 0;
 
   &__form {
     @include flex(cn);
     gap: 16px;
-    margin-bottom: 30px;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+
+  &__legend {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  &__hint {
+    @extend %text-xs-regular;
+    margin: 0;
+    color: var(--light-text-backgroung-primary-50);
+  }
+
+  &__description {
+    @extend %text-s-regular;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__error {
+    @extend %text-s-regular;
+    margin: 0 0 16px;
+    color: var(--danger-delete);
+    overflow-wrap: anywhere;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 4px;
+    }
   }
 
   &__row {
@@ -411,15 +651,13 @@ const formatInterval = (s: number) => {
 
     .form-group {
       flex: 1;
+      min-width: 0;
     }
   }
 
-  &__footer {
-    @include flex(rn, j-end);
-    gap: 12px;
-
-    button {
-      padding: 10px 32px;
+  @media (max-width: $screen-mobile-l) {
+    &__row {
+      @include flex(cn);
     }
   }
 }
@@ -439,7 +677,7 @@ const formatInterval = (s: number) => {
     background: unset;
     border-radius: 8px;
     padding: 12px;
-    @extend %text-s-medium;
+    @extend %text-m-regular;
     color: var(--light-text-backgroung-primary);
     width: 100%;
     box-sizing: border-box;
@@ -470,12 +708,23 @@ const formatInterval = (s: number) => {
   color: var(--danger-delete);
   border: 1px solid var(--danger-delete-25);
   border-radius: 6px;
-  padding: 4px 10px;
+  min-height: 44px;
+  padding: 8px 12px;
   cursor: pointer;
   @extend %text-xs-medium;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: var(--danger-delete-25);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
 }
 </style>

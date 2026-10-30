@@ -1,4 +1,13 @@
-import { HttpException, HttpStatus, Inject, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   AbortMultipartUploadCommand,
@@ -10,9 +19,12 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  HeadObjectCommandOutput,
   ListObjectsV2Command,
+  ListObjectsV2CommandOutput,
   PutObjectCommand,
   S3Client,
+  S3ServiceException,
   UploadPartCommand,
   UploadPartCopyCommand,
 } from '@aws-sdk/client-s3';
@@ -22,6 +34,7 @@ import { stat } from 'fs/promises';
 import { Readable } from 'stream';
 import { pipeline } from 'stream/promises';
 import { S3_CLIENT } from './storage.constants';
+import { TenantContextService } from '../tenancy/tenant-context.service';
 
 export interface StorageObjectStream {
   body: Readable;
@@ -62,10 +75,71 @@ export class StorageService {
   constructor(
     @Inject(S3_CLIENT) private readonly s3Client: S3Client,
     private readonly configService: ConfigService,
+    @Optional() private readonly tenantContext?: TenantContextService,
   ) {}
 
-  getClient(): S3Client {
-    return this.s3Client;
+  isTenantStorage(): boolean {
+    return this.configService.get<string>('TENANCY_ENABLED') === 'true';
+  }
+
+  private tenantPrefix(): string {
+    if (!this.tenantContext) throw new ForbiddenException('Контекст пространства отсутствует');
+    const { tenant } = this.tenantContext.require();
+    const prefix = `tenants/${tenant.id}/`;
+    if (tenant.storageNamespace !== prefix && tenant.storageNamespace !== prefix.slice(0, -1)) {
+      throw new ForbiddenException('Некорректное хранилище пространства');
+    }
+    return prefix;
+  }
+
+  private objectKey(key: string): string {
+    if (!this.isTenantStorage()) return key;
+    const prefix = this.tenantPrefix();
+    if (key.startsWith('tenants/') && !key.startsWith(prefix)) {
+      throw new ForbiddenException('Файл принадлежит другому пространству');
+    }
+    const relative = key.startsWith(prefix) ? key.slice(prefix.length) : key;
+    if (
+      relative.startsWith('/') ||
+      relative.includes('\\') ||
+      relative.split('/').some((part) => part === '..' || part === '.') ||
+      [...relative].some((character) => character.charCodeAt(0) < 32)
+    ) {
+      throw new ForbiddenException('Некорректный путь файла');
+    }
+    return `${prefix}${relative}`;
+  }
+
+  private logicalKey(key: string): string {
+    if (!this.isTenantStorage()) return key;
+    const prefix = this.tenantPrefix();
+    if (!key.startsWith(prefix)) throw new ForbiddenException('Файл принадлежит другому пространству');
+    return key.slice(prefix.length);
+  }
+
+  private assertWritable(): void {
+    if (this.isTenantStorage() && this.tenantContext?.require().tenant.readOnly) {
+      throw new ForbiddenException('Пространство доступно только для чтения');
+    }
+  }
+
+  async headObject(key: string): Promise<HeadObjectCommandOutput> {
+    return this.s3Client.send(new HeadObjectCommand({ Bucket: this.getBucketId(), Key: this.objectKey(key) }));
+  }
+
+  async listObjects(prefix: string, continuationToken?: string): Promise<ListObjectsV2CommandOutput> {
+    const response = await this.s3Client.send(
+      new ListObjectsV2Command({
+        Bucket: this.getBucketId(),
+        Prefix: this.objectKey(prefix),
+        ContinuationToken: continuationToken,
+      }),
+    );
+    return {
+      ...response,
+      Prefix: prefix,
+      Contents: response.Contents?.map((item) => ({ ...item, Key: item.Key ? this.logicalKey(item.Key) : undefined })),
+    };
   }
 
   getBucketId(): string {
@@ -77,10 +151,11 @@ export class StorageService {
   }
 
   async createMultipartUpload(key: string, contentType: string): Promise<string> {
+    this.assertWritable();
     const result = await this.s3Client.send(
       new CreateMultipartUploadCommand({
         Bucket: this.getBucketId(),
-        Key: key,
+        Key: this.objectKey(key),
         ContentType: contentType,
       }),
     );
@@ -93,10 +168,11 @@ export class StorageService {
   }
 
   async completeMultipartUpload(key: string, uploadId: string, parts: CompletedPart[]): Promise<void> {
+    this.assertWritable();
     await this.s3Client.send(
       new CompleteMultipartUploadCommand({
         Bucket: this.getBucketId(),
-        Key: key,
+        Key: this.objectKey(key),
         UploadId: uploadId,
         MultipartUpload: {
           Parts: parts,
@@ -106,32 +182,36 @@ export class StorageService {
   }
 
   async abortMultipartUpload(key: string, uploadId: string): Promise<void> {
+    this.assertWritable();
     await this.s3Client.send(
       new AbortMultipartUploadCommand({
         Bucket: this.getBucketId(),
-        Key: key,
+        Key: this.objectKey(key),
         UploadId: uploadId,
       }),
     );
   }
 
-  async uploadObject(key: string, body: Buffer, contentType: string): Promise<void> {
+  async uploadObject(key: string, body: Buffer, contentType: string, isPublic = false): Promise<void> {
+    this.assertWritable();
     await this.s3Client.send(
       new PutObjectCommand({
         Bucket: this.getBucketId(),
-        Key: key,
+        Key: this.objectKey(key),
         Body: body,
         ContentType: contentType,
+        ACL: this.isTenantStorage() || !isPublic ? 'private' : 'public-read',
       }),
     );
   }
 
   async uploadFileObject(key: string, filePath: string, contentType: string): Promise<number> {
+    this.assertWritable();
     const fileStats = await stat(filePath);
     await this.s3Client.send(
       new PutObjectCommand({
         Bucket: this.getBucketId(),
-        Key: key,
+        Key: this.objectKey(key),
         Body: createReadStream(filePath),
         ContentLength: fileStats.size,
         ContentType: contentType,
@@ -157,7 +237,7 @@ export class StorageService {
         const result = await this.s3Client.send(
           new UploadPartCommand({
             Bucket: this.getBucketId(),
-            Key: key,
+            Key: this.objectKey(key),
             UploadId: uploadId,
             PartNumber: partNumber,
             Body: createReadStream(filePath, { start, end }),
@@ -203,11 +283,13 @@ export class StorageService {
 
   async deleteObject(key: string | null): Promise<void> {
     if (!key) return;
-    await this.s3Client.send(new DeleteObjectCommand({ Bucket: this.getBucketId(), Key: key }));
+    this.assertWritable();
+    await this.s3Client.send(new DeleteObjectCommand({ Bucket: this.getBucketId(), Key: this.objectKey(key) }));
   }
 
   async deleteObjectsByPrefix(prefix: string | null): Promise<void> {
     if (!prefix) return;
+    this.assertWritable();
 
     const bucket = this.getBucketId();
     let continuationToken: string | undefined;
@@ -215,14 +297,14 @@ export class StorageService {
       const listed = await this.s3Client.send(
         new ListObjectsV2Command({
           Bucket: bucket,
-          Prefix: prefix,
+          Prefix: this.objectKey(prefix),
           ContinuationToken: continuationToken,
         }),
       );
       const objects = (listed.Contents ?? [])
         .map((object) => object.Key)
         .filter((key): key is string => Boolean(key))
-        .map((Key) => ({ Key }));
+        .map((Key) => ({ Key: this.objectKey(Key) }));
 
       if (objects.length > 0) {
         await this.s3Client.send(
@@ -241,6 +323,9 @@ export class StorageService {
   }
 
   async moveObject(sourceKey: string, targetKey: string): Promise<void> {
+    this.assertWritable();
+    this.objectKey(sourceKey);
+    this.objectKey(targetKey);
     if (sourceKey === targetKey) return;
     await this.copyObject(sourceKey, targetKey);
     await this.deleteObject(sourceKey);
@@ -254,11 +339,16 @@ export class StorageService {
       const listed = await this.s3Client.send(
         new ListObjectsV2Command({
           Bucket: bucket,
-          Prefix: prefix,
+          Prefix: this.objectKey(prefix),
           ContinuationToken: continuationToken,
         }),
       );
-      keys.push(...(listed.Contents ?? []).map((object) => object.Key).filter((key): key is string => Boolean(key)));
+      keys.push(
+        ...(listed.Contents ?? [])
+          .map((object) => object.Key)
+          .filter((key): key is string => Boolean(key))
+          .map((key) => this.logicalKey(key)),
+      );
       continuationToken = listed.IsTruncated ? listed.NextContinuationToken : undefined;
     } while (continuationToken);
 
@@ -266,31 +356,38 @@ export class StorageService {
   }
 
   async getObjectStream(key: string, range?: string, options: StorageObjectStreamOptions = {}): Promise<StorageObjectStream> {
-    const maxChunkSize = this.normalizeMaxChunkSize(options.maxChunkSize);
-    if (maxChunkSize) {
-      return this.getChunkedObjectStream(key, range, maxChunkSize);
+    try {
+      const maxChunkSize = this.normalizeMaxChunkSize(options.maxChunkSize);
+      if (maxChunkSize) {
+        return await this.getChunkedObjectStream(key, range, maxChunkSize);
+      }
+
+      const result = await this.s3Client.send(
+        new GetObjectCommand({
+          Bucket: this.getBucketId(),
+          Key: this.objectKey(key),
+          Range: range,
+        }),
+      );
+
+      if (!result.Body || !(result.Body instanceof Readable)) {
+        throw new NotFoundException('Файл не найден');
+      }
+
+      return {
+        body: result.Body,
+        contentType: result.ContentType ?? 'application/octet-stream',
+        contentLength: result.ContentLength ?? 0,
+        contentRange: result.ContentRange ?? null,
+        etag: result.ETag?.replace(/"/g, '') ?? null,
+        lastModified: result.LastModified ?? null,
+      };
+    } catch (error) {
+      if (error instanceof S3ServiceException && error.$metadata.httpStatusCode === HttpStatus.NOT_FOUND) {
+        throw new NotFoundException('Файл не найден');
+      }
+      throw error;
     }
-
-    const result = await this.s3Client.send(
-      new GetObjectCommand({
-        Bucket: this.getBucketId(),
-        Key: key,
-        Range: range,
-      }),
-    );
-
-    if (!result.Body || !(result.Body instanceof Readable)) {
-      throw new NotFoundException('Файл не найден');
-    }
-
-    return {
-      body: result.Body,
-      contentType: result.ContentType ?? 'application/octet-stream',
-      contentLength: result.ContentLength ?? 0,
-      contentRange: result.ContentRange ?? null,
-      etag: result.ETag?.replace(/"/g, '') ?? null,
-      lastModified: result.LastModified ?? null,
-    };
   }
 
   private async getChunkedObjectStream(
@@ -299,7 +396,7 @@ export class StorageService {
     maxChunkSize: number,
   ): Promise<StorageObjectStream> {
     const bucket = this.getBucketId();
-    const head = await this.s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    const head = await this.s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: this.objectKey(key) }));
     const totalLength = head.ContentLength;
     if (totalLength === undefined) {
       throw new InternalServerErrorException('S3 не вернул размер файла');
@@ -313,7 +410,7 @@ export class StorageService {
     const result = await this.s3Client.send(
       new GetObjectCommand({
         Bucket: bucket,
-        Key: key,
+        Key: this.objectKey(key),
         Range: resolvedRange.requestRange,
       }),
     );
@@ -398,8 +495,9 @@ export class StorageService {
   }
 
   async objectExists(key: string): Promise<boolean> {
+    const objectKey = this.objectKey(key);
     try {
-      await this.s3Client.send(new HeadObjectCommand({ Bucket: this.getBucketId(), Key: key }));
+      await this.s3Client.send(new HeadObjectCommand({ Bucket: this.getBucketId(), Key: objectKey }));
       return true;
     } catch {
       return false;
@@ -407,6 +505,7 @@ export class StorageService {
   }
 
   createUploadPartUrl(key: string, uploadId: string, partNumber: number, expiresSeconds = 900): StoragePresignedUrl {
+    this.assertWritable();
     return this.createPresignedS3Url({
       method: 'PUT',
       key,
@@ -428,8 +527,9 @@ export class StorageService {
   }
 
   private async copyObject(sourceKey: string, targetKey: string): Promise<void> {
+    this.assertWritable();
     const bucket = this.getBucketId();
-    const source = await this.s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: sourceKey }));
+    const source = await this.s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: this.objectKey(sourceKey) }));
     const contentLength = source.ContentLength;
     if (contentLength === undefined) {
       throw new InternalServerErrorException('S3 не вернул размер копируемого объекта');
@@ -439,7 +539,7 @@ export class StorageService {
       await this.s3Client.send(
         new CopyObjectCommand({
           Bucket: bucket,
-          Key: targetKey,
+          Key: this.objectKey(targetKey),
           CopySource: this.buildCopySource(sourceKey),
           MetadataDirective: 'COPY',
         }),
@@ -457,7 +557,7 @@ export class StorageService {
         const result = await this.s3Client.send(
           new UploadPartCopyCommand({
             Bucket: bucket,
-            Key: targetKey,
+            Key: this.objectKey(targetKey),
             UploadId: uploadId,
             PartNumber: partNumber,
             CopySource: this.buildCopySource(sourceKey),
@@ -497,7 +597,7 @@ export class StorageService {
     const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
     const signedHeaders = 'host';
     const bucket = this.getBucketId();
-    const canonicalUri = this.buildCanonicalUri(endpoint.pathname, bucket, params.key);
+    const canonicalUri = this.buildCanonicalUri(endpoint.pathname, bucket, this.objectKey(params.key));
     const expiresAt = new Date(now.getTime() + params.expiresSeconds * 1000);
 
     const query: Record<string, string> = {
@@ -540,7 +640,7 @@ export class StorageService {
   }
 
   private buildCopySource(key: string): string {
-    const encodedKey = key
+    const encodedKey = this.objectKey(key)
       .split('/')
       .map((segment) => this.rfc3986Encode(segment))
       .join('/');

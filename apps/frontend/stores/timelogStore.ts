@@ -3,16 +3,17 @@ import { ref } from 'vue';
 import type { Timelog } from '~/types/task';
 
 export const useTimelogStore = defineStore('timelog', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const totalTimeSpent = ref<string | null>(null);
   const timelogs = ref<Timelog[]>([]);
   const currentTimelogs = ref<Timelog[]>([]);
 
   const createTimelog = async (params: Partial<Timelog>) => {
-    const ev = await $fetch<Timelog>(`/api/timelogs/`, {
+    const ev = await tenantFetch<Timelog>(`/api/timelogs/`, {
       method: 'POST',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body: params,
     });
     return ev;
@@ -28,9 +29,9 @@ export const useTimelogStore = defineStore('timelog', () => {
   };
 
   const findTimelogsByTask = async (task_id: number) => {
-    const response = await $fetch<{ totalTimeSpent: string; timelogs: Timelog[] }>(`/api/timelogs/tasks/${task_id}/`, {
+    const response = await tenantFetch<{ totalTimeSpent: string; timelogs: Timelog[] }>(`/api/timelogs/tasks/${task_id}/`, {
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
     });
     if (response.totalTimeSpent) {
       totalTimeSpent.value = response.totalTimeSpent;
@@ -40,19 +41,19 @@ export const useTimelogStore = defineStore('timelog', () => {
   };
 
   const findByFilter = async (params: Partial<Timelog>) => {
-    const response = await $fetch<Timelog[]>(`/api/timelogs/`, {
+    const response = await tenantFetch<Timelog[]>(`/api/timelogs/`, {
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       params,
     });
     return response;
   };
 
   const deleteTimelog = async (id: number) => {
-    await $fetch<Timelog>(`/api/timelogs/${id}`, {
+    await tenantFetch<Timelog>(`/api/timelogs/${id}`, {
       method: 'DELETE',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
     });
   };
   const updateTimelog = async (
@@ -65,10 +66,10 @@ export const useTimelogStore = defineStore('timelog', () => {
     if (task_id !== undefined) body.task_id = task_id;
     if (title !== undefined) body.title = title;
 
-    const ev = await $fetch<Timelog>(`/api/timelogs/${id}`, {
+    const ev = await tenantFetch<Timelog>(`/api/timelogs/${id}`, {
       method: 'PATCH',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body,
     });
     return ev;

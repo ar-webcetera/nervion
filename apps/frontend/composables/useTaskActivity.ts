@@ -2,7 +2,7 @@ import type { TaskActivityItem } from '@tracker/contracts';
 
 export const useTaskActivity = (taskId: Ref<number | null | undefined>) => {
   const baseURL = useApiBaseUrl();
-  const headers = useRequestHeaders(['cookie']);
+  const headers = useApiRequestHeaders();
   const state = useAsyncData(
     `task-activity-${useId()}`,
     () =>

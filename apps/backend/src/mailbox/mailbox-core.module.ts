@@ -17,6 +17,9 @@ import { PostboxService } from './postbox.service';
 import { SmtpServerService } from './smtp/smtp-server.service';
 import { Notifications } from '../notifications/entities/notification.entity';
 import { Users } from '../users/entities/users.entity';
+import { TenantMailConfigService } from './tenant-mail-config.service';
+import { MailOutboxService } from './mail-outbox.service';
+import { MailOutbox } from './entities/mail-outbox.entity';
 
 @Module({
   imports: [
@@ -32,6 +35,7 @@ import { Users } from '../users/entities/users.entity';
       MailSpamRules,
       Notifications,
       Users,
+      MailOutbox,
     ]),
   ],
   providers: [
@@ -41,7 +45,9 @@ import { Users } from '../users/entities/users.entity';
     MailSpamService,
     PostboxService,
     SmtpServerService,
+    TenantMailConfigService,
+    MailOutboxService,
   ],
-  exports: [MailboxService, MailDeliveryService, PostboxService, SmtpServerService],
+  exports: [MailboxService, MailDeliveryService, PostboxService, SmtpServerService, TenantMailConfigService],
 })
 export class MailboxCoreModule {}

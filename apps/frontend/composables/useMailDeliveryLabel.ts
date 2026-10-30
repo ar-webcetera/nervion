@@ -1,4 +1,5 @@
 import { MailDeliveryStatus } from '@tracker/contracts';
+import type { MailMessageStatus } from '~/types/mail';
 
 export type MailDeliveryTone = 'neutral' | 'ok' | 'warn' | 'danger' | 'accent';
 
@@ -9,11 +10,14 @@ export interface MailDeliveryLabel {
 }
 
 export const resolveMailDeliveryLabel = (input: {
-  status?: 'received' | 'sent' | 'failed' | 'draft' | null;
+  status?: MailMessageStatus | null;
   delivery_status?: MailDeliveryStatus | null;
   open_count?: number | null;
   click_count?: number | null;
 }): MailDeliveryLabel | null => {
+  if (input.status === 'queued') return { text: 'в очереди', tone: 'neutral', title: 'Письмо сохранено и ожидает отправки' };
+  if (input.status === 'sending') return { text: 'отправляется', tone: 'neutral', title: 'Ожидаем ответ почтового сервиса' };
+  if (input.status === 'uncertain') return { text: 'статус уточняется', tone: 'warn', title: 'Сервис мог принять письмо. Повторная отправка заблокирована до проверки событий доставки оператором' };
   if (input.status === 'failed') {
     return { text: 'не отправлено', tone: 'danger', title: 'Postbox не принял письмо' };
   }

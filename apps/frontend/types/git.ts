@@ -1,10 +1,6 @@
-export interface GitRepo {
-  id: number;
-  projectId: number | null;
-  name: string;
-  defaultBranch: string;
-  cloneUrl: string | null;
-}
+import type { GitRepoListItem } from '@tracker/contracts';
+
+export type GitRepo = GitRepoListItem;
 
 export interface GitBranch {
   name: string;

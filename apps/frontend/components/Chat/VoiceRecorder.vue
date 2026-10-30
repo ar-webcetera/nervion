@@ -82,7 +82,7 @@ const stopAndSend = async () => {
   formData.append('prefix', props.prefix);
 
   const response = await filesStore.addFile(formData);
-  const src = buildAwsObjectUrl(response.Key, AWS_ENDPOINT) ?? response.Key;
+  const src = buildAwsObjectUrl(response.Key, AWS_ENDPOINT, String(config.public.tenancyEnabled) === 'true') ?? response.Key;
   emit('send', src, duration);
 };
 

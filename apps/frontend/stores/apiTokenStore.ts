@@ -9,22 +9,23 @@ export interface ApiToken {
 }
 
 export const useApiTokenStore = defineStore('apiToken', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const tokens = ref<ApiToken[]>([]);
   const newToken = ref<string | null>(null);
 
   const fetchTokens = async () => {
-    tokens.value = await $fetch<ApiToken[]>('/api/api-tokens', {
+    tokens.value = await tenantFetch<ApiToken[]>('/api/api-tokens', {
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
     });
   };
 
   const createToken = async (name: string) => {
-    const res = await $fetch<{ token: string; record: ApiToken }>('/api/api-tokens', {
+    const res = await tenantFetch<{ token: string; record: ApiToken }>('/api/api-tokens', {
       method: 'POST',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body: { name },
     });
     newToken.value = res.token;
@@ -32,10 +33,10 @@ export const useApiTokenStore = defineStore('apiToken', () => {
   };
 
   const deleteToken = async (id: number) => {
-    await $fetch(`/api/api-tokens/${id}`, {
+    await tenantFetch(`/api/api-tokens/${id}`, {
       method: 'DELETE',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
     });
     tokens.value = tokens.value.filter((t) => t.id !== id);
   };

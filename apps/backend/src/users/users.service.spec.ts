@@ -8,6 +8,9 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { PlatformService } from '../platform/platform.service';
+import { TenantContextService } from '../tenancy/tenant-context.service';
+import { TenantJobsService } from '../tenancy/tenant-jobs.service';
 
 type QueryBuilderMock = {
   select: jest.Mock<QueryBuilderMock>;
@@ -17,6 +20,8 @@ type QueryBuilderMock = {
   distinct: jest.Mock<QueryBuilderMock>;
   getRawMany: jest.Mock<Promise<Array<{ project_id: number }>>, []>;
   getMany: jest.Mock<Promise<Users[]>>;
+  withDeleted: jest.Mock<QueryBuilderMock>;
+  getOne: jest.Mock<Promise<Users | null>>;
 };
 
 const createQueryBuilderMock = (): QueryBuilderMock => {
@@ -28,6 +33,8 @@ const createQueryBuilderMock = (): QueryBuilderMock => {
   qb.distinct = jest.fn(() => qb);
   qb.getRawMany = jest.fn<Promise<Array<{ project_id: number }>>, []>().mockResolvedValue([]);
   qb.getMany = jest.fn<Promise<Users[]>, []>().mockResolvedValue([]);
+  qb.withDeleted = jest.fn(() => qb);
+  qb.getOne = jest.fn<Promise<Users | null>, []>().mockResolvedValue(null);
   return qb;
 };
 
@@ -87,6 +94,18 @@ describe('UsersService', () => {
   const mockAuditLogsService = {
     record: jest.fn(),
   };
+  const execution = {
+    tenant: { id: 'tenant' },
+    afterCommit: [] as Array<() => Promise<void>>,
+    afterRollback: [] as Array<() => Promise<void>>,
+  };
+  const mockTenantContext = { isEnabled: jest.fn(() => false), require: jest.fn(() => execution) };
+  const mockPlatform = {
+    reserveMembership: jest.fn(),
+    activateReservation: jest.fn(),
+    releaseReservation: jest.fn(),
+  };
+  const mockJobs = { enqueue: jest.fn() };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -95,11 +114,18 @@ describe('UsersService', () => {
         { provide: getRepositoryToken(Users), useValue: mockUserRepository },
         { provide: AuthService, useValue: mockAuthService },
         { provide: AuditLogsService, useValue: mockAuditLogsService },
+        { provide: PlatformService, useValue: mockPlatform },
+        { provide: TenantContextService, useValue: mockTenantContext },
+        { provide: TenantJobsService, useValue: mockJobs },
       ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);
     jest.clearAllMocks();
+    mockTenantContext.isEnabled.mockReturnValue(false);
+    execution.afterCommit = [];
+    execution.afterRollback = [];
+    qb.getOne.mockResolvedValue(null);
     mockUserRepository.save.mockResolvedValue({ ...mockUser, hashed_password: 'hashed' });
     mockUserRepository.findOne.mockResolvedValue(mockUser);
     mockUserRepository.find.mockResolvedValue([mockUser]);
@@ -107,6 +133,33 @@ describe('UsersService', () => {
     mockUserRepository.restore.mockResolvedValue({ affected: 1 });
     qb.getRawMany.mockResolvedValue([]);
     qb.getMany.mockResolvedValue([mockUser]);
+  });
+
+  it('reserves a seat before creating a tenant user and activates membership only after data commit', async () => {
+    mockTenantContext.isEnabled.mockReturnValue(true);
+    const reservation = { membership: { id: 'membership' }, createdIdentity: false, previousStatus: null };
+    mockPlatform.reserveMembership.mockResolvedValue(reservation);
+    const result = await service.createUser({
+      email: 'ivan@test.com',
+      first_name: 'Иван',
+      last_name: 'Иванов',
+      patronymic: '',
+      role: ROLES.employee,
+      password: 'requested-password',
+    });
+    expect(mockPlatform.reserveMembership).toHaveBeenCalledWith('tenant', 'ivan@test.com', 'hashed_password', ROLES.employee);
+    expect(mockPlatform.activateReservation).not.toHaveBeenCalled();
+    expect(mockJobs.enqueue).toHaveBeenCalledWith('membership-sync', expect.stringMatching(/^membership:1:/), {
+      userId: 1,
+      membershipId: 'membership',
+    });
+    expect(result.password).toBeUndefined();
+    expect(result).not.toHaveProperty('hashed_password');
+    expect(execution.afterCommit).toHaveLength(1);
+    await execution.afterCommit[0]();
+    expect(mockPlatform.activateReservation).toHaveBeenCalledWith('membership', 1);
+    await execution.afterRollback[0]();
+    expect(mockPlatform.releaseReservation).toHaveBeenCalledWith(reservation);
   });
 
   describe('archiveUser', () => {

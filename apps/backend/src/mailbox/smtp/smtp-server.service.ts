@@ -1,4 +1,5 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
+import { readFileSync } from 'node:fs';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { authenticate } from 'mailauth';
@@ -9,6 +10,9 @@ import { StorageService } from '../../storage/storage.service';
 import { MailboxService } from '../mailbox.service';
 import { InboundMailData } from '../mailbox.types';
 import { parseTaskIdFromAddress, normalizeMessageId } from '../mailbox.utils';
+import { TenantMailConfigService } from '../tenant-mail-config.service';
+import { TenantDatabaseService } from '../../tenancy/tenant-database.service';
+import { MailAccounts } from '../entities/mail-account.entity';
 
 const DEFAULT_SMTP_PORT = 25;
 const MAX_MESSAGE_SIZE = 26214400; // 25 MB
@@ -32,6 +36,8 @@ export class SmtpServerService {
     private readonly configService: ConfigService,
     private readonly mailboxService: MailboxService,
     private readonly storageService: StorageService,
+    private readonly tenantMail: TenantMailConfigService,
+    private readonly database: TenantDatabaseService,
   ) {}
 
   private get domain(): string {
@@ -40,9 +46,18 @@ export class SmtpServerService {
 
   listen(): void {
     const port = Number(this.configService.get<string>('SMTP_PORT')) || DEFAULT_SMTP_PORT;
+    const certPath = this.configService.get<string>('SMTP_TLS_CERT_FILE');
+    const keyPath = this.configService.get<string>('SMTP_TLS_KEY_FILE');
+    if (Boolean(certPath) !== Boolean(keyPath)) throw new Error('SMTP TLS certificate and private key must be configured together');
+    if (this.tenantMail.isEnabled() && this.configService.get<string>('NODE_ENV') === 'production' && (!certPath || !keyPath)) {
+      throw new Error('Production SaaS SMTP requires SMTP_TLS_CERT_FILE and SMTP_TLS_KEY_FILE');
+    }
 
     this.server = new SMTPServer({
       banner: 'Tracker Mail',
+      ...(certPath && keyPath ? { cert: readFileSync(certPath), key: readFileSync(keyPath) } : {}),
+      maxClients: 20,
+      socketTimeout: 60_000,
       disabledCommands: ['AUTH'],
       authOptional: true,
       size: MAX_MESSAGE_SIZE,
@@ -89,15 +104,26 @@ export class SmtpServerService {
     });
   }
 
-  private validateRecipient(address: SMTPServerAddress): Promise<boolean> {
-    return Promise.resolve(address.address.toLowerCase().endsWith(`@${this.domain}`));
+  private async validateRecipient(address: SMTPServerAddress): Promise<boolean> {
+    if (!this.tenantMail.isEnabled()) return address.address.toLowerCase().endsWith(`@${this.domain}`);
+    const tenant = await this.tenantMail.resolveRecipient(address.address);
+    if (!tenant) return false;
+    return this.database.run(tenant, async () => Boolean(await this.accountForRecipient(address.address)), { readOnly: true });
+  }
+
+  private async accountForRecipient(recipient: string): Promise<MailAccounts | null> {
+    return parseTaskIdFromAddress(recipient) !== null ? this.mailboxService.findTaskAliasAccount() : this.mailboxService.findAccountByAddress(recipient);
   }
 
   private async handleMessage(stream: SMTPServerDataStream, session: SMTPServerSession): Promise<void> {
     const chunks: Buffer[] = [];
+    let bytes = 0;
 
     for await (const chunk of stream) {
-      chunks.push(chunk as Buffer);
+      const buffer = chunk as Buffer;
+      bytes += buffer.length;
+      if (bytes > MAX_MESSAGE_SIZE) throw new Error('Message size exceeded');
+      chunks.push(buffer);
     }
 
     if (stream.sizeExceeded) {
@@ -108,14 +134,15 @@ export class SmtpServerService {
     const authResults = await this.authenticateMessage(raw, session);
     const parsed = await simpleParser(raw);
 
-    const rawS3Key = await this.uploadRaw(raw);
+    const rawS3Key = this.tenantMail.isEnabled() ? null : await this.uploadRaw(raw);
     const notificationHeader = parsed.headers.get('x-nervion-notification-id');
     const notificationId =
       typeof notificationHeader === 'string' && /^\d+$/.test(notificationHeader.trim()) ? Number(notificationHeader) : null;
 
     const data: InboundMailData = {
       messageId: normalizeMessageId(parsed.messageId),
-      notificationId,
+      // A public MIME header is not proof of a trusted internal notification.
+      notificationId: this.tenantMail.isEnabled() ? null : notificationId,
       inReplyTo: normalizeMessageId(parsed.inReplyTo),
       referencesHeader: Array.isArray(parsed.references) ? parsed.references.join(' ') : (parsed.references ?? null),
       from: flattenAddresses(parsed.from)[0] ?? {
@@ -139,20 +166,38 @@ export class SmtpServerService {
     };
 
     const envelopeRecipients = session.envelope.rcptTo.map((rcpt) => rcpt.address.toLowerCase());
-    const targetAccountIds = new Set<number>();
+    const targetAccountIds = new Set<string>();
 
     for (const recipient of envelopeRecipients) {
+      if (this.tenantMail.isEnabled()) {
+        const tenant = await this.tenantMail.resolveRecipient(recipient);
+        if (!tenant) throw new Error('Tenant recipient is unavailable');
+        await this.database.run(tenant, async () => {
+          const account = await this.accountForRecipient(recipient);
+          if (!account) throw new Error('Mailbox is unavailable');
+          const key = `${tenant.id}:${account.id}`;
+          if (targetAccountIds.has(key)) return;
+          targetAccountIds.add(key);
+          await this.mailboxService.ingestInbound(account, {
+            ...data,
+            messageId: data.messageId || `${createHash('sha256').update(raw).digest('hex')}@smtp.nervion.local`,
+            rawS3Key: await this.uploadRaw(raw),
+            to: data.to.some((item) => item.address === recipient) ? data.to : [...data.to, { address: recipient }],
+          });
+        });
+        continue;
+      }
       const account =
         parseTaskIdFromAddress(recipient) !== null
           ? ((await this.mailboxService.findTaskAliasAccount()) ??
             (await this.mailboxService.findOrCreateInboundAccount(recipient)))
           : await this.mailboxService.findOrCreateInboundAccount(recipient);
 
-      if (targetAccountIds.has(account.id)) {
+      if (targetAccountIds.has(String(account.id))) {
         continue;
       }
 
-      targetAccountIds.add(account.id);
+      targetAccountIds.add(String(account.id));
 
       const dataForAccount: InboundMailData =
         data.to.some((item) => item.address === recipient) || data.cc.some((item) => item.address === recipient)
@@ -162,7 +207,7 @@ export class SmtpServerService {
       await this.mailboxService.ingestInbound(account, dataForAccount);
     }
 
-    this.logger.log(`Принято письмо от ${data.from.address} для ${envelopeRecipients.join(', ')} (${targetAccountIds.size} ящ.)`);
+    this.logger.log(`Принято письмо (${targetAccountIds.size} ящиков)`);
   }
 
   private async authenticateMessage(raw: Buffer, session: SMTPServerSession): Promise<MailAuthResults | null> {
@@ -189,13 +234,15 @@ export class SmtpServerService {
     try {
       const now = new Date();
       const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-      const key = `mailbox/raw/${month}/${randomUUID()}.eml`;
+      const id = this.tenantMail.isEnabled() ? createHash('sha256').update(raw).digest('hex') : randomUUID();
+      const key = `mailbox/raw/${month}/${id}.eml`;
 
       await this.storageService.uploadObject(key, raw, 'message/rfc822');
 
       return key;
     } catch (error) {
-      this.logger.error(`Не удалось сохранить raw-письмо в S3: ${error}`);
+      this.logger.error('Не удалось сохранить raw-письмо в S3');
+      if (this.tenantMail.isEnabled()) throw new Error('Incoming mail storage unavailable');
       return null;
     }
   }

@@ -47,9 +47,10 @@ const decrementUnreadCounts = (counts: MailUnreadCounts, folder: MailSystemFolde
 };
 
 export const useMailStore = defineStore('mail', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const apiBaseUrl = useApiBaseUrl();
-  const requestHeaders = useRequestHeaders(['cookie']);
+  const requestHeaders = useApiRequestHeaders();
 
   const accounts = ref<MailAccount[]>([]);
   const manageAccounts = ref<MailAccount[]>([]);
@@ -74,19 +75,19 @@ export const useMailStore = defineStore('mail', () => {
   });
 
   const fetchAccounts = async () => {
-    accounts.value = await $fetch<MailAccount[]>('/api/mailbox/accounts', requestOptions());
+    accounts.value = await tenantFetch<MailAccount[]>('/api/mailbox/accounts', requestOptions());
     return accounts.value;
   };
 
   const selectAccount = async (accountId: number) => {
-    return $fetch<{ selected_mail_account_id: number }>(`/api/mailbox/selected-account/${accountId}`, {
+    return tenantFetch<{ selected_mail_account_id: number }>(`/api/mailbox/selected-account/${accountId}`, {
       ...requestOptions(),
       method: 'PATCH',
     });
   };
 
   const fetchManageAccounts = async () => {
-    manageAccounts.value = await $fetch<MailAccount[]>('/api/mailbox/accounts/manage', requestOptions());
+    manageAccounts.value = await tenantFetch<MailAccount[]>('/api/mailbox/accounts/manage', requestOptions());
     return manageAccounts.value;
   };
 
@@ -105,7 +106,7 @@ export const useMailStore = defineStore('mail', () => {
       pendingThreads.value = true;
     }
     try {
-      const response = await $fetch<ThreadsResponse>('/api/mailbox/threads', {
+      const response = await tenantFetch<ThreadsResponse>('/api/mailbox/threads', {
         ...requestOptions(),
         query: {
           folder: params.folder || undefined,
@@ -136,7 +137,7 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const fetchFolders = async (accountId: number) => {
-    folders.value = await $fetch<MailFolder[]>('/api/mailbox/folders', {
+    folders.value = await tenantFetch<MailFolder[]>('/api/mailbox/folders', {
       ...requestOptions(),
       query: { account_id: accountId },
     });
@@ -144,7 +145,7 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const createFolder = async (accountId: number, name: string) => {
-    const folder = await $fetch<MailFolder>('/api/mailbox/folders', {
+    const folder = await tenantFetch<MailFolder>('/api/mailbox/folders', {
       ...requestOptions(),
       method: 'POST',
       body: { account_id: accountId, name },
@@ -154,7 +155,7 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const renameFolder = async (folderId: number, name: string) => {
-    const folder = await $fetch<MailFolder>(`/api/mailbox/folders/${folderId}`, {
+    const folder = await tenantFetch<MailFolder>(`/api/mailbox/folders/${folderId}`, {
       ...requestOptions(),
       method: 'PATCH',
       body: { name },
@@ -166,14 +167,14 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const deleteFolder = async (folderId: number) => {
-    await $fetch(`/api/mailbox/folders/${folderId}`, { ...requestOptions(), method: 'DELETE' });
+    await tenantFetch(`/api/mailbox/folders/${folderId}`, { ...requestOptions(), method: 'DELETE' });
     folders.value = folders.value.filter((item) => item.id !== folderId);
   };
 
   type FolderTarget = { system_folder: MailSystemFolder } | { custom_folder_id: number };
 
   const moveThreadToFolder = async (threadId: number, target: FolderTarget, accountId: number) => {
-    await $fetch(`/api/mailbox/threads/${threadId}/folder`, {
+    await tenantFetch(`/api/mailbox/threads/${threadId}/folder`, {
       ...requestOptions(),
       method: 'PATCH',
       body: target,
@@ -184,7 +185,7 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const markThreadSpam = async (threadId: number, scope: MailSpamRuleScope, accountId: number) => {
-    await $fetch(`/api/mailbox/threads/${threadId}/spam`, {
+    await tenantFetch(`/api/mailbox/threads/${threadId}/spam`, {
       ...requestOptions(),
       method: 'POST',
       body: { scope },
@@ -195,21 +196,21 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const markThreadNotSpam = async (threadId: number, accountId: number) => {
-    await $fetch(`/api/mailbox/threads/${threadId}/not-spam`, { ...requestOptions(), method: 'POST' });
+    await tenantFetch(`/api/mailbox/threads/${threadId}/not-spam`, { ...requestOptions(), method: 'POST' });
     threads.value = threads.value.filter((item) => item.id !== threadId);
     threadsTotal.value = Math.max(0, threadsTotal.value - 1);
     await fetchAccountUnreadCount(accountId);
   };
 
   const deleteThread = async (threadId: number, accountId: number) => {
-    await $fetch(`/api/mailbox/threads/${threadId}`, { ...requestOptions(), method: 'DELETE' });
+    await tenantFetch(`/api/mailbox/threads/${threadId}`, { ...requestOptions(), method: 'DELETE' });
     threads.value = threads.value.filter((item) => item.id !== threadId);
     threadsTotal.value = Math.max(0, threadsTotal.value - 1);
     await fetchAccountUnreadCount(accountId);
   };
 
   const deleteMessage = async (messageId: number, accountId: number) => {
-    await $fetch(`/api/mailbox/messages/${messageId}`, { ...requestOptions(), method: 'DELETE' });
+    await tenantFetch(`/api/mailbox/messages/${messageId}`, { ...requestOptions(), method: 'DELETE' });
     messages.value = messages.value.filter((item) => item.id !== messageId);
     await fetchAccountUnreadCount(accountId);
   };
@@ -224,15 +225,15 @@ export const useMailStore = defineStore('mail', () => {
     draft_id?: number;
     attachments?: MailAttachmentDescriptor[];
   }) => {
-    return $fetch<MailMessage>('/api/mailbox/drafts', { ...requestOptions(), method: 'POST', body: payload });
+    return tenantFetch<MailMessage>('/api/mailbox/drafts', { ...requestOptions(), method: 'POST', body: payload });
   };
 
   const sendDraft = async (draftId: number) => {
-    return $fetch<MailMessage>(`/api/mailbox/drafts/${draftId}/send`, { ...requestOptions(), method: 'POST' });
+    return tenantFetch<MailMessage>(`/api/mailbox/drafts/${draftId}/send`, { ...requestOptions(), method: 'POST' });
   };
 
   const fetchContacts = async () => {
-    const response = await $fetch<{ contacts: string[] }>('/api/mailbox/contacts', requestOptions());
+    const response = await tenantFetch<{ contacts: string[] }>('/api/mailbox/contacts', requestOptions());
     contacts.value = response.contacts;
     return response.contacts;
   };
@@ -240,8 +241,8 @@ export const useMailStore = defineStore('mail', () => {
   const uploadAttachment = async (file: File) => {
     const formData = new FormData();
     formData.append('file', file);
-    return $fetch<MailAttachmentDescriptor>('/api/mailbox/attachments', {
-      baseURL: config.public.API_URL as string,
+    return tenantFetch<MailAttachmentDescriptor>('/api/mailbox/attachments', {
+      baseURL: tenantApiBaseUrl as string,
       credentials: 'include',
       method: 'POST',
       body: formData,
@@ -251,7 +252,7 @@ export const useMailStore = defineStore('mail', () => {
   const fetchThread = async (threadId: number) => {
     pendingMessages.value = true;
     try {
-      const response = await $fetch<ThreadDetailResponse>(`/api/mailbox/threads/${threadId}`, requestOptions());
+      const response = await tenantFetch<ThreadDetailResponse>(`/api/mailbox/threads/${threadId}`, requestOptions());
       currentThread.value = response.thread;
       messages.value = response.messages;
       return response;
@@ -261,10 +262,10 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const getThread = (threadId: number) =>
-    $fetch<ThreadDetailResponse>(`/api/mailbox/threads/${threadId}`, requestOptions());
+    tenantFetch<ThreadDetailResponse>(`/api/mailbox/threads/${threadId}`, requestOptions());
 
   const markThreadRead = async (threadId: number) => {
-    await $fetch(`/api/mailbox/threads/${threadId}/read`, { ...requestOptions(), method: 'PATCH' });
+    await tenantFetch(`/api/mailbox/threads/${threadId}/read`, { ...requestOptions(), method: 'PATCH' });
 
     const thread =
       threads.value.find((item) => item.id === threadId) ?? (currentThread.value?.id === threadId ? currentThread.value : null);
@@ -283,7 +284,7 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const markThreadUnread = async (threadId: number) => {
-    await $fetch(`/api/mailbox/threads/${threadId}/unread`, { ...requestOptions(), method: 'PATCH' });
+    await tenantFetch(`/api/mailbox/threads/${threadId}/unread`, { ...requestOptions(), method: 'PATCH' });
 
     const listThread = threads.value.find((item) => item.id === threadId);
     const thread = listThread ?? (currentThread.value?.id === threadId ? currentThread.value : null);
@@ -300,7 +301,7 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const sendMail = async (payload: SendMailPayload) => {
-    const message = await $fetch<MailMessage>('/api/mailbox/send', {
+    const message = await tenantFetch<MailMessage>('/api/mailbox/send', {
       ...requestOptions(),
       method: 'POST',
       body: payload,
@@ -314,7 +315,7 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const retryMessage = async (messageId: number) => {
-    const message = await $fetch<MailMessage>(`/api/mailbox/messages/${messageId}/retry`, {
+    const message = await tenantFetch<MailMessage>(`/api/mailbox/messages/${messageId}/retry`, {
       ...requestOptions(),
       method: 'POST',
     });
@@ -325,7 +326,7 @@ export const useMailStore = defineStore('mail', () => {
   const fetchAccountUnreadCount = async (accountId: number) => {
     const requestVersion = (accountUnreadRequestVersions.get(accountId) ?? 0) + 1;
     accountUnreadRequestVersions.set(accountId, requestVersion);
-    const response = await $fetch<MailUnreadCounts>('/api/mailbox/unread-count', {
+    const response = await tenantFetch<MailUnreadCounts>('/api/mailbox/unread-count', {
       ...requestOptions(),
       query: { account_id: accountId },
     });
@@ -339,7 +340,7 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const fetchStats = async (params: { account_id?: number; from?: string; to?: string } = {}) => {
-    return $fetch<MailStatsResponse>('/api/mailbox/stats', {
+    return tenantFetch<MailStatsResponse>('/api/mailbox/stats', {
       ...requestOptions(),
       query: {
         account_id: params.account_id || undefined,
@@ -350,7 +351,7 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const createAccount = async (payload: MailAccountPayload) => {
-    const account = await $fetch<MailAccount>('/api/mailbox/accounts', {
+    const account = await tenantFetch<MailAccount>('/api/mailbox/accounts', {
       ...requestOptions(),
       method: 'POST',
       body: payload,
@@ -360,7 +361,7 @@ export const useMailStore = defineStore('mail', () => {
   };
 
   const updateAccount = async (id: number, payload: Partial<MailAccountPayload>) => {
-    const account = await $fetch<MailAccount>(`/api/mailbox/accounts/${id}`, {
+    const account = await tenantFetch<MailAccount>(`/api/mailbox/accounts/${id}`, {
       ...requestOptions(),
       method: 'PATCH',
       body: payload,

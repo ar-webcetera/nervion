@@ -4,7 +4,8 @@ import { activateAudioPlayback, clearActiveAudioPlayback } from '~/utils/tiptap/
 
 const props = defineProps<{ src: string; duration?: number }>();
 
-const src = computed<string>(() => props.src);
+const { resolveAwsUrl } = useResolveUrl();
+const src = computed<string>(() => resolveAwsUrl(props.src) ?? '');
 const totalDuration = computed<number>(() => props.duration ?? 0);
 
 const audioRef = ref<HTMLAudioElement | null>(null);
@@ -15,7 +16,7 @@ const audioPreferences = useAudioPreferencesStore();
 const { playbackRate, nextPlaybackRate } = storeToRefs(audioPreferences);
 const { cyclePlaybackRate } = audioPreferences;
 
-const config = useRuntimeConfig();
+const tenantApiBaseUrl = usePublicApiBaseUrl();
 const transcriptionText = ref<string | null>(null);
 const isTranscribing = ref(false);
 const transcriptionError = ref(false);
@@ -150,9 +151,11 @@ const requestTranscription = async () => {
   transcriptionError.value = false;
 
   try {
-    const result = await $fetch<{ text: string }>(config.public.API_URL + '/api/chats/transcribe-audio', {
+    const result = await $fetch<{ text: string }>(tenantApiBaseUrl + '/api/chats/transcribe-audio', {
       method: 'POST',
-      body: { audioUrl: src.value },
+      body: { audioUrl: props.src.startsWith('/api/files/raw?')
+        ? new URL(props.src, 'https://nervion.invalid').searchParams.get('key') ?? props.src
+        : props.src },
       credentials: 'include',
     });
     transcriptionText.value = result.text;

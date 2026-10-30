@@ -55,4 +55,16 @@ describe('YandexOauthService', () => {
       photoUrl: 'https://avatars.yandex.net/get-yapic/avatar-1/islands-200',
     });
   });
+
+  it('передает S256 challenge и verifier только для PKCE-входа', async () => {
+    const redirectUri = 'https://one.example.test/api/auth/yandex/callback';
+    const url = new URL(service.buildAuthorizeUrl('state', redirectUri, 'test-challenge'));
+    expect(url.searchParams.get('code_challenge')).toBe('test-challenge');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    const legacy = new URL(service.buildAuthorizeUrl('state', redirectUri));
+    expect(legacy.searchParams.has('code_challenge')).toBe(false);
+    fetchDirectMock.mockResolvedValue({ ok: true, json: () => Promise.resolve({ access_token: 'test-token' }) } as Response);
+    await expect(service.exchangeCode('code', redirectUri, 'test-verifier')).resolves.toBe('test-token');
+    expect(String(fetchDirectMock.mock.calls[0][1]?.body)).toContain('code_verifier=test-verifier');
+  });
 });

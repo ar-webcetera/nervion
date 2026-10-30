@@ -11,6 +11,9 @@ import { clearAuthCookie } from '../utils/auth-cookie-options';
 import { JwtAuthService } from '../jwt.service';
 import { Users } from '../../users/entities/users.entity';
 import { ConfigService } from '@nestjs/config';
+import { PlatformService } from '../../platform/platform.service';
+import { TenantContextService } from '../../tenancy/tenant-context.service';
+import { ROLES } from '../../common/enums/roles.enum';
 
 interface AuthRequest extends Request {
   user?: AuthenticatedUser;
@@ -24,6 +27,8 @@ export class AuthGuard implements CanActivate {
     private readonly configService: ConfigService,
     private readonly auditContextService: AuditContextService,
     private readonly dataSource: DataSource,
+    private readonly platform: PlatformService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -37,6 +42,7 @@ export class AuthGuard implements CanActivate {
       if (!apiToken) throw new UnauthorizedException('Неверный или истёкший API-токен');
       const user = await this.findUserOrThrow(apiToken.user_id);
       request.user = user;
+      if (this.tenantContext.isEnabled()) this.tenantContext.require().actorId = user.id;
       this.auditContextService.setActor(
         {
           id: user.id,
@@ -69,8 +75,12 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Неверный токен');
     }
     const user = await this.findUserOrThrow(payloadUserId);
+    if (this.tenantContext.isEnabled()) {
+      await this.platform.assertSession(this.tenantContext.require().tenant.id, user.id, decoded);
+    }
 
     request.user = user;
+    if (this.tenantContext.isEnabled()) this.tenantContext.require().actorId = user.id;
 
     this.auditContextService.setActor(
       {
@@ -116,6 +126,12 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Пользователь не найден');
     }
 
+    const membership = this.tenantContext.isEnabled()
+      ? await this.platform.assertMembership(this.tenantContext.require().tenant.id, userId)
+      : null;
+    if (membership && membership.role !== String(user.role))
+      throw new UnauthorizedException('Права пользователя ожидают синхронизации');
+
     return {
       id: user.id,
       telegram_user_id: user.telegram_user_id,
@@ -124,13 +140,14 @@ export class AuthGuard implements CanActivate {
       patronymic: user.patronymic,
       email: user.email,
       photo_url: user.photo_url,
-      role: user.role,
+      role: membership ? (membership.role as ROLES) : user.role,
       yandex_id: user.yandex_id ?? null,
       hidden_menu_items: user.hidden_menu_items ?? [],
       selected_mail_account_id: user.selected_mail_account_id ?? null,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       deletedAt: user.deletedAt,
+      ...(membership ? this.platform.sessionClaims(membership) : {}),
     };
   }
 }

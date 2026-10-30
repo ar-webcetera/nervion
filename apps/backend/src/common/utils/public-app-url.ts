@@ -1,8 +1,12 @@
 import { ConfigService } from '@nestjs/config';
+import { requireTenantContext } from '../../tenancy/tenant-context.service';
 
 const trimTrailingSlashes = (value: string): string => value.replace(/\/+$/, '');
 
 export const getPublicAppOrigin = (config: ConfigService): string => {
+  if (config.get<string>('TENANCY_ENABLED') === 'true') {
+    return `https://${requireTenantContext().tenant.hostname}`;
+  }
   const configuredOrigin = (config.get<string>('APP_PUBLIC_ORIGIN') || config.get<string>('AUTH_PUBLIC_ORIGIN') || '').trim();
   if (configuredOrigin) return trimTrailingSlashes(configuredOrigin);
 

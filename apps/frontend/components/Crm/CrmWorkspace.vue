@@ -54,7 +54,7 @@ const router = useRouter();
 const taskStore = useTaskStore();
 const userStore = useUserStore();
 const baseURL = useApiBaseUrl();
-const headers = useRequestHeaders(['cookie']);
+const headers = useApiRequestHeaders();
 const request = { baseURL, headers, credentials: 'include' as const };
 if (!userStore.users.length) await userStore.fetchUsers();
 const emptyDoc = (): JSONContent => ({ type: 'doc', content: [{ type: 'paragraph' }] });

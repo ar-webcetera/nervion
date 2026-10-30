@@ -1,7 +1,8 @@
 import type { File } from '~/types/file';
 
 export const useFilesStore = defineStore('files', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const files = ref<File[]>([]);
   const isLoading = ref(false);
   const fetchFiles = async (prefix: string) => {
@@ -9,8 +10,8 @@ export const useFilesStore = defineStore('files', () => {
     try {
       const params: { prefix: string } = { prefix: prefix };
 
-      const data = await $fetch<File[]>('/api/files', {
-        baseURL: config.public.API_URL,
+      const data = await tenantFetch<File[]>('/api/files', {
+        baseURL: tenantApiBaseUrl,
         credentials: 'include',
         params,
       });
@@ -30,10 +31,10 @@ export const useFilesStore = defineStore('files', () => {
   };
 
   const addFile = async (formData: FormData) => {
-    const file = await $fetch<File>('/api/files', {
+    const file = await tenantFetch<File>('/api/files', {
       method: 'POST',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body: formData,
     });
     files.value.push(file);
@@ -41,17 +42,17 @@ export const useFilesStore = defineStore('files', () => {
   };
 
   const getFileContent = async (key: string): Promise<string> => {
-    return $fetch<string>('/api/files/content', {
-      baseURL: config.public.API_URL,
+    return tenantFetch<string>('/api/files/content', {
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
       params: { key },
     });
   };
 
   const saveFileContent = async (key: string, content: string): Promise<void> => {
-    await $fetch('/api/files/content', {
+    await tenantFetch('/api/files/content', {
       method: 'PUT',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
       params: { key },
       body: { content },
@@ -59,29 +60,29 @@ export const useFilesStore = defineStore('files', () => {
   };
 
   const createFolder = async (prefix: string, folderName: string) => {
-    await $fetch<{ key: string }>('/api/files/folder', {
+    await tenantFetch<{ key: string }>('/api/files/folder', {
       method: 'POST',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body: { prefix, folderName },
     });
   };
 
   const deleteFile = async (key: string) => {
-    await $fetch('/api/files', {
+    await tenantFetch('/api/files', {
       method: 'DELETE',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       params: { key },
     });
     files.value = files.value.filter((f) => f.Key !== key);
   };
 
   const deleteFolder = async (prefix: string) => {
-    await $fetch('/api/files/folder', {
+    await tenantFetch('/api/files/folder', {
       method: 'DELETE',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       params: { prefix },
     });
     files.value = files.value.filter((f) => !f.Key.startsWith(prefix));

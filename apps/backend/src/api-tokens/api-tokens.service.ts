@@ -7,6 +7,7 @@ import { ApiToken } from './entities/api-token.entity';
 import { CreateApiTokenDto } from './dto/create-api-token.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { TenantContextService } from '../tenancy/tenant-context.service';
 
 @Injectable()
 export class ApiTokensService {
@@ -14,6 +15,7 @@ export class ApiTokensService {
     @InjectRepository(ApiToken)
     private readonly apiTokenRepository: Repository<ApiToken>,
     private readonly auditLogsService: AuditLogsService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   async create(
@@ -86,8 +88,10 @@ export class ApiTokensService {
     if (!token) return null;
     if (token.expires_at && token.expires_at < new Date()) return null;
 
-    token.last_used_at = new Date();
-    await this.apiTokenRepository.save(token);
+    if (!this.tenantContext.current()?.tenant.readOnly) {
+      token.last_used_at = new Date();
+      await this.apiTokenRepository.save(token);
+    }
     return token;
   }
 }

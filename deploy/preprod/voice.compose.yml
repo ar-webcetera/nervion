@@ -1,0 +1,7 @@
+# Optional overlay. Review host port conflicts/firewall before enabling voice.
+# Use with docker-compose.preprod.yml; keep published and worker ranges identical.
+services:
+  backend:
+    ports:
+      - "${PREPROD_MEDIA_MIN_PORT:-52000}-${PREPROD_MEDIA_MAX_PORT:-52099}:${PREPROD_MEDIA_MIN_PORT:-52000}-${PREPROD_MEDIA_MAX_PORT:-52099}/udp"
+      - "${PREPROD_MEDIA_MIN_PORT:-52000}-${PREPROD_MEDIA_MAX_PORT:-52099}:${PREPROD_MEDIA_MIN_PORT:-52000}-${PREPROD_MEDIA_MAX_PORT:-52099}/tcp"

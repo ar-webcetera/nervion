@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import { useShortName } from '~/composables/useShortName';
 import MessageContent from '~/components/Chat/MessageContent.vue';
 import ChatEditor from '~/components/Chat/ChatEditor.vue';
@@ -208,7 +209,7 @@ const isPreviousSameAuthor = (message: Chat, previousMessage?: Chat) => {
 
 const getAuthorInitials = (message: Chat) => useShortName(message.author) ?? 'УП';
 
-const getAuthorPhotoUrl = (message: Chat) => message.author?.photo_url ?? null;
+const getAuthorPhotoUrl = (message: Chat) => resolveAwsUrl(message.author?.photo_url) ?? null;
 
 // --- Ответы на сообщения ---
 const { $toast } = useNuxtApp();
@@ -319,7 +320,7 @@ const scrollToMessage = (id: string) => {
               <img
                 v-if="member.photo_url"
                 v-img-reveal
-                :src="member.photo_url"
+                :src="resolveAwsUrl(member.photo_url)"
                 :alt="member.first_name"
                 loading="lazy"
                 decoding="async"

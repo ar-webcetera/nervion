@@ -4,10 +4,14 @@ import { defineNuxtPlugin, useState } from '#app';
 
 export default defineNuxtPlugin(() => {
   const config = useRuntimeConfig();
-  const apiBaseUrl = config.public.API_URL;
+  const tenantApiBaseUrl = usePublicApiBaseUrl();
+  const apiBaseUrl = tenantApiBaseUrl || window.location.origin;
   const userStore = useUserStore();
+  const tenantStore = useTenantStore();
 
   const webSocket: Socket = io(new URL('/ws', apiBaseUrl).toString(), {
+    autoConnect: String(config.public.tenancyEnabled) !== 'true' || window.location.hostname !== config.public.platformAdminHost,
+    withCredentials: true,
     transports: ['websocket'],
     reconnection: true,
     reconnectionDelay: 1000,
@@ -23,7 +27,7 @@ export default defineNuxtPlugin(() => {
   const taskStore = useTaskStore();
   let projectRefreshPending = false;
   webSocket.on(ProjectRealtimeEvent.CHANGED, async () => {
-    if (!userStore.user || projectRefreshPending) return;
+    if (!userStore.user || !tenantStore.canUse('projects') || projectRefreshPending) return;
     projectRefreshPending = true;
     try {
       await projectStore.fetchProjects();

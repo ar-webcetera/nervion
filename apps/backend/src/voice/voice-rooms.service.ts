@@ -11,6 +11,9 @@ import { UpdateVoiceRoomDto } from './dto/update-voice-room.dto';
 import { VoiceRoomMember } from './entities/voice-room-member.entity';
 import { VoiceRoomEntity } from './entities/voice-room.entity';
 import { VoiceService } from './voice.service';
+import { VoiceClusterService } from './voice-cluster.service';
+import { TenantContextService } from '../tenancy/tenant-context.service';
+import { voiceRoomKey } from './voice.protocol';
 
 @Injectable()
 export class VoiceRoomsService {
@@ -23,6 +26,8 @@ export class VoiceRoomsService {
     private readonly userRepository: Repository<Users>,
     private readonly websocketGateway: WebsocketGateway,
     private readonly voiceService: VoiceService,
+    private readonly cluster: VoiceClusterService,
+    private readonly context: TenantContextService,
   ) {}
 
   async findAll(currentUser: AuthenticatedUser): Promise<VoiceRoom[]> {
@@ -38,7 +43,7 @@ export class VoiceRoomsService {
       .addOrderBy('member.last_name', 'ASC')
       .addOrderBy('member.first_name', 'ASC');
 
-    return (await query.getMany()).map((room) => this.toContract(room, currentUser));
+    return Promise.all((await query.getMany()).map((room) => this.toContract(room, currentUser)));
   }
 
   async create(dto: CreateVoiceRoomDto, currentUser: AuthenticatedUser): Promise<VoiceRoom> {
@@ -130,7 +135,9 @@ export class VoiceRoomsService {
     return memberIds;
   }
 
-  private toContract(room: VoiceRoomEntity, currentUser: AuthenticatedUser): VoiceRoom {
+  private async toContract(room: VoiceRoomEntity, currentUser: AuthenticatedUser): Promise<VoiceRoom> {
+    const key = voiceRoomKey(this.context.isEnabled() ? this.context.require().tenant.id : 'legacy', room.id);
+    const presence = await this.cluster.presence(key);
     return {
       id: room.id,
       name: room.name,
@@ -139,7 +146,7 @@ export class VoiceRoomsService {
       members: room.member_links
         .map((member) => this.toUser(member.user))
         .sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`, 'ru')),
-      active_participants: this.voiceService.getRoomParticipants(room.id).map((participant) => ({
+      active_participants: presence ?? this.voiceService.getRoomParticipants(key).map((participant) => ({
         userId: participant.userId,
         displayName: participant.displayName,
         photoUrl: participant.photoUrl,

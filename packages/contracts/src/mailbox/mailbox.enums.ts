@@ -1,3 +1,14 @@
+/** Состояние письма, включая безопасную фоновую отправку в SaaS. */
+export enum MailMessageStatus {
+  received = "received",
+  sent = "sent",
+  failed = "failed",
+  draft = "draft",
+  queued = "queued",
+  sending = "sending",
+  uncertain = "uncertain",
+}
+
 /** Итоговый статус доставки исходящего письма (Postbox). */
 export enum MailDeliveryStatus {
   SENT = "sent",

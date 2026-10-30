@@ -1,4 +1,4 @@
-import { Inject, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { Inject, Injectable, InternalServerErrorException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import OpenAI from 'openai';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -19,13 +19,15 @@ type TaskSourceImage = {
 export class DeepseekService {
   private readonly logger = new Logger(DeepseekService.name);
 
-  private openai: OpenAI;
-  private openrouter: OpenAI;
+  private readonly enabled = process.env.AI_ENABLED !== 'false';
+  private openai: OpenAI | null = null;
+  private openrouter: OpenAI | null = null;
 
   constructor(
-    @Inject(AI_CLIENT) private readonly gemini: GoogleGenerativeAI,
+    @Inject(AI_CLIENT) private readonly gemini: GoogleGenerativeAI | null,
     @Inject(AI_MODEL) private readonly modelName: string,
   ) {
+    if (!this.enabled) return;
     const proxyUrl = buildProxyUrlFromEnv();
 
     this.openai = new OpenAI({
@@ -40,7 +42,18 @@ export class DeepseekService {
     });
   }
 
+  private assertEnabled(): void {
+    if (!this.enabled) throw new ServiceUnavailableException('AI-функции отключены на этом сервере');
+  }
+
+  private requireClient(client: OpenAI | null): OpenAI {
+    this.assertEnabled();
+    if (!client) throw new ServiceUnavailableException('AI-сервис не настроен');
+    return client;
+  }
+
   async formulateTask(text: string): Promise<string> {
+    const client = this.requireClient(this.openai);
     const prompt = `
       Ты ассистент, который превращает любую входную информацию в понятную и структурированную задачу для исполнителя.
 
@@ -85,7 +98,7 @@ export class DeepseekService {
       - Не выдумывать отсутствующие факты, сроки, исполнителей, ссылки и технические решения.
     `;
 
-    const response = await this.openai.chat.completions.create({
+    const response = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: prompt },
@@ -97,6 +110,7 @@ export class DeepseekService {
     return response.choices[0].message.content?.trim() ?? '';
   }
   async transcribeAudio(buffer: Buffer, fileName: string, mimeType?: string): Promise<string> {
+    this.assertEnabled();
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       throw new InternalServerErrorException('OPENROUTER_API_KEY не настроен');
@@ -170,6 +184,8 @@ export class DeepseekService {
   }
 
   async parseTextToTaskFromGemini(text: string) {
+    this.assertEnabled();
+    if (!this.gemini) throw new ServiceUnavailableException('AI-сервис не настроен');
     try {
       const prompt = `
         Ты превращаешь любую входную информацию пользователя в задачу в строго структурированном JSON.
@@ -234,6 +250,7 @@ export class DeepseekService {
   }
 
   async parseTextToTaskGpt(text: string, instruction?: string, images: TaskSourceImage[] = []): Promise<ParsedTaskDto> {
+    const client = this.requireClient(this.openrouter);
     try {
       const prompt = [
         '=== ЗАДАЧА ===',
@@ -338,7 +355,7 @@ export class DeepseekService {
           ]
         : prompt;
 
-      const response = await this.openrouter.chat.completions.create(
+      const response = await client.chat.completions.create(
         {
           model,
           response_format: { type: 'json_object' },
@@ -382,6 +399,7 @@ export class DeepseekService {
   }
 
   async parseMailToDealGpt(text: string, instruction?: string, internalAddresses: string[] = []): Promise<ParsedMailDeal> {
+    const client = this.requireClient(this.openrouter);
     try {
       const prompt = [
         'Ты создаёшь карточку CRM-сделки из отдельного письма или почтовой переписки.',
@@ -409,7 +427,7 @@ export class DeepseekService {
       ].join('\n');
 
       const model = process.env.OPENROUTER_MODEL || 'google/gemini-2.0-flash-001';
-      const response = await this.openrouter.chat.completions.create(
+      const response = await client.chat.completions.create(
         {
           model,
           response_format: { type: 'json_object' },

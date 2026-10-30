@@ -3,16 +3,19 @@ import { ErrorMessage, Field, Form } from 'vee-validate';
 import IconError from '~/components/Icons/IconError.vue';
 import { useAuthStore } from '~/stores/authStore';
 import IconLogo from '~/components/Icons/IconLogo.vue';
+import type { AuthProvidersResponse } from '@tracker/contracts';
 
 const { $toast } = useNuxtApp();
-const config = useRuntimeConfig();
+const tenantApiBaseUrl = usePublicApiBaseUrl();
+const api = useTenantFetch();
+const { data: providers } = await useAsyncData('auth-providers', () => api<AuthProvidersResponse>('/api/auth/providers'));
 const route = useRoute();
 const pending = ref(false);
 const authError = ref('');
 
 const authStore = useAuthStore();
 
-const yandexLoginUrl = computed(() => `${config.public.API_URL}/api/auth/yandex`);
+const yandexLoginUrl = computed(() => `${tenantApiBaseUrl}/api/auth/yandex`);
 
 onMounted(() => {
   const oauthError = typeof route.query.oauth_error === 'string' ? route.query.oauth_error : '';
@@ -53,11 +56,11 @@ definePageMeta({
       </div>
 
       <Form class="login__form" @submit="submitAuth">
-        <a class="login__yandex" :href="yandexLoginUrl">
+        <a v-if="providers?.yandex" class="login__yandex" :href="yandexLoginUrl">
           <span class="login__yandex-icon" aria-hidden="true">Я</span>
           Войти через Яндекс
         </a>
-        <div class="login__divider"><span>или</span></div>
+        <div v-if="providers?.yandex" class="login__divider"><span>или</span></div>
         <div class="login__field">
           <div class="login__label">
             <label for="email">Логин</label>

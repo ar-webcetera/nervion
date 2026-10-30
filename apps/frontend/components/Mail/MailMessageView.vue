@@ -25,7 +25,7 @@ const emit = defineEmits<{
   retry: [message: MailMessage];
 }>();
 
-const config = useRuntimeConfig();
+const tenantApiBaseUrl = usePublicApiBaseUrl();
 const avatarFailed = ref(false);
 
 const isInbound = computed(() => props.message.direction === MAIL_DIRECTIONS.inbound);
@@ -76,7 +76,7 @@ const sanitizedHtml = computed(() =>
 );
 const hasLinks = computed(() => sanitizedHtml.value.includes('<a'));
 
-const attachmentUrl = (attachmentId: number) => `${config.public.API_URL}/api/mailbox/attachments/${attachmentId}`;
+const attachmentUrl = (attachmentId: number) => `${tenantApiBaseUrl}/api/mailbox/attachments/${attachmentId}`;
 
 const formatSize = (size: number) => {
   if (size < 1024) return `${size} Б`;

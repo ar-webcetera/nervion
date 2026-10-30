@@ -53,6 +53,7 @@ import {
 import type { User } from '~/types/user';
 
 const config = useRuntimeConfig();
+const tenantApiBaseUrl = usePublicApiBaseUrl();
 const taskStore = useTaskStore();
 const mentionProjectId = inject<ComputedRef<number | null> | null>('taskMentionProjectId', null);
 const mentionProjectStore = useProjectStore();
@@ -82,8 +83,8 @@ const props = defineProps<{
 const { $toast } = useNuxtApp();
 const AWS_ENDPOINT = config.public.AWS_ENDPOINT;
 const objectUrl = (key: string) =>
-  key.startsWith('crm/')
-    ? `${String(config.public.API_URL ?? '').replace(/\/$/, '')}/api/files/raw?key=${encodeURIComponent(key)}`
+  String(config.public.tenancyEnabled) === 'true' || key.startsWith('crm/')
+    ? `${String(tenantApiBaseUrl ?? '').replace(/\/$/, '')}/api/files/raw?key=${encodeURIComponent(key)}`
     : (buildAwsObjectUrl(key, AWS_ENDPOINT) ?? key);
 
 type FileManagerMode = 'image' | 'video' | 'file';
@@ -325,10 +326,11 @@ const tiptapExtensions = [
   TableHeader,
   Image.configure({
     awsEndpoint: config.public.AWS_ENDPOINT,
+    tenantStorage: String(config.public.tenancyEnabled) === 'true',
     inline: false,
   }),
   Iframe,
-  Video,
+  Video.configure({ awsEndpoint: config.public.AWS_ENDPOINT, tenantStorage: String(config.public.tenancyEnabled) === 'true' }),
   FileInlineNode,
   AudioMessage,
   CodeBlockLowlight.extend({

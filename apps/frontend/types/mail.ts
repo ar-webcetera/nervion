@@ -46,6 +46,8 @@ export interface MailAttachment {
   is_inline: boolean;
 }
 
+export type MailMessageStatus = `${import('@tracker/contracts').MailMessageStatus}`;
+
 export interface MailMessage {
   id: number;
   thread_id: number;
@@ -58,7 +60,7 @@ export interface MailMessage {
   text_body: string | null;
   html_body: string | null;
   is_read: boolean;
-  status: 'received' | 'sent' | 'failed' | 'draft';
+  status: MailMessageStatus;
   delivery_status?: MailDeliveryStatus | null;
   first_opened_at?: string | null;
   open_count?: number;
@@ -86,6 +88,7 @@ export interface MailThread extends Partial<MailThreadListSender> {
   account?: MailAccount;
   unread_count?: number;
   delivery_status?: MailDeliveryStatus | null;
+  message_status?: MailMessageStatus | null;
   open_count?: number;
   click_count?: number;
 }

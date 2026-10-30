@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import * as mediasoup from 'mediasoup';
+import { voiceIceServers, voicePortRange } from './voice-ice';
 import type {
   Worker,
   Router,
@@ -100,23 +101,19 @@ const MEDIA_CODECS = [
   },
 ] as mediasoup.types.RtpCodecCapability[];
 
-export const ICE_SERVERS = (process.env.MEDIASOUP_ICE_SERVERS ?? 'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302')
-  .split(',')
-  .map((url) => ({ urls: url.trim() }));
-
 const getWebRtcTransportOptions = (): mediasoup.types.WebRtcTransportOptions => ({
   listenInfos: [
     {
       protocol: 'udp',
-      ip: '0.0.0.0',
+      ip: process.env.MEDIASOUP_LISTEN_IP || '0.0.0.0',
       announcedAddress: process.env.MEDIASOUP_ANNOUNCED_IP || '127.0.0.1',
-      portRange: { min: 40000, max: 49999 },
+      portRange: voicePortRange(),
     },
     {
       protocol: 'tcp',
-      ip: '0.0.0.0',
+      ip: process.env.MEDIASOUP_LISTEN_IP || '0.0.0.0',
       announcedAddress: process.env.MEDIASOUP_ANNOUNCED_IP || '127.0.0.1',
-      portRange: { min: 40000, max: 49999 },
+      portRange: voicePortRange(),
     },
   ],
   enableUdp: true,
@@ -129,13 +126,21 @@ const getWebRtcTransportOptions = (): mediasoup.types.WebRtcTransportOptions => 
 export class VoiceService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(VoiceService.name);
   private worker: Worker | null = null;
-  private readonly rooms = new Map<number, Room>();
+  // Keys include the tenant UUID, never the tenant-local numeric room ID alone.
+  private readonly rooms = new Map<string, Room>();
+  private readonly creating = new Map<string, Promise<Room>>();
+  private readonly creationTokens = new Map<string, object>();
 
   async onModuleInit() {
+    const ports = voicePortRange();
+    voiceIceServers('configuration', 0);
+    if (process.env.TENANCY_ENABLED === 'true' && process.env.NODE_ENV === 'production' &&
+      (!process.env.MEDIASOUP_ANNOUNCED_IP || ['127.0.0.1', '0.0.0.0', '::1'].includes(process.env.MEDIASOUP_ANNOUNCED_IP)))
+      throw new Error('MEDIASOUP_ANNOUNCED_IP must be reachable by clients in production');
     this.worker = await mediasoup.createWorker({
       logLevel: 'warn',
-      rtcMinPort: 40000,
-      rtcMaxPort: 49999,
+      rtcMinPort: ports.min,
+      rtcMaxPort: ports.max,
     });
 
     this.worker.on('died', (error) => {
@@ -147,51 +152,63 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleDestroy() {
+    for (const roomId of this.rooms.keys()) this.closeRoom(roomId);
     this.worker?.close();
   }
 
-  async getOrCreateRoom(roomId: number): Promise<Room> {
+  async getOrCreateRoom(roomId: string): Promise<Room> {
     if (this.rooms.has(roomId)) {
       return this.rooms.get(roomId)!;
     }
 
-    const router = await this.worker!.createRouter({ mediaCodecs: MEDIA_CODECS });
-    const room: Room = { router, participants: new Map() };
-    this.rooms.set(roomId, room);
-    this.logger.log(`Voice room created: ${roomId}`);
-    return room;
+    const pending = this.creating.get(roomId);
+    if (pending) return pending;
+    if (!this.worker) throw new Error('Голосовой сервер недоступен');
+    const token = {};
+    this.creationTokens.set(roomId, token);
+    const create = this.worker.createRouter({ mediaCodecs: MEDIA_CODECS }).then((router) => {
+      if (this.creationTokens.get(roomId) !== token) { router.close(); throw new Error('Голосовая сессия завершена'); }
+      const room: Room = { router, participants: new Map() };
+      this.rooms.set(roomId, room);
+      return room;
+    });
+    this.creating.set(roomId, create);
+    try { return await create; } finally {
+      if (this.creating.get(roomId) === create) this.creating.delete(roomId);
+      if (this.creationTokens.get(roomId) === token) this.creationTokens.delete(roomId);
+    }
   }
 
-  getRoom(roomId: number): Room | undefined {
+  getRoom(roomId: string): Room | undefined {
     return this.rooms.get(roomId);
   }
 
-  getRoomParticipants(roomId: number): Participant[] {
+  getRoomParticipants(roomId: string): Participant[] {
     const room = this.rooms.get(roomId);
     if (!room) return [];
     return [...room.participants.values()];
   }
 
-  getRouterRtpCapabilities(roomId: number): RtpCapabilities | null {
+  getRouterRtpCapabilities(roomId: string): RtpCapabilities | null {
     const room = this.rooms.get(roomId);
     return room?.router.rtpCapabilities ?? null;
   }
 
-  async createTransport(roomId: number): Promise<WebRtcTransport> {
+  async createTransport(roomId: string): Promise<WebRtcTransport> {
     const room = this.rooms.get(roomId);
     if (!room) throw new Error(`Room ${roomId} not found`);
     const transport = await room.router.createWebRtcTransport(getWebRtcTransportOptions());
     return transport;
   }
 
-  async connectTransport(roomId: number, transportId: string, dtlsParameters: DtlsParameters): Promise<void> {
-    const transport = this.findTransport(roomId, transportId);
+  async connectTransport(roomId: string, userId: number, transportId: string, dtlsParameters: DtlsParameters): Promise<void> {
+    const transport = this.findTransport(roomId, userId, transportId);
     if (!transport) throw new Error(`Transport ${transportId} not found`);
     await transport.connect({ dtlsParameters });
   }
 
   async produce(
-    roomId: number,
+    roomId: string,
     userId: number,
     transportId: string,
     kind: MediaKind,
@@ -204,30 +221,36 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     const participant = room.participants.get(userId);
     if (!participant) throw new Error(`Participant ${userId} not found`);
 
-    const transport = this.findTransport(roomId, transportId);
-    if (!transport) throw new Error(`Transport ${transportId} not found`);
+    const transport = participant.sendTransport;
+    if (!transport || transport.id !== transportId) throw new Error('Нет доступа к транспорту');
+    if ([...participant.producers.values()].some((item) => item.kind === kind))
+      throw new Error('Поток этого типа уже запущен');
 
     const producer = await transport.produce({ kind, rtpParameters, appData });
 
     producer.on('transportclose', () => {
       producer.close();
+      participant.producers.delete(producer.id);
     });
 
     participant.producers.set(producer.id, producer);
     return producer;
   }
 
-  async consume(roomId: number, consumerId: number, producerId: string, rtpCapabilities: RtpCapabilities): Promise<Consumer> {
+  async consume(roomId: string, consumerId: number, producerId: string, rtpCapabilities: RtpCapabilities): Promise<Consumer> {
     const room = this.rooms.get(roomId);
     if (!room) throw new Error(`Room ${roomId} not found`);
 
-    if (!room.router.canConsume({ producerId, rtpCapabilities })) {
+    const producerExists = [...room.participants.values()].some((participant) => participant.producers.has(producerId));
+    if (!producerExists || !room.router.canConsume({ producerId, rtpCapabilities })) {
       throw new Error('Cannot consume this producer');
     }
 
     const participant = room.participants.get(consumerId);
     if (!participant) throw new Error(`Participant ${consumerId} not found`);
     if (!participant.recvTransport) throw new Error(`Recv transport not found for participant ${consumerId}`);
+    const existing = participant.consumers.get(producerId);
+    if (existing && !existing.closed) return existing;
 
     const consumer = await participant.recvTransport.consume({
       producerId,
@@ -235,18 +258,19 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
       paused: true,
     });
 
-    consumer.on('transportclose', () => consumer.close());
-    consumer.on('producerclose', () => consumer.close());
+    const closeConsumer = () => { consumer.close(); participant.consumers.delete(producerId); };
+    consumer.on('transportclose', closeConsumer);
+    consumer.on('producerclose', closeConsumer);
 
     participant.consumers.set(producerId, consumer);
     return consumer;
   }
 
-  async resumeConsumer(roomId: number, userId: number, consumerId: string): Promise<void> {
+  async resumeConsumer(roomId: string, userId: number, consumerId: string): Promise<void> {
     const room = this.rooms.get(roomId);
-    if (!room) return;
+    if (!room) throw new Error('Комната недоступна');
     const participant = room.participants.get(userId);
-    if (!participant) return;
+    if (!participant) throw new Error('Участник недоступен');
 
     for (const consumer of participant.consumers.values()) {
       if (consumer.id === consumerId) {
@@ -257,9 +281,10 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
         return;
       }
     }
+    throw new Error('Поток недоступен');
   }
 
-  async pauseProducer(roomId: number, userId: number): Promise<void> {
+  async pauseProducer(roomId: string, userId: number): Promise<void> {
     const participant = this.rooms.get(roomId)?.participants.get(userId);
     if (!participant) return;
     for (const producer of participant.producers.values()) {
@@ -270,7 +295,7 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async resumeProducer(roomId: number, userId: number): Promise<void> {
+  async resumeProducer(roomId: string, userId: number): Promise<void> {
     const participant = this.rooms.get(roomId)?.participants.get(userId);
     if (!participant) return;
     for (const producer of participant.producers.values()) {
@@ -281,7 +306,7 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  closeVideoProducers(roomId: number, excludeUserId: number): Array<{ producerId: string; userId: number }> {
+  closeVideoProducers(roomId: string, excludeUserId: number): Array<{ producerId: string; userId: number }> {
     const room = this.rooms.get(roomId);
     if (!room) return [];
     const closed: Array<{ producerId: string; userId: number }> = [];
@@ -298,7 +323,7 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     return closed;
   }
 
-  closeProducer(roomId: number, userId: number, producerId: string): { kind: MediaKind } | null {
+  closeProducer(roomId: string, userId: number, producerId: string): { kind: MediaKind } | null {
     const participant = this.rooms.get(roomId)?.participants.get(userId);
     if (!participant) return null;
     const producer = participant.producers.get(producerId);
@@ -309,9 +334,13 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     return { kind };
   }
 
-  addParticipant(roomId: number, userId: number, socketId: string, displayName: string, photoUrl: string | null): void {
+  addParticipant(roomId: string, userId: number, socketId: string, displayName: string, photoUrl: string | null): void {
     const room = this.rooms.get(roomId);
-    if (!room) return;
+    if (!room) throw new Error('Комната недоступна');
+    const existing = room.participants.get(userId);
+    if (existing?.socketId === socketId) return;
+    if (existing) throw new Error('Вы уже подключены к комнате в другой вкладке');
+    if (room.participants.size >= 50) throw new Error('В комнате уже 50 участников');
     room.participants.set(userId, {
       userId,
       displayName,
@@ -324,17 +353,19 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  registerSendTransport(roomId: number, userId: number, transport: WebRtcTransport): void {
+  registerSendTransport(roomId: string, userId: number, transport: WebRtcTransport): void {
     const participant = this.rooms.get(roomId)?.participants.get(userId);
-    if (participant) participant.sendTransport = transport;
+    if (!participant || participant.sendTransport) { transport.close(); throw new Error('Транспорт уже создан'); }
+    participant.sendTransport = transport;
   }
 
-  registerRecvTransport(roomId: number, userId: number, transport: WebRtcTransport): void {
+  registerRecvTransport(roomId: string, userId: number, transport: WebRtcTransport): void {
     const participant = this.rooms.get(roomId)?.participants.get(userId);
-    if (participant) participant.recvTransport = transport;
+    if (!participant || participant.recvTransport) { transport.close(); throw new Error('Транспорт уже создан'); }
+    participant.recvTransport = transport;
   }
 
-  removeParticipant(roomId: number, userId: number): ClosedProducerInfo[] {
+  removeParticipant(roomId: string, userId: number): ClosedProducerInfo[] {
     const room = this.rooms.get(roomId);
     if (!room) return [];
 
@@ -362,7 +393,7 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     return closedProducers;
   }
 
-  findParticipantBySocket(socketId: string): { roomId: number; userId: number } | null {
+  findParticipantBySocket(socketId: string): { roomId: string; userId: number } | null {
     for (const [roomId, room] of this.rooms) {
       for (const [userId, participant] of room.participants) {
         if (participant.socketId === socketId) return { roomId, userId };
@@ -371,7 +402,7 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     return null;
   }
 
-  getExistingProducers(roomId: number, excludeUserId: number): ExistingProducerInfo[] {
+  getExistingProducers(roomId: string, excludeUserId: number): ExistingProducerInfo[] {
     const room = this.rooms.get(roomId);
     if (!room) return [];
     const result: ExistingProducerInfo[] = [];
@@ -385,13 +416,27 @@ export class VoiceService implements OnModuleInit, OnModuleDestroy {
     return result;
   }
 
-  private findTransport(roomId: number, transportId: string): WebRtcTransport | null {
+  closeRoom(roomId: string): void {
+    this.creationTokens.delete(roomId);
+    this.creating.delete(roomId);
+    const room = this.rooms.get(roomId);
+    if (!room) return;
+    for (const userId of [...room.participants.keys()]) this.removeParticipant(roomId, userId);
+    if (!room.router.closed) room.router.close();
+    this.rooms.delete(roomId);
+  }
+
+  assertParticipant(roomId: string, userId: number, socketId: string): void {
+    if (this.rooms.get(roomId)?.participants.get(userId)?.socketId !== socketId)
+      throw new Error('Нет доступа к голосовой сессии');
+  }
+
+  private findTransport(roomId: string, userId: number, transportId: string): WebRtcTransport | null {
     const room = this.rooms.get(roomId);
     if (!room) return null;
-    for (const participant of room.participants.values()) {
-      if (participant.sendTransport?.id === transportId) return participant.sendTransport;
-      if (participant.recvTransport?.id === transportId) return participant.recvTransport;
-    }
+    const participant = room.participants.get(userId);
+    if (participant?.sendTransport?.id === transportId) return participant.sendTransport;
+    if (participant?.recvTransport?.id === transportId) return participant.recvTransport;
     return null;
   }
 }

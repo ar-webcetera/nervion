@@ -17,6 +17,7 @@ import { FileInlineNode } from '~/utils/tiptap/files';
 import { AudioMessage } from '~/utils/tiptap/audio';
 
 let cached: Extensions | null = null;
+let cachedKey = '';
 
 /**
  * Набор расширений ТОЛЬКО для статического рендера TipTap-JSON в HTML через generateHTML.
@@ -24,8 +25,10 @@ let cached: Extensions | null = null;
  * каждого узла. Список зеркалит расширения из EditorTiptap.vue, чтобы generateHTML не падал
  * на неизвестном типе узла. Кэшируется (awsEndpoint в приложении один).
  */
-export const getTiptapRenderExtensions = (awsEndpoint?: string): Extensions => {
-  if (cached) return cached;
+export const getTiptapRenderExtensions = (awsEndpoint?: string, tenantStorage = false): Extensions => {
+  const key = `${awsEndpoint ?? ''}:${tenantStorage}`;
+  if (cached && cachedKey === key) return cached;
+  cachedKey = key;
   const lowlight = createLowlight(common);
   cached = [
     TextAlign.configure({ types: ['heading', 'paragraph'] }),
@@ -34,9 +37,9 @@ export const getTiptapRenderExtensions = (awsEndpoint?: string): Extensions => {
     TableRow,
     TableCell,
     TableHeader,
-    Image.configure({ awsEndpoint, inline: false }),
+    Image.configure({ awsEndpoint, tenantStorage, inline: false }),
     Iframe,
-    Video,
+    Video.configure({ awsEndpoint, tenantStorage }),
     FileInlineNode,
     AudioMessage,
     CodeBlockLowlight.configure({ lowlight, defaultLanguage: 'typescript', languageClassPrefix: 'language-' }),

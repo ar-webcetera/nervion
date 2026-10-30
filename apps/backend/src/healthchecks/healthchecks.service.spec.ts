@@ -3,6 +3,8 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { HealthchecksService } from './healthchecks.service';
 import { HealthCheck, HealthCheckStatus } from './entities/healthcheck.entity';
 import { ChatsService } from '../chats/chats.service';
+import { TenantJobsService } from '../tenancy/tenant-jobs.service';
+import { TenantContextService } from '../tenancy/tenant-context.service';
 
 const makeHc = (overrides: Partial<HealthCheck> = {}): HealthCheck =>
   ({
@@ -47,6 +49,11 @@ describe('HealthchecksService', () => {
         HealthchecksService,
         { provide: getRepositoryToken(HealthCheck), useValue: mockRepo },
         { provide: ChatsService, useValue: mockChatsService },
+        { provide: TenantContextService, useValue: { isEnabled: () => false } },
+        {
+          provide: TenantJobsService,
+          useValue: { register: jest.fn(), schedule: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -244,7 +251,7 @@ describe('HealthchecksService', () => {
       expect(mockRepo.save).toHaveBeenCalledWith(expect.objectContaining({ last_status: HealthCheckStatus.FAIL }));
       expect(mockChatsService.sendSystemMessage).toHaveBeenCalledTimes(1);
       const msg = mockChatsService.sendSystemMessage.mock.calls[0][2];
-      expect(JSON.stringify(msg)).toContain('Недоступен');
+      expect(JSON.stringify(msg)).toContain('недоступен');
     });
 
     it('fail → fail: повторный алерт не отправляется', async () => {
@@ -269,7 +276,7 @@ describe('HealthchecksService', () => {
       expect(mockRepo.save).toHaveBeenCalledWith(expect.objectContaining({ last_status: HealthCheckStatus.OK }));
       expect(mockChatsService.sendSystemMessage).toHaveBeenCalledTimes(1);
       const msg = mockChatsService.sendSystemMessage.mock.calls[0][2];
-      expect(JSON.stringify(msg)).toContain('Восстановлен');
+      expect(JSON.stringify(msg)).toContain('восстановлен');
     });
 
     it('ok → ok: алерт не отправляется', async () => {

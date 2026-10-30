@@ -46,8 +46,25 @@ export const resolveUrl = (slug: string | null | undefined, baseUrl?: string): s
  * buildAwsObjectUrl('uploads/Фото+отчет 1.png', 'https://cdn.example.com')
  * // => 'https://cdn.example.com/uploads/%D0%A4%D0%BE%D1%82%D0%BE%2B%D0%BE%D1%82%D1%87%D0%B5%D1%82%201.png'
  */
-export const buildAwsObjectUrl = (key: string | null | undefined, awsEndpoint?: string): string | undefined => {
+export const buildAwsObjectUrl = (key: string | null | undefined, awsEndpoint?: string, tenantStorage = false): string | undefined => {
   if (!key) return undefined;
+  if (tenantStorage) {
+    if (key.startsWith('blob:') || key.startsWith('data:image/')) return key;
+    if (key.startsWith('/api/')) return key;
+    let relativeKey = key;
+    if (/^https?:\/\//.test(key)) {
+      if (!awsEndpoint) return key;
+      try {
+        const source = new URL(key);
+        const endpoint = new URL(awsEndpoint.endsWith('/') ? awsEndpoint : `${awsEndpoint}/`);
+        if (source.origin !== endpoint.origin || !source.pathname.startsWith(endpoint.pathname)) return key;
+        relativeKey = decodeURIComponent(source.pathname.slice(endpoint.pathname.length));
+      } catch {
+        return undefined;
+      }
+    }
+    return `/api/files/raw?key=${encodeURIComponent(relativeKey)}`;
+  }
   if (!awsEndpoint) return key;
 
   const normalizedKey = key
@@ -71,9 +88,11 @@ export const buildAwsObjectUrl = (key: string | null | undefined, awsEndpoint?: 
 export const useResolveUrl = () => {
   const config = useRuntimeConfig();
   const awsEndpoint = config.public.AWS_ENDPOINT;
-  const apiUrl = String(config.public.API_URL ?? '').replace(/\/$/, '');
+  const apiUrl = usePublicApiBaseUrl().replace(/\/$/, '');
+  const tenantStorage = String(config.public.tenancyEnabled) === 'true';
 
   const resolveAwsUrl = (slug: string | null | undefined): string | undefined => {
+    if (tenantStorage) return buildAwsObjectUrl(slug, awsEndpoint, true);
     if (slug?.startsWith('crm/')) {
       return `${apiUrl}/api/files/raw?key=${encodeURIComponent(slug)}`;
     }

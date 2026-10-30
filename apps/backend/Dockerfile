@@ -52,11 +52,14 @@ RUN pnpm --filter @tracker/contracts build \
  && pnpm --filter backend build
 
 # ---------- runtime ----------
-FROM node:22-bookworm-slim AS runtime
+FROM node:22-trixie-slim AS runtime
 WORKDIR /app
 # git нужен для self-hosted раздела, ffmpeg для обработки медиа, ca-certificates для HTTPS.
 # Транскрипция работает через внешний API, локальный whisper/PyTorch не нужен.
-RUN apt-get update && apt-get install -y --no-install-recommends git ffmpeg ca-certificates && rm -rf /var/lib/apt/lists/*
+# Trixie содержит Git 2.45+ для безопасного HTTPS-подключения tenant-репозиториев.
+RUN apt-get update && apt-get install -y --no-install-recommends git ffmpeg ca-certificates \
+ && dpkg --compare-versions "$(git --version | cut -d ' ' -f 3)" ge 2.45 \
+ && rm -rf /var/lib/apt/lists/*
 COPY --from=production-dependencies /out/node_modules ./node_modules
 # Общий workspace-пакет меняется вместе с исходниками. Накладываем его маленьким
 # отдельным слоем, не пересобирая 600 МБ production-зависимостей.

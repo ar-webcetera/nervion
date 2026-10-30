@@ -2,7 +2,8 @@ import type { AuditLogItem, AuditLogsFilters, AuditLogsResponse } from '@tracker
 import { defineStore } from 'pinia';
 
 export const useAuditLogStore = defineStore('audit-log', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const items = ref<AuditLogItem[]>([]);
   const total = ref(0);
   const page = ref(1);
@@ -11,7 +12,7 @@ export const useAuditLogStore = defineStore('audit-log', () => {
   const currentItem = ref<AuditLogItem | null>(null);
 
   const fetchLogs = async (filters: AuditLogsFilters = {}) => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = useApiRequestHeaders();
     pending.value = true;
 
     const query = Object.fromEntries(
@@ -30,8 +31,8 @@ export const useAuditLogStore = defineStore('audit-log', () => {
     );
 
     try {
-      const response = await $fetch<AuditLogsResponse>('/api/audit-logs', {
-        baseURL: config.public.API_URL,
+      const response = await tenantFetch<AuditLogsResponse>('/api/audit-logs', {
+        baseURL: tenantApiBaseUrl,
         credentials: 'include',
         headers,
         query,

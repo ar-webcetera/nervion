@@ -397,13 +397,13 @@ export class CrmService {
     });
     void this.events.sendCrmChanged();
     if (result.isCreated && result.responsibleId) {
-      void this.notifyDealCreated(result.id, result.title, result.responsibleId);
+      await this.notifyDealCreated(result.id, result.title, result.responsibleId);
     } else if (
       result.responsibleId &&
       result.responsibleId !== result.previousResponsibleId &&
       result.responsibleId !== user.id
     ) {
-      void this.notifyResponsibleAssigned(result.id, result.title, result.responsibleId);
+      await this.notifyResponsibleAssigned(result.id, result.title, result.responsibleId);
     }
     return this.detail(result.id);
   }
@@ -497,7 +497,7 @@ export class CrmService {
     });
 
     void this.events.sendCrmChanged();
-    void this.notifyDealCreated(dealId, parsed.title, user.id);
+    await this.notifyDealCreated(dealId, parsed.title, user.id);
     return this.detail(dealId);
   }
 
@@ -535,7 +535,7 @@ export class CrmService {
       .getRepository(CrmActivityEntity)
       .save({ deal_id: id, kind: CrmActivityKind.COMMENT, message: dto.message, summary: '', author_name: this.author(user) });
     void this.events.sendCrmChanged();
-    void this.notifyDealComment(deal, dto.message, user);
+    await this.notifyDealComment(deal, dto.message, user);
     return result;
   }
 
@@ -551,10 +551,10 @@ export class CrmService {
     return `<p>${this.escapeHtml(message)}</p><p><a href="${this.absoluteDealLink(dealId)}" target="_blank" rel="noopener noreferrer">Перейти к сделке</a></p>`;
   }
 
-  private notifyDealCreated(dealId: number, title: string, responsibleId: number): void {
+  private async notifyDealCreated(dealId: number, title: string, responsibleId: number): Promise<void> {
     const subject = `Новая сделка: ${title}`;
     const message = `Вы назначены ответственным за сделку «${title}».`;
-    void this.notifications
+    await this.notifications
       .createWithEmail(
         { name: subject, message, recipient_id: responsibleId, link: this.dealLink(dealId) },
         this.notificationHtml(message, dealId),
@@ -562,10 +562,10 @@ export class CrmService {
       .catch((error) => this.logger.error(`Не удалось отправить уведомление о новой сделке ${dealId}: ${String(error)}`));
   }
 
-  private notifyResponsibleAssigned(dealId: number, title: string, responsibleId: number): void {
+  private async notifyResponsibleAssigned(dealId: number, title: string, responsibleId: number): Promise<void> {
     const subject = `Вам назначена сделка: ${title}`;
     const message = `Вы назначены ответственным за сделку «${title}».`;
-    void this.notifications
+    await this.notifications
       .createWithEmail(
         { name: subject, message, recipient_id: responsibleId, link: this.dealLink(dealId) },
         this.notificationHtml(message, dealId),

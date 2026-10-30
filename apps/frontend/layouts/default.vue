@@ -5,12 +5,17 @@ import VoicePanel from '~/components/Voice/VoicePanel.vue';
 import { PAGE_NAMES } from '~/constants/pages.constants';
 
 const { refresh: refreshTaskStages } = useTaskStages();
-await useAsyncData('task-stage-definitions', refreshTaskStages);
+const tenantStore = useTenantStore();
+await useAsyncData('task-stage-definitions', () =>
+  tenantStore.canUse('tasks') ? refreshTaskStages() : Promise.resolve([]),
+);
 
 const taskStore = useTaskStore();
 const rootStore = useRootStore();
+const userStore = useUserStore();
 const router = useRouter();
 const route = useRoute();
+const landingPath = computed(() => tenantStore.getLandingPath(userStore.user?.role));
 
 const mobileReadyRouteNames = new Set<string>([
   PAGE_NAMES.home,
@@ -33,7 +38,7 @@ const closeSidebar = () => {
 const isHidden = computed(() => {
   const routeName = typeof route.name === 'string' ? route.name : '';
 
-  return !mobileReadyRouteNames.has(routeName) && !route.path.startsWith('/crm');
+  return !mobileReadyRouteNames.has(routeName) && !route.path.startsWith('/crm') && route.path !== '/403';
 });
 
 const chatId = computed(() => route.query?.chatId);
@@ -46,27 +51,34 @@ const mailDetailOpen = computed(
 <template>
   <div :class="['main', { main_hidden: isHidden, main_chat: chatId || mailDetailOpen || rootStore.isDetailFullscreen }]">
     <BaseMenuLeft :is-hidden-menu="isHidden" />
-    <slot />
+    <section v-if="tenantStore.readOnly" class="main__workspace">
+      <p class="main__read-only" role="status">Пространство доступно только для чтения. Для возобновления работы обратитесь к администратору.</p>
+      <div class="main__page"><slot /></div>
+    </section>
+    <slot v-else />
     <div v-if="isHidden" class="main__mob-error">
       <div class="main__mob-error-img"><img src="@/assets/blackhole.webp" alt="" /></div>
       <div class="main__mob-error-text">Нет мобильной версии</div>
       <div class="main__mob-error-desc">Мы всё еще работаем над мобильным приложением</div>
-      <button class="main__mob-error-button" @click="router.push({ name: PAGE_NAMES.home })">Вернуться к задачам</button>
+      <button v-if="route.path !== landingPath" class="main__mob-error-button" @click="router.push(landingPath)">Вернуться в пространство</button>
     </div>
   </div>
   <Transition name="task-panel">
-    <div v-if="taskStore.currentTaskId" class="task-panel-host">
+    <div v-if="tenantStore.canUse('tasks') && taskStore.currentTaskId" class="task-panel-host">
       <TaskSidebar :key="taskStore.currentTaskId" :current-task-id="taskStore.currentTaskId" @close="closeSidebar" />
     </div>
   </Transition>
   <ClientOnly>
-    <FloatingChatWidget />
-    <VoicePanel />
+    <FloatingChatWidget v-if="tenantStore.canUse('chat')" />
+    <VoicePanel v-if="tenantStore.canUse('voice')" />
   </ClientOnly>
 </template>
 
 <style scoped lang="scss">
 .main {
+  &__workspace { flex: 1; min-width: 0; height: 100dvh; @include flex(cn); }
+  &__read-only { margin: 0; padding: 12px 16px; background: var(--light-text-backgroung-primary-10); color: var(--light-text-backgroung-primary); @extend %text-s-regular; }
+  &__page { flex: 1; min-height: 0; min-width: 0; overflow: auto; @include flex(rn); > :deep(*) { height: 100%; min-height: 0; } }
   height: 100%;
   min-height: 0;
   width: 100%;

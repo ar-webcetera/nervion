@@ -6,9 +6,11 @@ import {
   ServiceUnavailableException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditActionType, AuditEntityType } from '@tracker/contracts';
+import type { AuthProvidersResponse } from '@tracker/contracts';
 import * as crypto from 'crypto';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -23,9 +25,15 @@ import { AuthenticatedUser } from './types/authenticated-user';
 import { getAuthCookieOptions, clearAuthCookie } from './utils/auth-cookie-options';
 import { YandexOauthService } from './yandex-oauth.service';
 import { YandexUserInfo } from './types/yandex-user-info';
+import { PlatformService } from '../platform/platform.service';
+import { TenantContextService } from '../tenancy/tenant-context.service';
+import { resolveTenantHost } from '../tenancy/tenant-host';
+import { createTenantYandexState, verifyTenantYandexState } from './utils/tenant-yandex-state';
 import {
   YANDEX_OAUTH_STATE_COOKIE,
   YANDEX_OAUTH_LINK_COOKIE,
+  TENANT_YANDEX_OAUTH_STATE_COOKIE,
+  TENANT_YANDEX_OAUTH_PKCE_COOKIE,
   getYandexOauthStateCookieOptions,
 } from './utils/yandex-oauth-cookies';
 
@@ -38,6 +46,8 @@ export class AuthService {
     private readonly jwtAuthService: JwtAuthService,
     private readonly auditLogsService: AuditLogsService,
     private readonly yandexOauthService: YandexOauthService,
+    private readonly platform: PlatformService,
+    private readonly tenantContext: TenantContextService,
   ) {}
 
   generateRandomPassword(length = 8) {
@@ -126,6 +136,9 @@ export class AuthService {
   }
 
   async changePassword(changePasswordDto: ChangePasswordDto) {
+    if (this.tenantContext.isEnabled()) {
+      throw new ForbiddenException('Глобальный пароль меняет сам пользователь через /auth/password/self');
+    }
     const user = await this.userRepository.findOne({ where: { id: changePasswordDto.userId } });
     if (!user) {
       throw new HttpException({ message: ['Пользоваель не найден'] }, HttpStatus.NOT_FOUND);
@@ -140,6 +153,7 @@ export class AuthService {
   }
 
   async loginByEmail(loginEmailDto: LoginEmailDto, res: Response, host?: string) {
+    if (this.tenantContext.isEnabled()) return this.loginTenantByEmail(loginEmailDto, res, host);
     const user = await this.userRepository.findOne({
       where: { email: loginEmailDto.email },
       select: [
@@ -204,7 +218,8 @@ export class AuthService {
         method: 'email',
       },
     });
-    return res.json(user);
+    const { hashed_password: _passwordHash, ...publicUser } = user;
+    return res.json(publicUser);
   }
 
   renewCookie(user: AuthenticatedUser, res: Response) {
@@ -220,11 +235,20 @@ export class AuthService {
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       deletedAt: user.deletedAt ?? null,
+      ...(user.tenantId
+        ? {
+            tenantId: user.tenantId,
+            identityId: user.identityId,
+            membershipId: user.membershipId,
+            identityVersion: user.identityVersion,
+          }
+        : {}),
     });
     res.cookie('authToken', token, getAuthCookieOptions(this.configService, true));
   }
 
   async demoLogin(res: Response, host?: string) {
+    if (this.tenantContext.isEnabled()) throw new NotFoundException();
     const enabled = (this.configService.get<string>('DEMO_AUTH_ENABLED') || '').toLowerCase() === 'true';
     const email = this.configService.get<string>('DEMO_AUTH_EMAIL');
     if (!enabled || !email) {
@@ -269,6 +293,7 @@ export class AuthService {
   }
 
   startYandexOAuth(res: Response, req: Request, link = false) {
+    if (this.tenantContext.isEnabled()) return this.startTenantYandexOAuth(res, req, link);
     if (!this.yandexOauthService.isConfigured()) {
       throw new ServiceUnavailableException('Вход через Яндекс не настроен');
     }
@@ -288,6 +313,7 @@ export class AuthService {
     res: Response,
     query: Record<string, string | undefined>,
   ) {
+    if (this.tenantContext.isEnabled()) return this.handleTenantYandexCallback(req, res, query);
     const cookieOptions = getYandexOauthStateCookieOptions(this.configService);
     const clearOauthCookies = () => {
       res.clearCookie(YANDEX_OAUTH_STATE_COOKIE, cookieOptions);
@@ -337,6 +363,7 @@ export class AuthService {
   }
 
   async unlinkYandex(userId: number): Promise<{ yandex_linked: false }> {
+    if (this.tenantContext.isEnabled()) throw new NotFoundException();
     const user = await this.userRepository.findOne({
       where: { id: userId },
       select: ['id', 'hashed_password', 'yandex_id'],
@@ -355,9 +382,115 @@ export class AuthService {
     return { yandex_linked: false };
   }
 
+  getAuthProviders(): AuthProvidersResponse {
+    if (!this.yandexOauthService.isConfigured()) return { yandex: false };
+    if (!this.tenantContext.isEnabled()) return { yandex: true };
+    const { hostname } = this.tenantContext.require().tenant;
+    const allowed = (this.configService.get<string>('YANDEX_OAUTH_TENANT_HOSTS') || '')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+    return { yandex: allowed.includes(hostname) && Boolean(this.configService.get<string>('JWT_SECRET')?.trim()) };
+  }
+
+  private tenantYandexRedirectUri(req: Request): string {
+    if (!this.getAuthProviders().yandex) throw new NotFoundException('Вход через Яндекс недоступен в этом пространстве');
+    const { hostname } = this.tenantContext.require().tenant;
+    if (resolveTenantHost(req.headers) !== hostname) throw new ForbiddenException('Запрос с другого пространства запрещен');
+    // The registered platform hostname is authoritative. Never use forwarded host or a caller-supplied return URL.
+    const origin = `https://${hostname}`;
+    if (req.headers.origin && req.headers.origin !== origin) throw new ForbiddenException('Недопустимый источник запроса');
+    return `${origin}/api/auth/yandex/callback`;
+  }
+
+  private startTenantYandexOAuth(res: Response, req: Request, link: boolean) {
+    if (link) throw new NotFoundException('Привязка новых учетных записей Яндекса недоступна');
+    const redirectUri = this.tenantYandexRedirectUri(req);
+    const tenant = this.tenantContext.require().tenant;
+    const flow = createTenantYandexState(tenant, this.configService.get<string>('JWT_SECRET')!);
+    const options = { ...getYandexOauthStateCookieOptions(this.configService), secure: true };
+    res.clearCookie(YANDEX_OAUTH_LINK_COOKIE, options);
+    res.cookie(TENANT_YANDEX_OAUTH_STATE_COOKIE, flow.state, options);
+    res.cookie(TENANT_YANDEX_OAUTH_PKCE_COOKIE, flow.verifier, options);
+    return res.redirect(this.yandexOauthService.buildAuthorizeUrl(flow.state, redirectUri, flow.challenge));
+  }
+
+  private async handleTenantYandexCallback(
+    req: Request & { cookies: Record<string, string | undefined> },
+    res: Response,
+    query: Record<string, string | undefined>,
+  ) {
+    const redirectUri = this.tenantYandexRedirectUri(req);
+    const tenant = this.tenantContext.require().tenant;
+    const options = { ...getYandexOauthStateCookieOptions(this.configService), secure: true };
+    for (const name of [TENANT_YANDEX_OAUTH_STATE_COOKIE, TENANT_YANDEX_OAUTH_PKCE_COOKIE, YANDEX_OAUTH_LINK_COOKIE]) {
+      res.clearCookie(name, options);
+    }
+    const verifier = String(req.cookies[TENANT_YANDEX_OAUTH_PKCE_COOKIE] ?? '');
+    const validState = verifyTenantYandexState(
+      tenant,
+      this.configService.get<string>('JWT_SECRET')!,
+      String(query.state ?? ''),
+      String(req.cookies[TENANT_YANDEX_OAUTH_STATE_COOKIE] ?? ''),
+      verifier,
+    );
+    if (!validState || req.cookies[YANDEX_OAUTH_LINK_COOKIE]) {
+      return this.redirectToLogin(res, 'Сессия входа истекла. Попробуйте ещё раз');
+    }
+    if (query.error) return this.redirectToLogin(res, 'Вход через Яндекс отклонён');
+    const code = (query.code || '').trim();
+    if (!code || code.length > 2048) return this.redirectToLogin(res, 'Не удалось подтвердить вход через Яндекс');
+    try {
+      const accessToken = await this.yandexOauthService.exchangeCode(code, redirectUri, verifier);
+      const info = await this.yandexOauthService.fetchUser(accessToken);
+      if (!info.yandexId) throw new ForbiddenException();
+      // The tenant-scoped repository excludes archived users. Email is not proof of a pre-existing provider binding.
+      const user = await this.userRepository.findOneBy({ yandex_id: info.yandexId });
+      if (!user || user.deletedAt) throw new ForbiddenException();
+      const membership = await this.platform.assertMembership(tenant.id, user.id);
+      if (membership.localUserId !== user.id || membership.role !== user.role) throw new ForbiddenException();
+      await this.auditLogsService.record({
+        actionType: AuditActionType.AUTH_LOGIN_SUCCESS,
+        entityType: AuditEntityType.AUTH,
+        entityId: user.id,
+        entityLabel: user.email,
+        actor: user,
+        summary: 'Успешный вход через Яндекс',
+        afterPayload: { method: 'yandex' },
+      });
+      const token = this.jwtAuthService.generateToken({ ...this.buildJwtPayload(user), ...this.platform.sessionClaims(membership) });
+      clearAuthCookie(this.configService, res, tenant.hostname);
+      res.cookie('authToken', token, getAuthCookieOptions(this.configService, true));
+      return res.redirect('/');
+    } catch {
+      // Never expose provider responses, tokens or another tenant's account existence in the redirect URL.
+      return this.redirectToLogin(res, 'Не удалось войти. Используйте email и пароль или обратитесь к администратору');
+    }
+  }
+
   private buildYandexRedirectUri(req: Request): string {
     const origin = this.resolvePublicOrigin(req);
     return `${origin}/api/auth/yandex/callback`;
+  }
+
+  private async loginTenantByEmail(input: LoginEmailDto, res: Response, host?: string) {
+    const tenant = this.tenantContext.require().tenant;
+    const membership = await this.platform.authenticate(tenant.id, input.email, input.password);
+    const user = await this.userRepository.findOneBy({ id: membership.localUserId! });
+    if (!user) throw new HttpException('Нет доступа к пространству', HttpStatus.UNAUTHORIZED);
+    const token = this.jwtAuthService.generateToken({
+      ...this.buildJwtPayload(user),
+      ...this.platform.sessionClaims(membership),
+    });
+    clearAuthCookie(this.configService, res, host);
+    res.cookie('authToken', token, getAuthCookieOptions(this.configService, true));
+    return res.json(user);
+  }
+
+  async changeOwnPassword(user: AuthenticatedUser, currentPassword: string, newPassword: string) {
+    if (!this.tenantContext.isEnabled() || !user.identityId) throw new NotFoundException();
+    await this.platform.changeOwnPassword(user.identityId, currentPassword, newPassword);
+    return { changed: true };
   }
 
   private resolvePublicOrigin(req: Request): string {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import { useShortName } from '~/composables/useShortName';
 import MessageContent from '~/components/Chat/MessageContent.vue';
 import ChatEditor from '~/components/Chat/ChatEditor.vue';
@@ -241,7 +242,7 @@ const isPreviousSameAuthor = (message: Chat, previousMessage?: Chat) => {
 
 const getAuthorInitials = (message: Chat) => useShortName(message.author) ?? 'УП';
 
-const getAuthorPhotoUrl = (message: Chat) => message.author?.photo_url ?? null;
+const getAuthorPhotoUrl = (message: Chat) => resolveAwsUrl(message.author?.photo_url) ?? null;
 </script>
 
 <template>

@@ -1,4 +1,5 @@
 import { Users } from '../../users/entities/users.entity';
+import type { TenantSessionClaims } from '@tracker/contracts';
 
 export type AuthenticatedUser = Pick<
   Users,
@@ -16,4 +17,5 @@ export type AuthenticatedUser = Pick<
   | 'createdAt'
   | 'updatedAt'
   | 'deletedAt'
->;
+> &
+  Partial<TenantSessionClaims>;

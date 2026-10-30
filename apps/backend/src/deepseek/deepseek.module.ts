@@ -15,6 +15,7 @@ import { AI_MODEL } from './constants/tokens';
       provide: AI_CLIENT,
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
+        if (config.get<string>('AI_ENABLED') === 'false') return null;
         const apiKey = config.get<string>('GEMINI_API_KEY');
         if (!apiKey) {
           console.error('GEMINI_API_KEY не задан в окружении');

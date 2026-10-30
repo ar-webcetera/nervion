@@ -1,0 +1,73 @@
+# Infrastructure only. Run frontend/backend locally via pnpm dev, never Docker.
+# This is a single-node staging/example configuration, not HA or automatic PITR.
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command: ["postgres", "-c", "password_encryption=scram-sha-256", "-c", "max_connections=100"]
+    ports:
+      - "127.0.0.1:${SAAS_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - saas_pg_data:/var/lib/postgresql/data
+      - ./deploy/saas/postgres/001-bootstrap.sh:/docker-entrypoint-initdb.d/001-bootstrap.sh:ro
+      - ./deploy/saas/postgres/bootstrap.sql:/opt/nervion/bootstrap.sql:ro
+    secrets:
+      - postgres_password
+      - data_password
+      - platform_password
+      - data_migrator_password
+      - platform_migrator_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  pgbouncer:
+    build: ./deploy/saas/pgbouncer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SAAS_PGBOUNCER_PORT:-6432}:6432"
+    tmpfs:
+      - /run/pgbouncer:uid=10001,gid=10001,mode=0700
+    secrets:
+      - data_password
+      - platform_password
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-p", "6432"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${SAAS_REDIS_PORT:-6380}:6379"
+    volumes:
+      - saas_redis_data:/data
+
+secrets:
+  postgres_password:
+    file: ${SAAS_SECRETS_DIR:?Set SAAS_SECRETS_DIR outside the repository}/postgres_password
+  data_password:
+    file: ${SAAS_SECRETS_DIR:?Set SAAS_SECRETS_DIR outside the repository}/data_password
+  platform_password:
+    file: ${SAAS_SECRETS_DIR:?Set SAAS_SECRETS_DIR outside the repository}/platform_password
+  data_migrator_password:
+    file: ${SAAS_SECRETS_DIR:?Set SAAS_SECRETS_DIR outside the repository}/data_migrator_password
+  platform_migrator_password:
+    file: ${SAAS_SECRETS_DIR:?Set SAAS_SECRETS_DIR outside the repository}/platform_migrator_password
+
+volumes:
+  saas_pg_data:
+  saas_redis_data:

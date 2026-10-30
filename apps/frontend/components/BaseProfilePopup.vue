@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+const { resolveAwsUrl } = useResolveUrl();
 import { roleNames } from '~/types/user';
 import { MENU_ITEMS, isMenuItemAllowedForRole } from '~/constants/menu.constants';
 import { getErrorMessage } from '~/utils/error';
@@ -14,7 +15,8 @@ import { useShortName } from '~/composables/useShortName';
 
 const { getUserInfo, openUserEditModal, userEditModal, closeUserEditModal, handleLogout } = useProfile();
 const { formatMessageDate } = useDateFormatter();
-const config = useRuntimeConfig();
+const tenantApiBaseUrl = usePublicApiBaseUrl();
+const isTenantMode = String(useRuntimeConfig().public.tenancyEnabled) === 'true';
 const authStore = useAuthStore();
 
 const emit = defineEmits(['close']);
@@ -23,10 +25,11 @@ const userInfo = computed(() => getUserInfo.value);
 const avatarCropper = ref<InstanceType<typeof AvatarCropperModal> | null>(null);
 
 const userStore = useUserStore();
+const tenantStore = useTenantStore();
 const { $toast } = useNuxtApp();
 
 const configurableMenuItems = computed(() =>
-  MENU_ITEMS.filter((item) => !item.always && isMenuItemAllowedForRole(item, userInfo.value?.role)),
+  MENU_ITEMS.filter((item) => !item.always && tenantStore.menuAllowed(item.key) && isMenuItemAllowedForRole(item, userInfo.value?.role)),
 );
 const isMenuItemVisible = (key: string) => !(userInfo.value?.hidden_menu_items ?? []).includes(key);
 const savingMenu = ref(false);
@@ -80,7 +83,7 @@ const dismissNewToken = () => {
   apiTokenStore.clearNewToken();
 };
 
-const yandexLinkUrl = computed(() => `${config.public.API_URL}/api/auth/yandex?link=1`);
+const yandexLinkUrl = computed(() => `${tenantApiBaseUrl}/api/auth/yandex?link=1`);
 const yandexUnlinking = ref(false);
 
 const unlinkYandex = async () => {
@@ -106,7 +109,7 @@ const unlinkYandex = async () => {
     </div>
     <div class="base-profile-popup__header">
       <div class="base-profile-popup__avatar" title="Изменить фото" @click="avatarCropper?.open()">
-        <img v-if="userInfo.photo_url?.length" :src="userInfo.photo_url" alt="" />
+        <img v-if="userInfo.photo_url?.length" :src="resolveAwsUrl(userInfo.photo_url)" alt="" />
         <span v-else>{{ useShortName(userInfo) }}</span>
         <div class="base-profile-popup__avatar-overlay">
           <IconCamera />
@@ -149,7 +152,7 @@ const unlinkYandex = async () => {
 
     <div class="base-profile-popup__divider"></div>
 
-    <div class="base-profile-popup__section">
+    <div v-if="!isTenantMode" class="base-profile-popup__section">
       <div class="base-profile-popup__section-title">Вход через Яндекс</div>
       <div class="base-profile-popup__provider">
         <div class="base-profile-popup__provider-info">

@@ -17,6 +17,7 @@ const filesStore = useFilesStore();
 const wikiStore = useWikiStore();
 const route = useRoute();
 const config = useRuntimeConfig();
+const tenantApiBaseUrl = usePublicApiBaseUrl();
 
 const props = defineProps<{
   mode?: 'image' | 'video' | 'file' | 'embed';
@@ -82,8 +83,8 @@ const maxSize = 1024 * 1024 * 1024;
 
 const AWS_ENDPOINT = config.public.AWS_ENDPOINT;
 const objectUrl = (key: string) =>
-  key.startsWith('crm/')
-    ? `${String(config.public.API_URL ?? '').replace(/\/$/, '')}/api/files/raw?key=${encodeURIComponent(key)}`
+  String(config.public.tenancyEnabled) === 'true' || key.startsWith('crm/')
+    ? `${String(tenantApiBaseUrl ?? '').replace(/\/$/, '')}/api/files/raw?key=${encodeURIComponent(key)}`
     : (buildAwsObjectUrl(key, AWS_ENDPOINT) ?? key);
 
 const imageExts = ['jpeg', 'jpg', 'png', 'webp', 'svg'];

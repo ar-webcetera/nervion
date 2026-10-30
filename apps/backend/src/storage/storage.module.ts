@@ -23,6 +23,6 @@ import { StorageService } from './storage.service';
       inject: [ConfigService],
     },
   ],
-  exports: [StorageService, S3_CLIENT],
+  exports: [StorageService],
 })
 export class StorageModule {}

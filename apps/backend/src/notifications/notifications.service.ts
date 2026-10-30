@@ -10,6 +10,7 @@ import { Users } from '../users/entities/users.entity';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { PushService } from '../push/push.service';
 import { MailboxService } from '../mailbox/mailbox.service';
+import { runTenantSavepoint } from '../tenancy/tenant-context.service';
 
 @Injectable()
 export class NotificationsService {
@@ -45,7 +46,7 @@ export class NotificationsService {
     const newNotification = await this.notificationsRepository.save(data);
     newNotification.recipient = recipient;
     this.websocketGateway.sendNotificationAdded(newNotification, recipient.id);
-    void this.pushService.sendToUser(createNotificationDto.recipient_id, {
+    await this.pushService.sendToUser(createNotificationDto.recipient_id, {
       title: createNotificationDto.name,
       body: createNotificationDto.message ?? '',
       url: createNotificationDto.link ?? '/',
@@ -63,25 +64,29 @@ export class NotificationsService {
     const text = createNotificationDto.message ?? '';
 
     try {
-      await this.mailboxService.sendNotificationEmail({
+      const send = () => this.mailboxService.sendNotificationEmail({
         notificationId: notification.id,
         recipientEmail,
         subject,
         text,
         html,
       });
+      if (process.env.TENANCY_ENABLED === 'true') await runTenantSavepoint(send);
+      else await send();
     } catch (error) {
       this.logger.error(`Не удалось отправить email для уведомления ${notification.id}: ${String(error)}`);
     }
 
     try {
-      await this.mailboxService.storeNotificationEmail({
+      const store = () => this.mailboxService.storeNotificationEmail({
         notificationId: notification.id,
         recipientEmail,
         subject,
         text,
         html,
       });
+      if (process.env.TENANCY_ENABLED === 'true') await runTenantSavepoint(store);
+      else await store();
     } catch (error) {
       this.logger.error(`Не удалось сохранить письмо уведомления ${notification.id} во встроенной почте: ${String(error)}`);
     }

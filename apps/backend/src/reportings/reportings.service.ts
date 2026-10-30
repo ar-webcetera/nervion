@@ -9,7 +9,6 @@ import { TASK_STATUSES, TIMELOG_STATUSES } from '../common/enums/statuses.enum';
 import * as XLSX from 'xlsx';
 import { endOfMonth, endOfWeek, format, startOfMonth, startOfWeek, subDays, subMonths } from 'date-fns';
 import { Tasks } from 'src/tasks/entities/task.entity';
-import * as fs from 'fs';
 import { extractTextFromDoc } from '../common/utils/extractTextFromDoc';
 import type { Node } from '../common/utils/extractTextFromDoc';
 import {
@@ -497,7 +496,7 @@ export class ReportingsService {
       return '';
     }
   }
-  async syncProjectTasksToTable(projectId: number) {
+  async syncProjectTasksToTable(projectId: number): Promise<Buffer> {
     const workbook = XLSX.utils.book_new();
 
     const tasks = await this.tasksRepository.find({
@@ -515,8 +514,6 @@ export class ReportingsService {
 
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Задачи');
 
-    const buffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' });
-    fs.writeFileSync('tasks.xlsx', buffer);
-    return buffer;
+    return XLSX.write(workbook, { bookType: 'xlsx', type: 'buffer' }) as Buffer;
   }
 }

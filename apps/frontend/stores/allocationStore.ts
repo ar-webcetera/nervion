@@ -2,14 +2,15 @@ import { defineStore } from 'pinia';
 import type { Allocation, CreateAllocationDto, UpdateAllocationDto, GetAllocationsParams } from '~/types/allocation';
 
 export const useAllocationStore = defineStore('allocation', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const allocations = ref<Allocation[]>([]);
   const loading = ref(false);
 
   const fetchAllocations = async (params?: GetAllocationsParams) => {
     loading.value = true;
     try {
-      const headers = useRequestHeaders(['cookie']);
+      const headers = useApiRequestHeaders();
       const queryParams = new URLSearchParams();
 
       if (params?.user_id) queryParams.append('user_id', params.user_id.toString());
@@ -19,8 +20,8 @@ export const useAllocationStore = defineStore('allocation', () => {
 
       const url = `/api/allocations${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
 
-      const response = await $fetch<Allocation[]>(url, {
-        baseURL: config.public.API_URL,
+      const response = await tenantFetch<Allocation[]>(url, {
+        baseURL: tenantApiBaseUrl,
         method: 'GET',
         credentials: 'include',
         headers,
@@ -34,9 +35,9 @@ export const useAllocationStore = defineStore('allocation', () => {
   };
 
   const createAllocation = async (data: CreateAllocationDto) => {
-    const headers = useRequestHeaders(['cookie']);
-    const response = await $fetch<Allocation>('/api/allocations', {
-      baseURL: config.public.API_URL,
+    const headers = useApiRequestHeaders();
+    const response = await tenantFetch<Allocation>('/api/allocations', {
+      baseURL: tenantApiBaseUrl,
       method: 'POST',
       credentials: 'include',
       headers,
@@ -51,9 +52,9 @@ export const useAllocationStore = defineStore('allocation', () => {
   };
 
   const updateAllocation = async (id: number, data: UpdateAllocationDto) => {
-    const headers = useRequestHeaders(['cookie']);
-    const response = await $fetch<Allocation>(`/api/allocations/${id}`, {
-      baseURL: config.public.API_URL,
+    const headers = useApiRequestHeaders();
+    const response = await tenantFetch<Allocation>(`/api/allocations/${id}`, {
+      baseURL: tenantApiBaseUrl,
       method: 'PATCH',
       credentials: 'include',
       headers,
@@ -71,9 +72,9 @@ export const useAllocationStore = defineStore('allocation', () => {
   };
 
   const deleteAllocation = async (id: number) => {
-    const headers = useRequestHeaders(['cookie']);
-    await $fetch(`/api/allocations/${id}`, {
-      baseURL: config.public.API_URL,
+    const headers = useApiRequestHeaders();
+    await tenantFetch(`/api/allocations/${id}`, {
+      baseURL: tenantApiBaseUrl,
       method: 'DELETE',
       credentials: 'include',
       headers,

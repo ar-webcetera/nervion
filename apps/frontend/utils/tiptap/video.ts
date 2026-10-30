@@ -1,4 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core';
+import { buildAwsObjectUrl } from '~/utils/resolveUrl';
 
 type VideoHtmlAttributes = Record<string, string | number | boolean | null | undefined>;
 
@@ -17,8 +18,10 @@ const sanitizeVideoAttributes = (attributes: VideoHtmlAttributes) => {
   };
 };
 
-export const Video = Node.create({
+export const Video = Node.create<{ awsEndpoint?: string; tenantStorage: boolean }>({
   name: 'video',
+
+  addOptions() { return { awsEndpoint: '', tenantStorage: false }; },
 
   group: 'block',
 
@@ -53,7 +56,9 @@ export const Video = Node.create({
 
   renderHTML({ HTMLAttributes }) {
     const { src, attrs } = sanitizeVideoAttributes(HTMLAttributes);
-    const normalizedSrc = typeof src === 'string' ? src : '';
+    const normalizedSrc = typeof src === 'string'
+      ? this.options.tenantStorage ? buildAwsObjectUrl(src, this.options.awsEndpoint, true) ?? '' : src
+      : '';
 
     if (!normalizedSrc) {
       return ['video', mergeAttributes(attrs, { controls: true })];

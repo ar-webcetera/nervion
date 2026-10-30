@@ -2,15 +2,16 @@ import { defineStore } from 'pinia';
 import type { QuickLink, CreateQuickLinkDto, UpdateQuickLinkDto } from '~/types/quick-link';
 
 export const useQuickLinkStore = defineStore('quickLink', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const quickLinks = ref<QuickLink[]>([]);
 
   const fetchQuickLinks = async (projectId: number) => {
     try {
-      const cookies = useRequestHeaders(['cookie']);
-      const data = await $fetch<QuickLink[]>('/api/quick-links', {
+      const cookies = useApiRequestHeaders();
+      const data = await tenantFetch<QuickLink[]>('/api/quick-links', {
         credentials: 'include',
-        baseURL: config.public.API_URL,
+        baseURL: tenantApiBaseUrl,
         method: 'GET',
         params: { project_id: projectId },
         headers: {
@@ -27,8 +28,8 @@ export const useQuickLinkStore = defineStore('quickLink', () => {
 
   const createQuickLink = async (dto: CreateQuickLinkDto) => {
     try {
-      const data = await $fetch<QuickLink>('/api/quick-links', {
-        baseURL: config.public.API_URL,
+      const data = await tenantFetch<QuickLink>('/api/quick-links', {
+        baseURL: tenantApiBaseUrl,
         credentials: 'include',
         method: 'POST',
         body: dto,
@@ -43,8 +44,8 @@ export const useQuickLinkStore = defineStore('quickLink', () => {
 
   const updateQuickLink = async (id: number, dto: UpdateQuickLinkDto) => {
     try {
-      const data = await $fetch<QuickLink>(`/api/quick-links/${id}`, {
-        baseURL: config.public.API_URL,
+      const data = await tenantFetch<QuickLink>(`/api/quick-links/${id}`, {
+        baseURL: tenantApiBaseUrl,
         credentials: 'include',
         method: 'PATCH',
         body: dto,
@@ -62,8 +63,8 @@ export const useQuickLinkStore = defineStore('quickLink', () => {
 
   const deleteQuickLink = async (id: number) => {
     try {
-      await $fetch(`/api/quick-links/${id}`, {
-        baseURL: config.public.API_URL,
+      await tenantFetch(`/api/quick-links/${id}`, {
+        baseURL: tenantApiBaseUrl,
         credentials: 'include',
         method: 'DELETE',
       });

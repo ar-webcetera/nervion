@@ -108,7 +108,7 @@ export class CommentsService {
 
     const newComment = await this.commentRepository.save(data);
 
-    void this.sendCommentNotifications({
+    await this.sendCommentNotifications({
       author,
       task,
       newComment,
@@ -180,7 +180,7 @@ export class CommentsService {
       for (const mentionUser of mentionUsers) {
         if (mentionUser.id === author?.id) continue;
         const subject = `${authorName} отметил вас в задаче: ${task.title}`;
-        void this.notifications
+        await this.notifications
           .createWithEmail({ name: subject, message, recipient_id: mentionUser.id, link }, `<p>${message}</p>${commentLink}`)
           .catch((err) => console.error('Ошибка создания уведомления', err));
       }

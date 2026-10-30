@@ -7,7 +7,8 @@ const props = defineProps<NodeViewProps>();
 type FileAttrs = { href: string; name: string; ext?: string };
 const a = props.node.attrs as FileAttrs;
 
-const href = a.href;
+const { resolveAwsUrl } = useResolveUrl();
+const href = computed(() => resolveAwsUrl(a.href));
 const label = `${a.name}${a.ext ? '.' + a.ext : ''}`;
 </script>
 

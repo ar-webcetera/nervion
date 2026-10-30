@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { JwtPayload } from './types/jwt-payload';
@@ -13,6 +13,16 @@ export class JwtAuthService {
   ) {}
 
   generateToken(payload: JwtPayload): string {
+    if (
+      this.configService.get<string>('TENANCY_ENABLED') === 'true' &&
+      (!payload.tenantId ||
+        !payload.identityId ||
+        !payload.membershipId ||
+        !Number.isInteger(payload.identityVersion) ||
+        payload.identityVersion! < 1)
+    ) {
+      throw new UnauthorizedException('Сессия требует пространство и членство');
+    }
     const secret = resolveJwtSecret(this.configService);
     return this.jwtService.sign(payload, { secret, expiresIn: getAuthTokenTtlSeconds(this.configService) });
   }

@@ -27,8 +27,6 @@ import { TIMELOG_STATUSES } from '../common/enums/statuses.enum';
 import { GetTimelogByFilterDto } from './dto/get-timelog-by-filter.dto';
 import { GetTimelogSummaryDto } from './dto/get-timelog-summary.dto';
 import { ROLES } from '../common/enums/roles.enum';
-import * as path from 'path';
-import * as fs from 'fs';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
@@ -297,7 +295,7 @@ export class TimelogsService {
    *    - ФИО: Полное имя специалиста.
    *    - Дата: Дата учета времени.
    *    - Кол-во часов выработки: Общее количество часов, округленное до одного знака после запятой.
-   * 5. Сохраняет сгенерированный отчет в директорию `reports` в корне проекта.
+   * 5. Возвращает отчет в памяти без сохранения общей серверной копии.
    *
    * @returns {Promise<Buffer>} Промис, который разрешается в Buffer с данными Excel-файла.
    */
@@ -345,14 +343,6 @@ export class TimelogsService {
     worksheet['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 25 }];
 
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
-
-    const reportsDir = path.join(process.cwd(), '..', '..', 'reports');
-    if (!fs.existsSync(reportsDir)) {
-      fs.mkdirSync(reportsDir, { recursive: true });
-    }
-    const filePath = path.join(reportsDir, 'work-hours-report.xlsx');
-    fs.writeFileSync(filePath, buffer);
-    this.logger.log(`Отчет успешно сохранен в: ${filePath}`);
 
     return buffer;
   }

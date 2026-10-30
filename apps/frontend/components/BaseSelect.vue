@@ -15,7 +15,7 @@ const selectOptions = [
 -->
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, useId, watch } from 'vue';
 import { Plus } from '@lucide/vue';
 import IconArrowDown from '~/components/Icons/IconArrowDown.vue';
 import type { SelectOption } from '~/types/select';
@@ -56,13 +56,16 @@ const emit = defineEmits<{
 const isOpen = ref(false);
 const search = ref('');
 const root = ref<HTMLElement>();
+const trigger = ref<HTMLElement>();
 const searchInput = ref<HTMLInputElement>();
 const dropdown = ref<HTMLElement>();
+const activeIndex = ref(-1);
+const listboxId = `select-${useId()}-listbox`;
+const optionId = (index: number) => `${listboxId}-option-${index}`;
+const activeOptionId = computed(() => (isOpen.value && activeIndex.value >= 0 ? optionId(activeIndex.value) : undefined));
 const selectedValues = computed(() =>
   Array.isArray(props.modelValue) ? props.modelValue : props.modelValue !== null ? [props.modelValue] : [],
 );
-
-const tempValue = ref<string | number | null>(null);
 
 const selectedLabel = computed(() => {
   if (props.multiselect) {
@@ -74,36 +77,47 @@ const selectedLabel = computed(() => {
 });
 
 const isFilledOption = computed(() => {
-  return Array.isArray(props.modelValue) ? props.modelValue.length : Boolean(props.modelValue);
+  return selectedValues.value.length > 0;
 });
 
 const filteredOptions = computed(() => {
   const query = search.value.trim().toLocaleLowerCase();
   if (!query) return props.options;
-  return props.options.filter((option) => String(option.label ?? '').toLocaleLowerCase().includes(query));
+  return props.options.filter((option) =>
+    String(option.label ?? '')
+      .toLocaleLowerCase()
+      .includes(query),
+  );
 });
 
-const toggleDropdown = async () => {
-  if (!props.options.length && !props.actionLabel) return;
-  if (!props.disabled) {
-    const nextIsOpen = !isOpen.value;
-    if (nextIsOpen) window.dispatchEvent(new CustomEvent('base-select:open', { detail: root.value }));
-    isOpen.value = nextIsOpen;
-    search.value = '';
-    if (isOpen.value && props.searchable) {
-      await nextTick();
-      searchInput.value?.focus();
-    }
-    if (isOpen.value && !props.searchable) {
-      await nextTick();
-      dropdown.value?.querySelector<HTMLElement>('.selected')?.scrollIntoView({ block: 'nearest' });
-    }
-  }
+const setActiveIndex = async (index: number) => {
+  activeIndex.value = filteredOptions.value.length ? Math.max(0, Math.min(index, filteredOptions.value.length - 1)) : -1;
+  await nextTick();
+  dropdown.value?.querySelector<HTMLElement>(`[data-select-index="${activeIndex.value}"]`)?.scrollIntoView({ block: 'nearest' });
 };
 
-const closeDropdown = () => {
+const closeDropdown = (restoreFocus = false) => {
   isOpen.value = false;
   search.value = '';
+  activeIndex.value = -1;
+  if (restoreFocus) trigger.value?.focus();
+};
+
+const openDropdown = async (preferLast = false) => {
+  if (props.disabled || props.pending || (!props.options.length && !props.actionLabel)) return;
+  window.dispatchEvent(new CustomEvent('base-select:open', { detail: root.value }));
+  search.value = '';
+  isOpen.value = true;
+  const selectedIndex = filteredOptions.value.findIndex(
+    (option) => option.value !== null && selectedValues.value.includes(option.value),
+  );
+  await setActiveIndex(selectedIndex >= 0 ? selectedIndex : preferLast ? filteredOptions.value.length - 1 : 0);
+  if (props.searchable) searchInput.value?.focus();
+};
+
+const toggleDropdown = () => {
+  if (isOpen.value) closeDropdown();
+  else void openDropdown();
 };
 
 const handleClickOutside = () => {
@@ -116,36 +130,92 @@ const handleOtherSelectOpen = (event: Event) => {
   if (event instanceof CustomEvent && event.detail !== root.value) closeDropdown();
 };
 
+const handleFocusOut = (event: FocusEvent) => {
+  if (!(event.relatedTarget instanceof Node) || !root.value?.contains(event.relatedTarget)) closeDropdown();
+};
+
+watch(filteredOptions, () => {
+  if (!isOpen.value) return;
+  const selectedIndex = filteredOptions.value.findIndex(
+    (option) => option.value !== null && selectedValues.value.includes(option.value),
+  );
+  void setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+});
+watch(
+  () => props.disabled || props.pending,
+  (disabled) => {
+    if (disabled) closeDropdown();
+  },
+);
+
 onMounted(() => window.addEventListener('base-select:open', handleOtherSelectOpen));
 onBeforeUnmount(() => window.removeEventListener('base-select:open', handleOtherSelectOpen));
 
 const selectOption = (option: SelectOption) => {
-  tempValue.value = option.value;
+  if (props.disabled || props.pending) return;
 
-  if (props.multiselect && tempValue.value) {
+  if (props.multiselect && option.value !== null) {
     const set = new Set(selectedValues.value);
-    if (set.has(tempValue.value)) {
-      set.delete(tempValue.value);
+    if (set.has(option.value)) {
+      set.delete(option.value);
     } else {
-      set.add(tempValue.value);
+      set.add(option.value);
     }
     emit('update:modelValue', Array.from(set));
   }
 
   if (!props.multiselect) {
     emit('update:modelValue', option.value);
-    closeDropdown();
+    closeDropdown(true);
   }
 };
 
 const triggerAction = () => {
-  closeDropdown();
+  closeDropdown(true);
   emit('action');
+};
+
+const handleKeydown = (event: KeyboardEvent) => {
+  if (props.disabled || props.pending) return;
+  const editingSearch = event.target === searchInput.value;
+  if (event.key === 'Escape' && isOpen.value) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeDropdown(true);
+    return;
+  }
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isOpen.value) void openDropdown(event.key === 'ArrowUp');
+    else void setActiveIndex(activeIndex.value + (event.key === 'ArrowDown' ? 1 : -1));
+    return;
+  }
+  if ((event.key === 'Home' || event.key === 'End') && isOpen.value && !editingSearch) {
+    event.preventDefault();
+    void setActiveIndex(event.key === 'Home' ? 0 : filteredOptions.value.length - 1);
+    return;
+  }
+  if (event.key === 'Enter' || (event.key === ' ' && !editingSearch)) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isOpen.value) void openDropdown();
+    else {
+      const option = filteredOptions.value[activeIndex.value];
+      if (option) selectOption(option);
+    }
+  }
 };
 </script>
 
 <template>
-  <div ref="root" v-click-outside="handleClickOutside" class="home-select" :class="{ 'home-select_disabled': disabled }">
+  <div
+    ref="root"
+    v-click-outside="handleClickOutside"
+    class="home-select"
+    :class="{ 'home-select_disabled': disabled }"
+    @focusout="handleFocusOut"
+  >
     <div v-if="pending" class="home-select__input home-select_disabled">
       <span class="home-select__placeholder">
         {{ props.placeholder }}
@@ -154,23 +224,34 @@ const triggerAction = () => {
     </div>
     <div
       v-else
+      ref="trigger"
       class="home-select__input"
       :class="{ 'home-select__input_error': error, 'home-select__input_large': large, 'home-select__input_small': small }"
-      role="combobox"
+      :role="searchable ? 'button' : 'combobox'"
+      :aria-label="props.placeholder || 'Выбрать вариант'"
+      aria-haspopup="listbox"
+      :aria-controls="listboxId"
+      :aria-activedescendant="searchable ? undefined : activeOptionId"
       :aria-expanded="isOpen"
       :aria-disabled="disabled"
       :tabindex="disabled ? -1 : 0"
       @click.stop="toggleDropdown"
-      @keydown.enter.prevent="toggleDropdown"
-      @keydown.space.prevent="toggleDropdown"
-      @keydown.escape.stop="closeDropdown"
+      @keydown="handleKeydown"
     >
       <span :class="['home-select__placeholder', { 'home-select__placeholder_show': !selectedLabel }]">
         {{ selectedLabel || props.placeholder }}
       </span>
-      <div v-if="props.resetButton && isFilledOption" class="home-select__reset" @click.stop="emit('reset')">
+      <button
+        v-if="props.resetButton && isFilledOption"
+        type="button"
+        class="home-select__reset"
+        aria-label="Сбросить выбор"
+        :disabled="disabled"
+        @click.stop="emit('reset')"
+        @keydown.stop
+      >
         <IconsIconClose />
-      </div>
+      </button>
       <div
         v-if="(props.options.length || props.actionLabel) && arrow"
         :class="['home-select__arrow', { 'home-select__arrow_small': small || large, 'home-select__arrow_flip': isOpen }]"
@@ -181,7 +262,6 @@ const triggerAction = () => {
     <div
       v-if="isOpen"
       ref="dropdown"
-      v-click-outside="closeDropdown"
       :class="['home-select__dropdown', { 'home-select__dropdown_large': large, 'home-select__dropdown_small': small }]"
     >
       <input
@@ -190,22 +270,47 @@ const triggerAction = () => {
         v-model="search"
         class="home-select__search"
         type="search"
+        role="combobox"
+        aria-expanded="true"
+        aria-autocomplete="list"
+        aria-haspopup="listbox"
+        :aria-controls="listboxId"
+        :aria-activedescendant="activeOptionId"
         :placeholder="searchPlaceholder"
         aria-label="Поиск по вариантам"
         @click.stop
-        @keydown.stop
-        @keydown.escape.stop="closeDropdown"
+        @keydown.stop="handleKeydown"
       />
-      <span
-        v-for="(option, index) in filteredOptions"
-        :key="option.value ?? index"
-        :class="{ selected: selectedValues.includes(option.value!) }"
-        @click.stop="selectOption(option)"
+      <div
+        :id="listboxId"
+        class="home-select__options"
+        role="listbox"
+        :aria-label="props.placeholder || 'Варианты'"
+        :aria-multiselectable="multiselect || undefined"
       >
-        {{ option.label }}
-      </span>
+        <span
+          v-for="(option, index) in filteredOptions"
+          :id="optionId(index)"
+          :key="option.value ?? index"
+          role="option"
+          :data-select-index="index"
+          :aria-selected="option.value !== null && selectedValues.includes(option.value)"
+          :class="{ selected: option.value !== null && selectedValues.includes(option.value), active: activeIndex === index }"
+          @pointermove="activeIndex = index"
+          @mousedown.prevent
+          @click.stop="selectOption(option)"
+        >
+          {{ option.label }}
+        </span>
+      </div>
       <p v-if="!filteredOptions.length" class="home-select__empty">Ничего не найдено</p>
-      <button v-if="actionLabel" type="button" class="home-select__action" @click.stop="triggerAction">
+      <button
+        v-if="actionLabel"
+        type="button"
+        class="home-select__action"
+        @click.stop="triggerAction"
+        @keydown.escape.stop.prevent="closeDropdown(true)"
+      >
         <Plus :size="16" :stroke-width="1.75" aria-hidden="true" />
         {{ actionLabel }}
       </button>
@@ -235,6 +340,10 @@ const triggerAction = () => {
     left: 50%;
     transform: translate(-50%, -50%);
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 }
 .home-select {
   position: relative;
@@ -252,8 +361,13 @@ const triggerAction = () => {
     gap: 8px;
     text-align: left;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: border-color 0.2s ease;
     user-select: none;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
 
     &_error {
       border: 1px solid var(--secondary);
@@ -304,6 +418,15 @@ const triggerAction = () => {
     @include flex(a-center);
     width: 18px;
     height: 18px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
+    }
     svg {
       fill: var(--light-text-backgroung-primary);
     }
@@ -349,7 +472,7 @@ const triggerAction = () => {
       cursor: pointer;
       padding: 6px 8px;
       text-align: left;
-      transition: all 0.2s ease;
+      transition: background-color 0.2s ease;
       white-space: nowrap;
 
       &:hover {
@@ -358,6 +481,12 @@ const triggerAction = () => {
 
       &.selected {
         background: var(--light-text-backgroung-primary-5);
+      }
+
+      &.active {
+        outline: 2px solid var(--primary);
+        outline-offset: -2px;
+        color: var(--light-text-backgroung-primary);
       }
     }
 
@@ -379,6 +508,10 @@ const triggerAction = () => {
       left: unset;
       right: 0;
     }
+  }
+
+  &__options {
+    width: 100%;
   }
 
   &__empty {
@@ -419,6 +552,15 @@ const triggerAction = () => {
     &:focus-visible {
       outline: 2px solid var(--primary-50);
       outline-offset: -2px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    &__input,
+    &__arrow,
+    &__dropdown span,
+    &__action {
+      transition: none;
     }
   }
 }

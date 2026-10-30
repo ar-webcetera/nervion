@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import EditorTiptap from '~/components/TipTap/EditorTiptap.vue';
 import type { Comment } from '~/types/comment';
 import { format } from 'date-fns';
@@ -221,7 +222,7 @@ onUnmounted(() => {
       <div :class="['base-comment__left', { 'base-comment__left_with-thread': isExistSubComments }]">
         <div class="base-comment__user">
           <div class="base-comment__user-logo">
-            <img v-if="comment.author?.photo_url" :src="comment.author?.photo_url" alt="" @error="($event.target as HTMLImageElement).style.display='none'" />
+            <img v-if="comment.author?.photo_url" :src="resolveAwsUrl(comment.author?.photo_url)" alt="" @error="($event.target as HTMLImageElement).style.display='none'" />
             <span v-else>{{ useShortName(comment.author!) }}</span>
           </div>
         </div>

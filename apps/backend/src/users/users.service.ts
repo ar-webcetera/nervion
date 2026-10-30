@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { ForbiddenException, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AuditActionType, AuditEntityType } from '@tracker/contracts';
 import { Users } from './entities/users.entity';
@@ -13,6 +13,10 @@ import { ROLES } from '../common/enums/roles.enum';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { PlatformService } from '../platform/platform.service';
+import { TenantContextService } from '../tenancy/tenant-context.service';
+import { TenantJobsService } from '../tenancy/tenant-jobs.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class UsersService {
@@ -21,9 +25,13 @@ export class UsersService {
     @InjectRepository(Users)
     private readonly userRepository: Repository<Users>,
     private readonly auditLogsService: AuditLogsService,
+    private readonly platform: PlatformService,
+    private readonly tenantContext: TenantContextService,
+    private readonly tenantJobs: TenantJobsService,
   ) {}
 
   async createUser(userInfo: CreateUserDto, currentUser?: AuthenticatedUser) {
+    if (this.tenantContext.isEnabled()) return this.createTenantUser(userInfo, currentUser);
     try {
       const plainPassword = userInfo.password || this.authService.generateRandomPassword(12);
       const hashedPassword = this.authService.hashPassword(plainPassword);
@@ -69,6 +77,15 @@ export class UsersService {
   }
 
   async updateUser(id: number, updateUserDto: UpdateUserDto, currentUser?: AuthenticatedUser) {
+    if (this.tenantContext.isEnabled() && (updateUserDto.email || updateUserDto.password)) {
+      const current = await this.userRepository.findOneBy({ id });
+      if (
+        updateUserDto.password ||
+        (updateUserDto.email && current?.email.toLowerCase() !== updateUserDto.email.trim().toLowerCase())
+      ) {
+        throw new ForbiddenException('Глобальные email и пароль изменяются владельцем учетной записи');
+      }
+    }
     try {
       const user = await this.userRepository.findOne({ where: { id } });
       if (!user) {
@@ -94,6 +111,11 @@ export class UsersService {
       }
 
       const updatedUser = await this.userRepository.save(user);
+      if (this.tenantContext.isEnabled() && updateUserDto.role) {
+        const execution = this.tenantContext.require();
+        await this.scheduleMembershipSync(id);
+        execution.afterCommit.push(() => this.platform.updateMembershipRole(execution.tenant.id, id, updatedUser.role));
+      }
       void this.auditLogsService.record({
         actionType: AuditActionType.USER_UPDATED,
         entityType: AuditEntityType.USER,
@@ -125,6 +147,11 @@ export class UsersService {
     }
 
     await this.userRepository.softDelete(id);
+    if (this.tenantContext.isEnabled()) {
+      const execution = this.tenantContext.require();
+      await this.scheduleMembershipSync(id);
+      execution.afterCommit.push(() => this.platform.archiveMembership(execution.tenant.id, id));
+    }
     void this.auditLogsService.record({
       actionType: AuditActionType.USER_ARCHIVED,
       entityType: AuditEntityType.USER,
@@ -137,7 +164,19 @@ export class UsersService {
   }
 
   async restoreUser(id: number, currentUser?: AuthenticatedUser) {
+    let membershipId: string | undefined;
+    if (this.tenantContext.isEnabled()) {
+      const execution = this.tenantContext.require();
+      const archived = await this.userRepository.findOne({ where: { id }, withDeleted: true });
+      if (!archived) throw new HttpException('Пользователь не найден', HttpStatus.NOT_FOUND);
+      if (!archived.deletedAt) return archived;
+      const reservation = await this.platform.reserveMembership(execution.tenant.id, archived.email, '', archived.role, id);
+      membershipId = reservation.membership.id;
+      execution.afterRollback.push(() => this.platform.releaseReservation(reservation));
+      execution.afterCommit.push(() => this.platform.activateReservation(reservation.membership.id, id));
+    }
     await this.userRepository.restore(id);
+    await this.scheduleMembershipSync(id, membershipId);
     const restoredUser = await this.userRepository.findOne({ where: { id } });
     if (restoredUser) {
       void this.auditLogsService.record({
@@ -194,5 +233,62 @@ export class UsersService {
       photo_url: user.photo_url ?? null,
       deleted_at: user.deletedAt ? new Date(user.deletedAt).toISOString() : null,
     };
+  }
+
+  private async createTenantUser(input: CreateUserDto, actor?: AuthenticatedUser) {
+    const execution = this.tenantContext.require();
+    const email = input.email.trim().toLowerCase();
+    const existing = await this.userRepository
+      .createQueryBuilder('user')
+      .withDeleted()
+      .where('lower(user.email) = :email', { email })
+      .getOne();
+    if (existing)
+      throw new HttpException('Пользователь уже существует. Архивного пользователя можно восстановить.', HttpStatus.CONFLICT);
+    const plainPassword = input.password || this.authService.generateRandomPassword(16);
+    const role = input.role || ROLES.guest;
+    const reservation = await this.platform.reserveMembership(
+      execution.tenant.id,
+      email,
+      this.authService.hashPassword(plainPassword),
+      role,
+    );
+    execution.afterRollback.push(() => this.platform.releaseReservation(reservation));
+    const user = await this.userRepository.save(
+      this.userRepository.create({
+        email,
+        role,
+        first_name: input.first_name,
+        last_name: input.last_name,
+        patronymic: input.patronymic,
+        // Credentials belong to the global identity; a tenant administrator cannot replace them.
+        hashed_password: '',
+      }),
+    );
+    await this.scheduleMembershipSync(user.id, reservation.membership.id);
+    execution.afterCommit.push(() => this.platform.activateReservation(reservation.membership.id, user.id));
+    await this.auditLogsService.record({
+      actionType: AuditActionType.USER_CREATED,
+      entityType: AuditEntityType.USER,
+      entityId: user.id,
+      entityLabel: user.email,
+      actor,
+      summary: `Создан пользователь "${user.email}"`,
+      afterPayload: this.serializeUserForAudit(user),
+    });
+    const { hashed_password: _passwordHash, ...publicUser } = user;
+    return {
+      ...publicUser,
+      password: reservation.createdIdentity ? plainPassword : undefined,
+      existingIdentity: !reservation.createdIdentity,
+    };
+  }
+
+  private async scheduleMembershipSync(userId: number, membershipId?: string): Promise<void> {
+    if (!this.tenantContext.isEnabled()) return;
+    await this.tenantJobs.enqueue('membership-sync', `membership:${userId}:${randomUUID()}`, {
+      userId,
+      ...(membershipId ? { membershipId } : {}),
+    });
   }
 }

@@ -546,6 +546,18 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const pollThreads = () => {
   if (!selectedAccountId.value) return;
+  const deliveryThreadId = selectedThreadId.value;
+  if (deliveryThreadId && messages.value.some((message) => ['queued', 'sending', 'uncertain'].includes(message.status))) {
+    void mailStore.getThread(deliveryThreadId).then((response) => {
+      if (selectedThreadId.value !== deliveryThreadId || currentThread.value?.id !== deliveryThreadId) return;
+      const byId = new Map(response.messages.map((message) => [message.id, message]));
+      messages.value = messages.value.map((message) => {
+        const latest = byId.get(message.id);
+        return latest ? { ...message, status: latest.status, delivery_status: latest.delivery_status,
+          open_count: latest.open_count, click_count: latest.click_count, last_delivery_event_at: latest.last_delivery_event_at } : message;
+      });
+    }).catch(() => {});
+  }
   if (!isStatsFolder.value) {
     void mailStore
       .fetchThreads({
@@ -1314,7 +1326,7 @@ const retryMessage = async (message: MailMessage) => {
   retryingMessageIds.value = new Set(retryingMessageIds.value).add(message.id);
   try {
     await mailStore.retryMessage(message.id);
-    $toast.success('Письмо отправлено повторно');
+    $toast.success('Повторная отправка запрошена');
   } catch (error) {
     $toast.error(getErrorMessage(error));
   } finally {
@@ -1793,7 +1805,7 @@ watch(
                 </span>
                 <MailDeliveryBadge
                   v-if="currentFolder === 'sent'"
-                  status="sent"
+                  :status="thread.message_status || 'sent'"
                   :delivery-status="thread.delivery_status"
                   :open-count="thread.open_count"
                   :click-count="thread.click_count"

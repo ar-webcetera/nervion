@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import type { ProjectMember } from '~/types/project';
 
 defineProps<{
@@ -22,7 +23,7 @@ const imgError = ref(false);
 
 <template>
   <div v-if="member.photo_url && !imgError" :title="`${member.first_name} ${member.last_name}`" class="avatar avatar_image">
-    <img :src="member.photo_url" :alt="`${member.first_name} ${member.last_name}`" @error="imgError = true" />
+    <img :src="resolveAwsUrl(member.photo_url)" :alt="`${member.first_name} ${member.last_name}`" @error="imgError = true" />
   </div>
   <div
     v-else

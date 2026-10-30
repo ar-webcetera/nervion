@@ -203,9 +203,9 @@ const stopAndSend = async () => {
       try {
         const fd = new FormData();
         fd.append('audio', file);
-        const config = useRuntimeConfig();
+        const tenantApiBaseUrl = usePublicApiBaseUrl();
 
-        const res = await $fetch<ParsedAudioTask>(config.public.API_URL + endpoint, {
+        const res = await $fetch<ParsedAudioTask>(tenantApiBaseUrl + endpoint, {
           method: 'POST',
           body: fd,
           credentials: 'include',

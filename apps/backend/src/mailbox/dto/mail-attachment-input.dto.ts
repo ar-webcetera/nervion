@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class MailAttachmentInputDto {
@@ -20,6 +20,7 @@ export class MailAttachmentInputDto {
 
   @ApiProperty({ description: 'Размер файла в байтах', example: 102400 })
   @IsInt()
+  @Min(0)
   @Type(() => Number)
   size: number;
 

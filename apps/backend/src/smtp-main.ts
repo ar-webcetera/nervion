@@ -4,6 +4,9 @@ import { SmtpWorkerModule } from './smtp-worker.module';
 import { SmtpServerService } from './mailbox/smtp/smtp-server.service';
 
 async function bootstrap() {
+  // This process does not load task/calendar handlers. Only its mail-specific
+  // durable dispatcher may run here; API replicas own generic tenant jobs.
+  process.env.TENANT_JOBS_WORKER_ENABLED = 'false';
   const app = await NestFactory.createApplicationContext(SmtpWorkerModule);
   const smtpServer = app.get(SmtpServerService);
 

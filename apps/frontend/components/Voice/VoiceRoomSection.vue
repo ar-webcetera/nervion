@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import type { VoiceRoom } from '@tracker/contracts';
 import { Check, Ellipsis, Mic, MicOff, Pencil, Plus, Trash2 } from '@lucide/vue';
 import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
@@ -12,6 +13,8 @@ interface VoiceRoomPresenceEvent {
 
 const voiceRoomStore = useVoiceRoomStore();
 const userStore = useUserStore();
+const tenantStore = useTenantStore();
+const canWrite = computed(() => !tenantStore.readOnly && tenantStore.canUse('voice'));
 const { rooms, loading } = storeToRefs(voiceRoomStore);
 const { users } = storeToRefs(userStore);
 const { $toast, $webSocket } = useNuxtApp();
@@ -228,7 +231,7 @@ const confirmDelete = async () => {
         <span id="voice-rooms-title">Голосовые комнаты</span>
         <span v-if="roomRows.some((room) => room.activeParticipants.length)" class="vrs__live-dot" title="Есть участники в эфире" />
       </div>
-      <button class="vrs__add" type="button" aria-label="Создать голосовую комнату" title="Создать комнату" @click="openCreate">
+      <button v-if="canWrite" class="vrs__add" type="button" aria-label="Создать голосовую комнату" title="Создать комнату" @click="openCreate">
         <Plus :size="19" :stroke-width="1.75" aria-hidden="true" />
       </button>
     </header>
@@ -249,7 +252,7 @@ const confirmDelete = async () => {
           'vrs__item_loading': isConnecting,
         }"
       >
-        <button class="vrs__join" type="button" @click="handleRoomClick(room.id)">
+        <button class="vrs__join" type="button" :disabled="!canWrite && activeRoomId !== room.id" :title="tenantStore.readOnly ? 'Пространство доступно только для чтения' : undefined" @click="handleRoomClick(room.id)">
           <span class="vrs__icon">
             <Mic :size="17" :stroke-width="1.75" aria-hidden="true" />
           </span>
@@ -266,14 +269,14 @@ const confirmDelete = async () => {
               class="vrs__avatar"
               :title="participant.displayName"
             >
-              <img v-if="participant.photoUrl" :src="participant.photoUrl" :alt="participant.displayName" />
+              <img v-if="participant.photoUrl" :src="resolveAwsUrl(participant.photoUrl)" :alt="participant.displayName" />
               <span v-else>{{ getParticipantInitials(participant.displayName) }}</span>
             </span>
           </span>
         </button>
 
         <button
-          v-if="room.can_manage"
+          v-if="room.can_manage && canWrite"
           class="vrs__more"
           type="button"
           :aria-expanded="menuRoomId === room.id"
@@ -336,7 +339,7 @@ const confirmDelete = async () => {
               @change="toggleMember(user.id)"
             />
             <span class="voice-room-form__avatar">
-              <img v-if="user.photo_url" :src="user.photo_url" :alt="`${user.first_name} ${user.last_name}`" />
+              <img v-if="user.photo_url" :src="resolveAwsUrl(user.photo_url)" :alt="`${user.first_name} ${user.last_name}`" />
               <span v-else>{{ getInitials(user.first_name, user.last_name) }}</span>
             </span>
             <span class="voice-room-form__member-name">{{ user.first_name }} {{ user.last_name }}</span>

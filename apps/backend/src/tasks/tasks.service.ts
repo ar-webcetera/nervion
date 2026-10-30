@@ -133,7 +133,7 @@ export class TasksService {
     return dto;
   }
 
-  private notifyResponsibleAssigned({ taskId, taskTitle, responsibleId, actorId }: ResponsibleAssignedNotificationPayload): void {
+  private async notifyResponsibleAssigned({ taskId, taskTitle, responsibleId, actorId }: ResponsibleAssignedNotificationPayload): Promise<void> {
     if (actorId === responsibleId) return;
 
     const subject = `Вам назначена задача: ${taskTitle}`;
@@ -141,7 +141,7 @@ export class TasksService {
     const link = `?task-id=${taskId}`;
     const absoluteLink = buildPublicAppUrl(this.configService, link);
 
-    void this.notificationsService
+    await this.notificationsService
       .createWithEmail(
         {
           name: subject,
@@ -672,7 +672,7 @@ export class TasksService {
     });
 
     if (responsible && createdTask.business_kind !== TaskBusinessKind.SALES) {
-      this.notifyResponsibleAssigned({
+      await this.notifyResponsibleAssigned({
         taskId: createdTask.id,
         taskTitle: createdTask.title ?? createTaskDto.title,
         responsibleId: responsible.id,
@@ -768,7 +768,7 @@ export class TasksService {
     });
 
     if (source.responsible) {
-      this.notifyResponsibleAssigned({
+      await this.notifyResponsibleAssigned({
         taskId: createdTask.id,
         taskTitle: createdTask.title,
         responsibleId: source.responsible.id,
@@ -907,7 +907,7 @@ export class TasksService {
         assignedResponsibleId !== previousResponsibleId &&
         existingTask.business_kind !== TaskBusinessKind.SALES
       ) {
-        this.notifyResponsibleAssigned({
+        await this.notifyResponsibleAssigned({
           taskId: Number(taskId),
           taskTitle: findTask?.title ?? existingTask.title,
           responsibleId: assignedResponsibleId,

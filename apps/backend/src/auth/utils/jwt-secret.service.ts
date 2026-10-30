@@ -20,6 +20,9 @@ export class JwtSecretService implements OnModuleInit {
       this.logger.log('JWT-секрет взят из переменной окружения (JWT_SECRET).');
       return;
     }
+    if (this.configService.get<string>('TENANCY_ENABLED') === 'true') {
+      throw new Error('JWT_SECRET is required in tenancy mode; database-generated secrets are disabled');
+    }
     try {
       const secret = await this.loadOrCreateInDb();
       setJwtSecret(secret);

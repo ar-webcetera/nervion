@@ -25,7 +25,8 @@ export interface TimelogRow {
 type ReportPayload = { from: string; to: string; employees: Employee[]; project_id: number | null; executor_id: number | null };
 
 export const useReportStore = defineStore('report', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const pendingCount = ref(0);
   const dashboard = ref<RevenueDashboard | null>(null);
   const pendingItems = ref<BillingQueueItem[]>([]);
@@ -36,28 +37,28 @@ export const useReportStore = defineStore('report', () => {
   const reviewedHasMore = ref(false);
 
   const fetchPendingCount = async () => {
-    const response = await $fetch<{ count: number }>('/api/reportings/billing/count', {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<{ count: number }>('/api/reportings/billing/count', {
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
     });
     pendingCount.value = response.count;
   };
 
   const fetchFinancialData = async () => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = useApiRequestHeaders();
     const [dashboardResponse, pendingResponse, reviewedResponse] = await Promise.all([
-      $fetch<RevenueDashboard>('/api/reportings/revenue/dashboard', {
+      tenantFetch<RevenueDashboard>('/api/reportings/revenue/dashboard', {
         baseURL: useApiBaseUrl(),
         credentials: 'include',
         headers,
       }),
-      $fetch<BillingQueuePage>('/api/reportings/billing/items', {
+      tenantFetch<BillingQueuePage>('/api/reportings/billing/items', {
         baseURL: useApiBaseUrl(),
         credentials: 'include',
         headers,
         params: { pending: true, limit: 20, offset: 0 },
       }),
-      $fetch<BillingQueuePage>('/api/reportings/billing/items', {
+      tenantFetch<BillingQueuePage>('/api/reportings/billing/items', {
         baseURL: useApiBaseUrl(),
         credentials: 'include',
         headers,
@@ -76,8 +77,8 @@ export const useReportStore = defineStore('report', () => {
 
   const loadMoreBillingItems = async (pending: boolean) => {
     const target = pending ? pendingItems : reviewedItems;
-    const headers = useRequestHeaders(['cookie']);
-    const response = await $fetch<BillingQueuePage>('/api/reportings/billing/items', {
+    const headers = useApiRequestHeaders();
+    const response = await tenantFetch<BillingQueuePage>('/api/reportings/billing/items', {
       baseURL: useApiBaseUrl(),
       credentials: 'include',
       headers,
@@ -96,9 +97,9 @@ export const useReportStore = defineStore('report', () => {
 
   const reviewItem = async (item: BillingQueueItem, status: BillingReviewStatus) => {
     const endpoint = item.sourceType === RevenueSourceType.TIMELOG ? 'timelogs' : 'fixed';
-    await $fetch(`/api/reportings/billing/${endpoint}/${item.id}`, {
+    await tenantFetch(`/api/reportings/billing/${endpoint}/${item.id}`, {
       method: 'PATCH',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
       body: {
         status,
@@ -110,9 +111,9 @@ export const useReportStore = defineStore('report', () => {
   };
 
   const saveTarget = async (year: number, month: number, amount: number) => {
-    await $fetch('/api/reportings/revenue/target', {
+    await tenantFetch('/api/reportings/revenue/target', {
       method: 'PATCH',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
       body: { year, month, amount },
     });
@@ -120,9 +121,9 @@ export const useReportStore = defineStore('report', () => {
   };
 
   const fetchPreview = async (payload: ReportPayload): Promise<TimelogRow[]> => {
-    const response = await fetch(`${config.public.API_URL}/api/reportings/preview`, {
+    const response = await fetch(`${tenantApiBaseUrl}/api/reportings/preview`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...useApiRequestHeaders(), 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify(payload),
     });
@@ -131,9 +132,10 @@ export const useReportStore = defineStore('report', () => {
   };
 
   const unloadReport = async (payload: ReportPayload) => {
-    const response = await fetch(`${config.public.API_URL}/api/reportings`, {
+    const response = await fetch(`${tenantApiBaseUrl}/api/reportings`, {
       method: 'POST',
       headers: {
+        ...useApiRequestHeaders(),
         'Content-Type': 'application/json',
       },
       credentials: 'include',

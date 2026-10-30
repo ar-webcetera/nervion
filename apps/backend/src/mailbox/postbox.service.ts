@@ -1,10 +1,11 @@
 import { randomUUID } from 'crypto';
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 import type { Attachment } from 'nodemailer/lib/mailer';
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- CJS-модуль, esModuleInterop в проекте выключен
 import MailComposer = require('nodemailer/lib/mail-composer');
+import { TenantMailConfigService } from './tenant-mail-config.service';
 
 export interface PostboxSendParams {
   from: { address: string; name?: string | null };
@@ -44,10 +45,28 @@ export function toNervionMessageTagValue(messageId: string): string {
 export class PostboxService {
   private readonly logger = new Logger(PostboxService.name);
   private client: SESv2Client | null = null;
+  private readonly tenantClients = new Map<string, SESv2Client>();
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService, @Optional() private readonly tenantMail?: TenantMailConfigService) {}
 
   private getClient(): SESv2Client {
+    if (this.configService.get<string>('TENANCY_ENABLED') === 'true') {
+      if (!this.tenantMail) throw new ServiceUnavailableException('Почта пространства не настроена');
+      const configuration = this.tenantMail.current();
+      let client = this.tenantClients.get(configuration.tenantId);
+      if (!client) {
+        client = new SESv2Client({
+          endpoint: DEFAULT_POSTBOX_ENDPOINT,
+          region: DEFAULT_POSTBOX_REGION,
+          credentials: { accessKeyId: configuration.accessKeyId, secretAccessKey: configuration.secretAccessKey },
+          // SendEmail has no idempotency token. A network retry could send twice.
+          maxAttempts: 1,
+          requestHandler: { connectionTimeout: 5_000, requestTimeout: 30_000 },
+        });
+        this.tenantClients.set(configuration.tenantId, client);
+      }
+      return client;
+    }
     const accessKeyId = this.configService.get<string>('POSTBOX_ACCESS_KEY_ID');
     const secretAccessKey = this.configService.get<string>('POSTBOX_SECRET_ACCESS_KEY');
 
@@ -67,15 +86,21 @@ export class PostboxService {
   }
 
   generateMessageId(): string {
-    const domain = this.configService.get<string>('MAILBOX_DOMAIN') || 'example.com';
+    const domain = this.configService.get<string>('TENANCY_ENABLED') === 'true'
+      ? this.tenantMail?.current().domains[0]
+      : this.configService.get<string>('MAILBOX_DOMAIN') || 'example.com';
+    if (!domain) throw new ServiceUnavailableException('Почта пространства не настроена');
 
     return `${randomUUID()}@${domain}`;
   }
 
   async send(params: PostboxSendParams): Promise<PostboxSendResult> {
+    this.tenantMail?.assertSender(params.from.address);
     const client = this.getClient();
     const messageId = (params.messageId || this.generateMessageId()).replace(/^<|>$/g, '').trim();
-    const configurationSetName = this.configService.get<string>('POSTBOX_CONFIGURATION_SET')?.trim() || undefined;
+    const configurationSetName = this.configService.get<string>('TENANCY_ENABLED') === 'true'
+      ? this.tenantMail?.current().configurationSet
+      : this.configService.get<string>('POSTBOX_CONFIGURATION_SET')?.trim() || undefined;
 
     const composer = new MailComposer({
       from: params.from.name ? { name: params.from.name, address: params.from.address } : params.from.address,
@@ -109,8 +134,7 @@ export class PostboxService {
     const providerMessageId = response.MessageId?.trim() || null;
     this.logger.log(
       `Письмо отправлено через Postbox: ${messageId}` +
-        (providerMessageId ? ` (provider=${providerMessageId})` : '') +
-        ` -> ${params.to.join(', ')}`,
+        (providerMessageId ? ` (provider=${providerMessageId})` : ''),
     );
 
     return { messageId, providerMessageId };

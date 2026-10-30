@@ -34,23 +34,24 @@ export interface UpdateHealthCheckDto extends Partial<CreateHealthCheckDto> {
 }
 
 export const useHealthcheckStore = defineStore('healthcheck', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const items = ref<HealthCheck[]>([]);
 
   const fetchAll = async () => {
-    const headers = useRequestHeaders(['cookie']);
-    items.value = await $fetch<HealthCheck[]>('/api/healthchecks', {
+    const headers = useApiRequestHeaders();
+    items.value = await tenantFetch<HealthCheck[]>('/api/healthchecks', {
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       headers,
     });
   };
 
   const create = async (dto: CreateHealthCheckDto) => {
-    const created = await $fetch<HealthCheck>('/api/healthchecks', {
+    const created = await tenantFetch<HealthCheck>('/api/healthchecks', {
       method: 'POST',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body: dto,
     });
     items.value.push(created);
@@ -58,10 +59,10 @@ export const useHealthcheckStore = defineStore('healthcheck', () => {
   };
 
   const update = async (id: number, dto: UpdateHealthCheckDto) => {
-    const updated = await $fetch<HealthCheck>(`/api/healthchecks/${id}`, {
+    const updated = await tenantFetch<HealthCheck>(`/api/healthchecks/${id}`, {
       method: 'PATCH',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body: dto,
     });
     const idx = items.value.findIndex((i) => i.id === id);
@@ -70,10 +71,10 @@ export const useHealthcheckStore = defineStore('healthcheck', () => {
   };
 
   const toggle = async (id: number) => {
-    const updated = await $fetch<HealthCheck>(`/api/healthchecks/${id}/toggle`, {
+    const updated = await tenantFetch<HealthCheck>(`/api/healthchecks/${id}/toggle`, {
       method: 'POST',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
     });
     const idx = items.value.findIndex((i) => i.id === id);
     if (idx !== -1) items.value[idx] = updated;
@@ -81,10 +82,10 @@ export const useHealthcheckStore = defineStore('healthcheck', () => {
   };
 
   const remove = async (id: number) => {
-    await $fetch(`/api/healthchecks/${id}`, {
+    await tenantFetch(`/api/healthchecks/${id}`, {
       method: 'DELETE',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
     });
     items.value = items.value.filter((i) => i.id !== id);
   };

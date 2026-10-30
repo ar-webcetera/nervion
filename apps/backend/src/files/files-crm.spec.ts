@@ -1,12 +1,15 @@
 import { ConfigService } from '@nestjs/config';
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { FilesService } from './files.service';
+import { StorageService } from '../storage/storage.service';
 
 describe('CRM attachment privacy', () => {
   const send = jest.fn();
   const service = new FilesService(
-    Object.assign(new S3Client({ region: 'local' }), { send }),
-    new ConfigService({ AWS_BUCKET_ID: 'test-bucket' }),
+    new StorageService(
+      Object.assign(new S3Client({ region: 'local' }), { send }),
+      new ConfigService({ AWS_BUCKET_ID: 'test-bucket' }),
+    ),
   );
   beforeEach(() => send.mockReset());
   it('rejects non-admin reads, writes and deletion before accessing storage', async () => {

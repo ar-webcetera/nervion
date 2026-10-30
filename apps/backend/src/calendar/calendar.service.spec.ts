@@ -65,6 +65,7 @@ describe('CalendarService', () => {
       dataSource as never,
       notificationsService as never,
       { get: jest.fn().mockReturnValue('localhost:3000') } as never,
+      {} as never,
     );
 
     await service.create(
@@ -143,6 +144,7 @@ describe('CalendarService', () => {
       dataSource as never,
       notificationsService as never,
       { get: jest.fn().mockReturnValue('localhost:3000') } as never,
+      {} as never,
     );
     const processDueReminders = () => (service as unknown as { processDueReminders: () => Promise<void> }).processDueReminders();
 
@@ -235,6 +237,7 @@ describe('CalendarService', () => {
       {} as never,
       notificationsService as never,
       { get: jest.fn().mockReturnValue('localhost:3000') } as never,
+      {} as never,
     );
 
     const result = await service.accept(17, participant as never);

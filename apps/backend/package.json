@@ -20,7 +20,15 @@
     "migration:generate": "pnpm typeorm migration:generate src/migrations/${NAME}",
     "migration:create": "pnpm typeorm migration:create src/migrations/${NAME}",
     "migration:run": "pnpm typeorm migration:run",
-    "migration:revert": "pnpm typeorm migration:revert"
+    "migration:revert": "pnpm typeorm migration:revert",
+    "migration:tenant:run": "typeorm-ts-node-commonjs -d src/tenant-data-source.ts migration:run",
+    "migration:platform:run": "typeorm-ts-node-commonjs -d src/platform/platform-data-source.ts migration:run",
+    "tenant:bootstrap": "ts-node src/platform/bootstrap-existing-tenant.ts",
+    "tenant:storage:migrate": "ts-node src/storage/migrate-tenant-storage.ts",
+    "tenant:git:migrate": "ts-node src/git/migrate-tenant-git.ts",
+    "migration:run:prod": "node node_modules/typeorm/cli.js -d dist/data-source.js migration:run",
+    "migration:tenant:run:prod": "node node_modules/typeorm/cli.js -d dist/tenant-data-source.js migration:run",
+    "migration:platform:run:prod": "node node_modules/typeorm/cli.js -d dist/platform/platform-data-source.js migration:run"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.772.0",
@@ -37,6 +45,7 @@
     "@nestjs/swagger": "^7.4.2",
     "@nestjs/typeorm": "^11.0.0",
     "@nestjs/websockets": "^11.1.5",
+    "@socket.io/redis-adapter": "^8.3.0",
     "@sentry/nestjs": "^10.58.0",
     "@tiptap/core": "^3.0.7",
     "@tracker/contracts": "workspace:*",
@@ -57,6 +66,7 @@
     "openai": "^4.85.4",
     "pg": "^8.13.3",
     "reflect-metadata": "^0.2.2",
+    "redis": "^4.7.0",
     "rxjs": "^7.8.1",
     "smtp-server": "^3.18.5",
     "socket.io": "^4.8.1",

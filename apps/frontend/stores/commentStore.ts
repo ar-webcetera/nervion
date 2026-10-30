@@ -5,7 +5,8 @@ import type { JSONContent } from '@tiptap/core';
 import { TypeSort } from '~/constants/sort.constants';
 
 export const useCommentStore = defineStore('comment', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const comments = ref<Comment[]>([]);
   const currentComment = ref<Comment | null>(null);
   const sortType = ref<TypeSort>(TypeSort.ASC);
@@ -45,12 +46,12 @@ export const useCommentStore = defineStore('comment', () => {
   };
 
   const fetchComments = async (task_id: number) => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = useApiRequestHeaders();
     const params: { task_id: number; sort?: string } = { task_id: task_id };
     if (sortType.value) params.sort = sortType.value;
 
-    const response = await $fetch<Comment[]>(`/api/comments/`, {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<Comment[]>(`/api/comments/`, {
+      baseURL: tenantApiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -60,10 +61,10 @@ export const useCommentStore = defineStore('comment', () => {
   };
 
   const updateComment = async (id: number, message: object) => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = useApiRequestHeaders();
 
-    await $fetch(`/api/comments/${id}`, {
-      baseURL: config.public.API_URL,
+    await tenantFetch(`/api/comments/${id}`, {
+      baseURL: tenantApiBaseUrl,
       method: 'PATCH',
       credentials: 'include',
       headers,
@@ -72,26 +73,26 @@ export const useCommentStore = defineStore('comment', () => {
   };
 
   const deleteComment = async (id: number) => {
-    await $fetch(`/api/comments/${id}`, {
-      baseURL: config.public.API_URL,
+    await tenantFetch(`/api/comments/${id}`, {
+      baseURL: tenantApiBaseUrl,
       method: 'DELETE',
       credentials: 'include',
     });
   };
 
   const deleteComments = async (task_id: number) => {
-    await $fetch(`/api/tasks/${task_id}/comments/`, {
-      baseURL: config.public.API_URL,
+    await tenantFetch(`/api/tasks/${task_id}/comments/`, {
+      baseURL: tenantApiBaseUrl,
       method: 'DELETE',
       credentials: 'include',
     });
   };
 
   const createComment = async ({ message, author_id, task_id, comment_id }: CommentParams) => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = useApiRequestHeaders();
 
-    return await $fetch<Comment>(`/api/comments/`, {
-      baseURL: config.public.API_URL,
+    return await tenantFetch<Comment>(`/api/comments/`, {
+      baseURL: tenantApiBaseUrl,
       method: 'POST',
       credentials: 'include',
       headers,

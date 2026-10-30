@@ -14,6 +14,8 @@ import { Timelogs } from './entities/timelog.entity';
 import { TimelogsService } from './timelogs.service';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { WebsocketGateway } from '../websocket/websocket.gateway';
+import * as fs from 'node:fs';
+import * as XLSX from 'xlsx';
 
 describe('TimelogsService', () => {
   let service: TimelogsService;
@@ -24,6 +26,7 @@ describe('TimelogsService', () => {
     findOneBy: jest.fn<Promise<Timelogs | null>, [object]>(),
     find: jest.fn<Promise<Timelogs[]>, [object]>(),
     delete: jest.fn(),
+    createQueryBuilder: jest.fn(),
   };
 
   const mockUsersRepository = {
@@ -59,6 +62,38 @@ describe('TimelogsService', () => {
 
     service = module.get<TimelogsService>(TimelogsService);
     jest.clearAllMocks();
+  });
+
+  it('возвращает XLSX выработки без записи на диск', async () => {
+    const query = {
+      leftJoin: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      getRawMany: jest.fn().mockResolvedValue([{ fullname: 'Иванов Иван', date: '2026-10-30', total_seconds: '5400' }]),
+    };
+    mockTimelogRepository.createQueryBuilder.mockReturnValue(query);
+    const write = jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw new Error('Read-only filesystem');
+    });
+    const mkdir = jest.spyOn(fs, 'mkdirSync').mockImplementation(() => {
+      throw new Error('Read-only filesystem');
+    });
+    try {
+      const buffer = await service.getWorkHoursBySpecialistReport({ id: 7, role: ROLES.admin } as AuthenticatedUser);
+      expect(Buffer.isBuffer(buffer)).toBe(true);
+      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      expect(XLSX.utils.sheet_to_json(workbook.Sheets.WorkHoursReport)).toEqual([
+        { ФИО: 'Иванов Иван', Дата: '2026-10-30', 'Кол-во часов выработки': 1.5 },
+      ]);
+      expect(write).not.toHaveBeenCalled();
+      expect(mkdir).not.toHaveBeenCalled();
+    } finally {
+      write.mockRestore();
+      mkdir.mockRestore();
+    }
   });
 
   describe('createTimelog', () => {

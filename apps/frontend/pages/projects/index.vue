@@ -12,7 +12,7 @@ import IconPlus from '~/components/Icons/IconPlus.vue';
 import IconAddUser from '~/components/Icons/IconAddUser.vue';
 import { useProject } from '~/composables/useProject';
 import { Lock } from '@lucide/vue';
-const config = useRuntimeConfig();
+const tenantApiBaseUrl = useApiBaseUrl();
 
 const { $toast } = useNuxtApp();
 const projectStore = useProjectStore();
@@ -113,7 +113,7 @@ const saveMembersModal = async (membersData: Array<{ id: number; role: string }>
   if (!selectedProjectForMembers.value) return;
   try {
     await $fetch(`/api/projects/${selectedProjectForMembers.value.id}/members`, {
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       method: 'PATCH',
       credentials: 'include',
       body: { members: membersData },

@@ -13,15 +13,16 @@ export interface Changelog {
 }
 
 export const useChangelogStore = defineStore('changelog', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
 
   const unseen = ref<Changelog[]>([]);
   const all = ref<Changelog[]>([]);
 
   const fetchUnseen = async () => {
-    const headers = useRequestHeaders(['cookie']);
-    const data = await $fetch<Changelog[]>('/api/changelogs/unseen', {
-      baseURL: config.public.API_URL,
+    const headers = useApiRequestHeaders();
+    const data = await tenantFetch<Changelog[]>('/api/changelogs/unseen', {
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
       headers,
     });
@@ -29,9 +30,9 @@ export const useChangelogStore = defineStore('changelog', () => {
   };
 
   const fetchAll = async () => {
-    const headers = useRequestHeaders(['cookie']);
-    const data = await $fetch<Changelog[]>('/api/changelogs', {
-      baseURL: config.public.API_URL,
+    const headers = useApiRequestHeaders();
+    const data = await tenantFetch<Changelog[]>('/api/changelogs', {
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
       headers,
     });
@@ -39,18 +40,18 @@ export const useChangelogStore = defineStore('changelog', () => {
   };
 
   const markViewed = async (id: number) => {
-    await $fetch(`/api/changelogs/${id}/view`, {
+    await tenantFetch(`/api/changelogs/${id}/view`, {
       method: 'POST',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
     });
     unseen.value = unseen.value.filter((c) => c.id !== id);
   };
 
   const create = async (dto: { title: string; body: JSONContent | null; is_published: boolean }) => {
-    const data = await $fetch<Changelog>('/api/changelogs', {
+    const data = await tenantFetch<Changelog>('/api/changelogs', {
       method: 'POST',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
       body: dto,
     });
@@ -59,9 +60,9 @@ export const useChangelogStore = defineStore('changelog', () => {
   };
 
   const update = async (id: number, dto: Partial<{ title: string; body: JSONContent | null; is_published: boolean }>) => {
-    const data = await $fetch<Changelog>(`/api/changelogs/${id}`, {
+    const data = await tenantFetch<Changelog>(`/api/changelogs/${id}`, {
       method: 'PATCH',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
       body: dto,
     });
@@ -71,9 +72,9 @@ export const useChangelogStore = defineStore('changelog', () => {
   };
 
   const remove = async (id: number) => {
-    await $fetch(`/api/changelogs/${id}`, {
+    await tenantFetch(`/api/changelogs/${id}`, {
       method: 'DELETE',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
     });
     all.value = all.value.filter((c) => c.id !== id);

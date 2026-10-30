@@ -4,7 +4,8 @@ import type { User } from '~/types/user';
 import { waitForServiceWorker } from '~/services/pushSubscription';
 
 export const useAuthStore = defineStore('auth', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const userStore = useUserStore();
 
   const unsubscribePushOnLogout = async () => {
@@ -16,8 +17,8 @@ export const useAuthStore = defineStore('auth', () => {
     if (!subscription) return;
 
     try {
-      await $fetch(`/api/push/unsubscribe`, {
-        baseURL: config.public.API_URL,
+      await tenantFetch(`/api/push/unsubscribe`, {
+        baseURL: tenantApiBaseUrl,
         method: 'DELETE',
         credentials: 'include',
         timeout: 15000,
@@ -33,8 +34,8 @@ export const useAuthStore = defineStore('auth', () => {
   };
 
   const loginByEmail = async (params: Record<string, string>) => {
-    const response = await $fetch<User>(`/api/auth/login/email`, {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<User>(`/api/auth/login/email`, {
+      baseURL: tenantApiBaseUrl,
       method: 'POST',
       credentials: 'include',
       body: params,
@@ -45,8 +46,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   const logout = async () => {
     await unsubscribePushOnLogout().catch(() => {});
-    await $fetch(`/api/auth/logout`, {
-      baseURL: config.public.API_URL,
+    await tenantFetch(`/api/auth/logout`, {
+      baseURL: tenantApiBaseUrl,
       method: 'POST',
       credentials: 'include',
     });
@@ -54,8 +55,8 @@ export const useAuthStore = defineStore('auth', () => {
   };
 
   const unlinkYandex = async () => {
-    await $fetch<{ yandex_linked: false }>(`/api/auth/yandex/unlink`, {
-      baseURL: config.public.API_URL,
+    await tenantFetch<{ yandex_linked: false }>(`/api/auth/yandex/unlink`, {
+      baseURL: tenantApiBaseUrl,
       method: 'POST',
       credentials: 'include',
     });

@@ -14,6 +14,7 @@ import { PushStatus } from '~/enums/push.enums';
 const taskStore = useTaskStore();
 const commentStore = useCommentStore();
 const userStore = useUserStore();
+const tenantStore = useTenantStore();
 const notificationStore = useNotificationStore();
 const projectStore = useProjectStore();
 const { fetchUsers } = userStore;
@@ -50,8 +51,9 @@ const syncUnreadState = async (force = false) => {
 
   try {
     const mailStore = useMailStore();
-    const jobs: Promise<unknown>[] = [getAllNotifications(), fetchChatList()];
-    if (selectedMailAccountId.value) {
+    const jobs: Promise<unknown>[] = [getAllNotifications()];
+    if (tenantStore.canUse('chat')) jobs.push(fetchChatList());
+    if (selectedMailAccountId.value && tenantStore.canUse('mail')) {
       jobs.push(mailStore.fetchAccountUnreadCount(selectedMailAccountId.value));
     }
     await Promise.allSettled(jobs);
@@ -69,12 +71,12 @@ const syncScreenState = async () => {
     const jobs: Promise<unknown>[] = [];
 
     const openChatId = getSingleQueryValue(route.query.chatId);
-    if (openChatId) {
+    if (openChatId && tenantStore.canUse('chat')) {
       chatStore.messagesCache.delete(openChatId);
       jobs.push(fetchChatMessages(openChatId));
     }
 
-    jobs.push(
+    if (tenantStore.canUse('tasks')) jobs.push(
       timelogStore
         .findByFilter({
           author_id: userStore.user.id,
@@ -116,7 +118,10 @@ if (userStore.user) {
     'initial-data',
     async () => {
       try {
-        return await Promise.all([fetchUsers(), fetchProjects(), getAllNotifications(), fetchChatList()]);
+        return await Promise.all([fetchUsers(), getAllNotifications(),
+          ...(tenantStore.canUse('projects') ? [fetchProjects()] : []),
+          ...(tenantStore.canUse('chat') ? [fetchChatList()] : []),
+        ]);
       } catch (e) {
         console.log(e);
         return null;
@@ -577,7 +582,7 @@ onMounted(async () => {
   initSocket();
   if (userStore.user) {
     changelogStore.fetchUnseen().catch(console.error);
-    chatStore.prefetchChats().catch(console.error);
+    if (tenantStore.canUse('chat')) chatStore.prefetchChats().catch(console.error);
   }
   document.addEventListener('visibilitychange', handleDocumentVisibility);
   window.addEventListener('focus', handlePageFocus);

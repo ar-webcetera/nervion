@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { PAGE_NAMES } from '~/constants/pages.constants';
+definePageMeta({ middleware: 'auth' });
+const tenantStore = useTenantStore();
+const userStore = useUserStore();
+const landingPath = computed(() => tenantStore.getLandingPath(userStore.user?.role));
 </script>
 
 <template>
@@ -7,9 +10,10 @@ import { PAGE_NAMES } from '~/constants/pages.constants';
     <div class="error">
       <h1 class="error__header">Не можем вас пустить</h1>
       <p class="error__description">К сожалению, у вас нет доступа к данной странице</p>
-      <NuxtLink :to="{ name: PAGE_NAMES.home }">
-        <button class="button">На главную</button>
+      <NuxtLink v-if="landingPath !== '/403'" :to="landingPath" class="button">
+        В доступный раздел
       </NuxtLink>
+      <p v-else class="error__description">Обратитесь к администратору пространства.</p>
     </div>
   </div>
 </template>

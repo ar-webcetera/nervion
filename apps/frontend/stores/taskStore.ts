@@ -109,8 +109,10 @@ export interface KanbanParams {
 }
 
 export const useTaskStore = defineStore('task', () => {
-  const requestHeaders = useRequestHeaders(['cookie']);
+  const tenantFetch = useTenantFetch();
+  const requestHeaders = useApiRequestHeaders();
   const config = useRuntimeConfig();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const { $api } = useNuxtApp();
   const timelogStore = useTimelogStore();
   const summary = ref<string>('');
@@ -149,19 +151,19 @@ export const useTaskStore = defineStore('task', () => {
   };
 
   const unlinkTask = async (taskId: number, relatedTaskId: number) => {
-    await $fetch(`/api/tasks/${taskId}/links`, {
+    await tenantFetch(`/api/tasks/${taskId}/links`, {
       method: 'DELETE',
       body: { relatedTaskId },
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
     });
   };
 
   const createAndLinkTask = async (taskId: number, task: { title: string; project_id: number }) => {
-    return await $fetch<Task>(`/api/tasks/${taskId}/links/create`, {
+    return await tenantFetch<Task>(`/api/tasks/${taskId}/links/create`, {
       method: 'POST',
       body: { ...task },
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
     });
   };
@@ -179,20 +181,20 @@ export const useTaskStore = defineStore('task', () => {
       title,
     };
 
-    await $fetch(`/api/tasks/filter-state`, {
+    await tenantFetch(`/api/tasks/filter-state`, {
       method: 'PATCH',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body,
     });
   };
 
   const getFilterState = async () => {
     const headers = requestHeaders;
-    const response = await $fetch<Filter>(`/api/tasks/filter-state`, {
+    const response = await tenantFetch<Filter>(`/api/tasks/filter-state`, {
       method: 'GET',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       headers,
     });
     filter.value = {
@@ -218,10 +220,10 @@ export const useTaskStore = defineStore('task', () => {
     const collapsed_columns = kanban.value.filter((c) => c.collapsed).map((c) => c.status);
 
     try {
-      await $fetch(`/api/tasks/kanban-columns`, {
+      await tenantFetch(`/api/tasks/kanban-columns`, {
         method: 'PATCH',
         credentials: 'include',
-        baseURL: config.public.API_URL,
+        baseURL: tenantApiBaseUrl,
         body: { collapsed_columns },
       });
     } catch (e) {
@@ -235,10 +237,10 @@ export const useTaskStore = defineStore('task', () => {
     viewType.value = view_type;
 
     try {
-      await $fetch(`/api/tasks/view-type`, {
+      await tenantFetch(`/api/tasks/view-type`, {
         method: 'PATCH',
         credentials: 'include',
-        baseURL: config.public.API_URL,
+        baseURL: tenantApiBaseUrl,
         body: { view_type },
       });
     } catch (e) {
@@ -288,8 +290,8 @@ export const useTaskStore = defineStore('task', () => {
     if (title) params.title = title;
     if (useSavedFilters) params.useSavedFilters = useSavedFilters;
     params.timezone = timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const response = await $fetch<Task[]>(`/api/tasks/`, {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<Task[]>(`/api/tasks/`, {
+      baseURL: tenantApiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -308,8 +310,8 @@ export const useTaskStore = defineStore('task', () => {
     const trimmed = title.trim();
     if (!trimmed) return [];
     const headers = requestHeaders;
-    const response = await $fetch<Task[]>(`/api/tasks/`, {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<Task[]>(`/api/tasks/`, {
+      baseURL: tenantApiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -320,8 +322,8 @@ export const useTaskStore = defineStore('task', () => {
 
   const getKanban = async (params: Partial<KanbanParams>) => {
     const headers = requestHeaders;
-    const response = await $fetch<KanbanColumn[]>(`/api/tasks/kanban`, {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<KanbanColumn[]>(`/api/tasks/kanban`, {
+      baseURL: tenantApiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -340,8 +342,8 @@ export const useTaskStore = defineStore('task', () => {
     const requestedColumn = kanban.value.find((c) => c.status === status);
     if (!requestedColumn) return;
     const headers = requestHeaders;
-    const response = await $fetch<{ status: string; total: number; cards: KanbanCard[] }>(`/api/tasks/kanban/column`, {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<{ status: string; total: number; cards: KanbanCard[] }>(`/api/tasks/kanban/column`, {
+      baseURL: tenantApiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -367,8 +369,8 @@ export const useTaskStore = defineStore('task', () => {
 
   const fetchTasksWithTimelogs = async () => {
     const headers = requestHeaders;
-    const response = await $fetch<Task[]>(`/api/tasks/`, {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<Task[]>(`/api/tasks/`, {
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
       headers,
       params: { existTimelog: true },
@@ -382,8 +384,8 @@ export const useTaskStore = defineStore('task', () => {
 
   const fetchTask = async (taskId: number) => {
     const headers = requestHeaders;
-    const task = await $fetch<Task>(`/api/tasks/${taskId}`, {
-      baseURL: config.public.API_URL,
+    const task = await tenantFetch<Task>(`/api/tasks/${taskId}`, {
+      baseURL: tenantApiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -417,10 +419,10 @@ export const useTaskStore = defineStore('task', () => {
     if (updateTaskOptions.fixed_price !== undefined) body.fixed_price = updateTaskOptions.fixed_price;
     if (updateTaskOptions.is_flagged !== undefined) body.is_flagged = updateTaskOptions.is_flagged;
     if (updateTaskOptions.flag_comment !== undefined) body.flag_comment = updateTaskOptions.flag_comment;
-    const updatedTask = await $fetch<Task>(`/api/tasks/${id}`, {
+    const updatedTask = await tenantFetch<Task>(`/api/tasks/${id}`, {
       method: 'PATCH',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body,
     });
 
@@ -442,18 +444,18 @@ export const useTaskStore = defineStore('task', () => {
   };
 
   const deleteTask = async (id: number) => {
-    await $fetch(`/api/tasks/${id}`, {
+    await tenantFetch(`/api/tasks/${id}`, {
       method: 'DELETE',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
     });
   };
 
   const swapPriorityTask = async (ids: number[]) => {
-    await $fetch(`/api/tasks/priority/swap`, {
+    await tenantFetch(`/api/tasks/priority/swap`, {
       method: 'PATCH',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body: { ids },
     });
   };
@@ -467,10 +469,10 @@ export const useTaskStore = defineStore('task', () => {
     if (taskInfo.status) body.status = taskInfo.status;
     if (taskInfo.taskType) body.taskType = taskInfo.taskType;
     if (taskInfo.planned_date) body.planned_date = taskInfo.planned_date;
-    const task = await $fetch<Task>(`/api/tasks/`, {
+    const task = await tenantFetch<Task>(`/api/tasks/`, {
       method: 'POST',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body,
     });
     tasks.value.unshift(task);
@@ -478,20 +480,20 @@ export const useTaskStore = defineStore('task', () => {
   };
 
   const duplicateTask = async (id: number) => {
-    const task = await $fetch<Task>(`/api/tasks/${id}/duplicate`, {
+    const task = await tenantFetch<Task>(`/api/tasks/${id}/duplicate`, {
       method: 'POST',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
     });
     tasks.value.unshift(task);
     return task;
   };
 
   const linkExistingTask = async (id: number, relatedTaskId: number) => {
-    await $fetch(`/api/tasks/${id}/links`, {
+    await tenantFetch(`/api/tasks/${id}/links`, {
       method: 'POST',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body: { relatedTaskId },
     });
   };
@@ -506,8 +508,8 @@ export const useTaskStore = defineStore('task', () => {
 
   const fetchWeeklyTasks = async (weekStart?: string, useSavedFilters = true) => {
     const headers = requestHeaders;
-    const response = await $fetch<WeeklyTasksResponse>(`/api/tasks/weekly`, {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<WeeklyTasksResponse>(`/api/tasks/weekly`, {
+      baseURL: tenantApiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -536,8 +538,8 @@ export const useTaskStore = defineStore('task', () => {
     }
 
     const headers = requestHeaders;
-    const response = await $fetch<WeeklyTasksResponse>(`/api/tasks/weekly`, {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<WeeklyTasksResponse>(`/api/tasks/weekly`, {
+      baseURL: tenantApiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -612,10 +614,10 @@ export const useTaskStore = defineStore('task', () => {
     setCardCompleted(taskId, date, true);
     if (currentTask.value?.id === taskId) currentTask.value.is_completed_today = true;
 
-    await $fetch(`/api/tasks/${taskId}/complete`, {
+    await tenantFetch(`/api/tasks/${taskId}/complete`, {
       method: 'POST',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body: { date },
     })
       .then(() => refreshMyTodayTasksCountIfNeeded(date))
@@ -630,10 +632,10 @@ export const useTaskStore = defineStore('task', () => {
     setCardCompleted(taskId, date, false);
     if (currentTask.value?.id === taskId) currentTask.value.is_completed_today = false;
 
-    await $fetch(`/api/tasks/${taskId}/complete`, {
+    await tenantFetch(`/api/tasks/${taskId}/complete`, {
       method: 'DELETE',
       credentials: 'include',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       body: { date },
     })
       .then(() => refreshMyTodayTasksCountIfNeeded(date))
@@ -646,10 +648,11 @@ export const useTaskStore = defineStore('task', () => {
 
   const exportTasks = async (params: ExportTasksParams) => {
     const config = useRuntimeConfig();
+    const tenantApiBaseUrl = useApiBaseUrl();
     const headers = requestHeaders;
 
-    const response = await $fetch<Blob>(`/api/tasks/export`, {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<Blob>(`/api/tasks/export`, {
+      baseURL: tenantApiBaseUrl,
       method: 'POST',
       credentials: 'include',
       headers,

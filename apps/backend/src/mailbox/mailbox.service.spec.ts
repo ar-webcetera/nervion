@@ -581,6 +581,7 @@ describe('MailboxService', () => {
     it('должен отправлять новое письмо именно с выбранного ящика', async () => {
       const selectedAccount = {
         id: 2,
+        is_active: true,
         address: 'l.pavlova@webcetera.test',
         display_name: 'Лилия Павлова',
         allowedUsers: [{ id: 10 }],
@@ -628,6 +629,7 @@ describe('MailboxService', () => {
     it('должен возвращать отправленное сообщение вместе с сохранёнными вложениями', async () => {
       const selectedAccount = {
         id: 2,
+        is_active: true,
         address: 'l.pavlova@webcetera.test',
         display_name: 'Лилия Павлова',
         allowedUsers: [{ id: 10 }],
@@ -664,6 +666,7 @@ describe('MailboxService', () => {
     it('должен отклонять слишком большие вложения до обращения к Postbox', async () => {
       mockAccountsRepository.findOne.mockResolvedValue({
         id: 2,
+        is_active: true,
         address: 'l.pavlova@webcetera.test',
         allowedUsers: [{ id: 10 }],
       });
@@ -689,6 +692,7 @@ describe('MailboxService', () => {
     it('должен возвращать понятную ошибку, если Postbox отклонил размер готового письма', async () => {
       mockAccountsRepository.findOne.mockResolvedValue({
         id: 2,
+        is_active: true,
         address: 'l.pavlova@webcetera.test',
         allowedUsers: [{ id: 10 }],
       });
@@ -715,7 +719,7 @@ describe('MailboxService', () => {
         attachments: [{ size: 7_000_001 }],
         thread: {
           id: 3,
-          account: { id: 1, address: 'mail@webcetera.test', allowedUsers: [{ id: 10 }] },
+          account: { id: 1, is_active: true, address: 'mail@webcetera.test', allowedUsers: [{ id: 10 }] },
         },
       });
 
@@ -804,6 +808,7 @@ describe('MailboxService', () => {
           id: 1,
           address: 'user@webcetera.test',
           display_name: 'User',
+          is_active: true,
           allowedUsers: [{ id: 10 }],
         },
       } as MailThreads;

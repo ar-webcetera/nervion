@@ -270,7 +270,7 @@ export class ChatsService {
     const recipientIds = members.map((m) => m.user_id).filter((id) => id !== senderId);
     if (recipientIds.length > 0) {
       const body = extractPlainText(message.message as Parameters<typeof extractPlainText>[0], 100) || 'Новое сообщение';
-      void this.pushService.sendToUsers(recipientIds, {
+      await this.pushService.sendToUsers(recipientIds, {
         title: `${sender.first_name} ${sender.last_name}`,
         body,
         url: `/chat?chatId=${chatId}`,

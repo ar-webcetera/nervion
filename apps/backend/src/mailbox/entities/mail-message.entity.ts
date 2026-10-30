@@ -1,5 +1,5 @@
 import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
-import { MailDeliveryStatus } from '@tracker/contracts';
+import { MailDeliveryStatus, MailMessageStatus as MAIL_MESSAGE_STATUSES } from '@tracker/contracts';
 import { Users } from '../../users/entities/users.entity';
 import { MailAttachments } from './mail-attachment.entity';
 import { MailThreads } from './mail-thread.entity';
@@ -9,14 +9,7 @@ export enum MAIL_DIRECTIONS {
   outbound = 'outbound',
 }
 
-export enum MAIL_MESSAGE_STATUSES {
-  received = 'received',
-  sent = 'sent',
-  failed = 'failed',
-  draft = 'draft',
-}
-
-export { MailDeliveryStatus };
+export { MailDeliveryStatus, MAIL_MESSAGE_STATUSES };
 
 export interface MailAddress {
   address: string;

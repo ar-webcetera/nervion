@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import { startOfWeek, endOfWeek, addWeeks, subWeeks, format, eachDayOfInterval, startOfMonth, endOfMonth } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import { useWorkScheduleStore } from '~/stores/workScheduleStore';
@@ -236,7 +237,7 @@ const isWeekend = (date: Date) => date.getDay() === 0 || date.getDay() === 6;
             <div class="schedule__avatar">
               <img
                 v-if="user.photo_url"
-                :src="user.photo_url"
+                :src="resolveAwsUrl(user.photo_url)"
                 :alt="user.first_name"
                 @error="($event.target as HTMLImageElement).style.display = 'none'"
               />

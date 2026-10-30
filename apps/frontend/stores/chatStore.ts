@@ -33,6 +33,7 @@ export interface CreateMessageDto {
 }
 
 export const useChatStore = defineStore('chat', () => {
+  const tenantFetch = useTenantFetch();
   const apiBaseUrl = useApiBaseUrl();
   const chatList = ref<ChatListItem[]>([]);
   const pendingMessageList = ref(true);
@@ -47,8 +48,8 @@ export const useChatStore = defineStore('chat', () => {
   const messagesCache = ref<Map<string, Chat[]>>(new Map());
   const metaCache = ref<Map<string, { total: number; offset: number; limit: number; hasMore: boolean }>>(new Map());
   const fetchChatList = async () => {
-    const headers = useRequestHeaders(['cookie']);
-    const response = await $fetch<ChatListItem[]>(`/api/chats`, {
+    const headers = useApiRequestHeaders();
+    const response = await tenantFetch<ChatListItem[]>(`/api/chats`, {
       baseURL: apiBaseUrl,
       method: 'GET',
       credentials: 'include',
@@ -67,8 +68,8 @@ export const useChatStore = defineStore('chat', () => {
       return messages.value;
     }
 
-    const headers = useRequestHeaders(['cookie']);
-    const response = await $fetch<ChatMessageResonse>(`/api/chats/${chatId}/messages`, {
+    const headers = useApiRequestHeaders();
+    const response = await tenantFetch<ChatMessageResonse>(`/api/chats/${chatId}/messages`, {
       baseURL: apiBaseUrl,
       method: 'GET',
       credentials: 'include',
@@ -88,8 +89,8 @@ export const useChatStore = defineStore('chat', () => {
    */
   const prefetchChatMessages = async (chatId: string) => {
     if (!chatId || messagesCache.value.has(chatId)) return;
-    const headers = useRequestHeaders(['cookie']);
-    const response = await $fetch<ChatMessageResonse>(`/api/chats/${chatId}/messages`, {
+    const headers = useApiRequestHeaders();
+    const response = await tenantFetch<ChatMessageResonse>(`/api/chats/${chatId}/messages`, {
       baseURL: apiBaseUrl,
       method: 'GET',
       credentials: 'include',
@@ -126,11 +127,11 @@ export const useChatStore = defineStore('chat', () => {
   };
 
   const fetchOlderMessages = async (chatId: string) => {
-    const headers = useRequestHeaders(['cookie']);
+    const headers = useApiRequestHeaders();
     const currentMessages = messagesCache.value.get(chatId) || [];
     const offset = currentMessages.length;
 
-    const response = await $fetch<ChatMessageResonse>(`/api/chats/${chatId}/messages`, {
+    const response = await tenantFetch<ChatMessageResonse>(`/api/chats/${chatId}/messages`, {
       baseURL: apiBaseUrl,
       method: 'GET',
       credentials: 'include',
@@ -151,9 +152,9 @@ export const useChatStore = defineStore('chat', () => {
   const readChatMessages = async (chatId: string) => {
     if (!chatId || typeof chatId !== 'string' || chatId === 'null' || chatId === 'undefined' || chatId.includes('[object'))
       return;
-    const headers = useRequestHeaders(['cookie']);
+    const headers = useApiRequestHeaders();
     try {
-      await $fetch(`/api/chats/${chatId}/read`, {
+      await tenantFetch(`/api/chats/${chatId}/read`, {
         method: 'POST',
         credentials: 'include',
         baseURL: apiBaseUrl,
@@ -169,8 +170,8 @@ export const useChatStore = defineStore('chat', () => {
   };
 
   const createChat = async (memberId: number) => {
-    const headers = useRequestHeaders(['cookie']);
-    const response = await $fetch<Chat>(`/api/chats`, {
+    const headers = useApiRequestHeaders();
+    const response = await tenantFetch<Chat>(`/api/chats`, {
       baseURL: apiBaseUrl,
       method: 'POST',
       credentials: 'include',
@@ -181,8 +182,8 @@ export const useChatStore = defineStore('chat', () => {
   };
 
   const fetchChatMembers = async (chatId: string) => {
-    const headers = useRequestHeaders(['cookie']);
-    return $fetch<{ id: number; first_name: string; last_name: string; photo_url: string }[]>(`/api/chats/${chatId}/members`, {
+    const headers = useApiRequestHeaders();
+    return tenantFetch<{ id: number; first_name: string; last_name: string; photo_url: string }[]>(`/api/chats/${chatId}/members`, {
       baseURL: apiBaseUrl,
       method: 'GET',
       credentials: 'include',
@@ -191,8 +192,8 @@ export const useChatStore = defineStore('chat', () => {
   };
 
   const createGroupChat = async (name: string, memberIds: number[]) => {
-    const headers = useRequestHeaders(['cookie']);
-    const response = await $fetch<Chat>(`/api/chats/group`, {
+    const headers = useApiRequestHeaders();
+    const response = await tenantFetch<Chat>(`/api/chats/group`, {
       baseURL: apiBaseUrl,
       method: 'POST',
       credentials: 'include',
@@ -203,8 +204,8 @@ export const useChatStore = defineStore('chat', () => {
   };
 
   const addChatMember = async (chatId: string, userId: number) => {
-    const headers = useRequestHeaders(['cookie']);
-    await $fetch(`/api/chats/${chatId}/members`, {
+    const headers = useApiRequestHeaders();
+    await tenantFetch(`/api/chats/${chatId}/members`, {
       baseURL: apiBaseUrl,
       method: 'POST',
       credentials: 'include',
@@ -214,8 +215,8 @@ export const useChatStore = defineStore('chat', () => {
   };
 
   const removeChatMember = async (chatId: string, userId: number) => {
-    const headers = useRequestHeaders(['cookie']);
-    await $fetch(`/api/chats/${chatId}/members/${userId}`, {
+    const headers = useApiRequestHeaders();
+    await tenantFetch(`/api/chats/${chatId}/members/${userId}`, {
       baseURL: apiBaseUrl,
       method: 'DELETE',
       credentials: 'include',
@@ -235,8 +236,8 @@ export const useChatStore = defineStore('chat', () => {
   };
 
   const deleteChat = async (chatId: string) => {
-    const headers = useRequestHeaders(['cookie']);
-    await $fetch(`/api/chats/${chatId}`, {
+    const headers = useApiRequestHeaders();
+    await tenantFetch(`/api/chats/${chatId}`, {
       baseURL: apiBaseUrl,
       method: 'DELETE',
       credentials: 'include',
@@ -251,8 +252,8 @@ export const useChatStore = defineStore('chat', () => {
     message: JSONContent,
     replyToId?: string | null,
   ) => {
-    const headers = useRequestHeaders(['cookie']);
-    const response = await $fetch<ChatMessage>(`/api/chats/${chatId}/messages`, {
+    const headers = useApiRequestHeaders();
+    const response = await tenantFetch<ChatMessage>(`/api/chats/${chatId}/messages`, {
       baseURL: apiBaseUrl,
       method: 'POST',
       credentials: 'include',

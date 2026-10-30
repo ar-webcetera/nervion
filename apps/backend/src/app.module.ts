@@ -29,6 +29,10 @@ import { VoiceModule } from './voice/voice.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { MailboxModule } from './mailbox/mailbox.module';
 import { CalendarModule } from './calendar/calendar.module';
+import { DataSource } from 'typeorm';
+import { TenancyModule } from './tenancy/tenancy.module';
+import { PlatformModule } from './platform/platform.module';
+import { tenantDataSource } from './tenancy/tenant-data-source';
 
 @Module({
   imports: [
@@ -48,14 +52,21 @@ import { CalendarModule } from './calendar/calendar.module';
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
         synchronize: false,
-        migrationsRun: true,
+        migrationsRun: configService.get('TENANCY_ENABLED') !== 'true' && configService.get('NODE_ENV') !== 'production',
         extra: {
           max: Number(configService.get('DB_POOL_MAX')) || 5,
           idleTimeoutMillis: 30000,
           connectionTimeoutMillis: 10000,
         },
       }),
+      dataSourceFactory: async (options) => {
+        if (!options) throw new Error('Database configuration is required');
+        const source = await new DataSource(options).initialize();
+        return process.env.TENANCY_ENABLED === 'true' ? tenantDataSource(source) : source;
+      },
     }),
+    PlatformModule,
+    TenancyModule,
     TasksModule,
     TimelogsModule,
     ProjectsModule,

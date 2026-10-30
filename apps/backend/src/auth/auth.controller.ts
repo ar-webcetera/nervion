@@ -7,11 +7,21 @@ import { AuthGuard } from './guards/auth.guard';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { GetMeResponseDto } from './dto/get-me-response.dto';
 import { RequestWithCookies } from '../common/types/request';
+import { ChangeOwnPasswordDto } from './dto/change-own-password.dto';
+import { RolesGuard } from './guards/roles.guard';
+import { Roles } from './decorators/roles.decorator';
+import { ROLES } from '../common/enums/roles.enum';
 
 @Controller('auth')
 @ApiTags('Авторизация')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Get('/providers')
+  @ApiOperation({ summary: 'Доступные способы входа в текущее пространство' })
+  providers() {
+    return this.authService.getAuthProviders();
+  }
 
   @Post('/login/email')
   @ApiOperation({ summary: 'Вход по email' })
@@ -81,8 +91,16 @@ export class AuthController {
   }
 
   @Patch('/password')
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles(ROLES.admin)
   async changePassword(@Body() changePasswordDto: ChangePasswordDto) {
     return this.authService.changePassword(changePasswordDto);
+  }
+
+  @Post('/password/self')
+  @UseGuards(AuthGuard)
+  changeOwnPassword(@Body() input: ChangeOwnPasswordDto, @Req() req: RequestWithCookies) {
+    return this.authService.changeOwnPassword(req.user, input.currentPassword, input.newPassword);
   }
 
   @Post('/yandex/unlink')

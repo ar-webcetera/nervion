@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import { computed, onMounted, ref } from 'vue';
 import { addDays, subDays, format, parseISO, isToday } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -310,7 +311,7 @@ onMounted(() => {
                   <IconRecurrence v-if="card.recurrence_days?.length" class="weekly-view__card-repeat-icon" />
                   <img
                     v-if="card.responsible?.photo_url"
-                    :src="card.responsible.photo_url"
+                    :src="resolveAwsUrl(card.responsible.photo_url)"
                     class="weekly-view__card-avatar"
                     alt=""
                     @error="($event.target as HTMLImageElement).src = '/avatar-placeholder.svg'"

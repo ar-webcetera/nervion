@@ -9,6 +9,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { buildProxyUrlFromEnv, DEFAULT_NO_PROXY } from './common/utils/proxy-url';
+import { RedisIoAdapter } from './websocket/redis-io.adapter';
 
 const REQUEST_BODY_LIMIT = '1mb';
 const CORS_ALLOWED_ROOT_HOST = (process.env.CORS_ALLOWED_ROOT_HOST || '').trim().toLowerCase();
@@ -38,6 +39,14 @@ export function buildProxyUrl(): string | null {
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { bodyParser: false });
   const configService = new ConfigService();
+  if (configService.get<string>('TENANCY_ENABLED') === 'true') {
+    const redisUrl = configService.get<string>('REDIS_URL');
+    if (!redisUrl) throw new Error('REDIS_URL is required for tenant realtime');
+    const adapter = new RedisIoAdapter(app);
+    await adapter.connect(redisUrl);
+    app.useWebSocketAdapter(adapter);
+  }
+  app.enableShutdownHooks();
   const allowedOrigins = new Set(
     (configService.get<string>('CORS_ALLOWED_ORIGINS') || '')
       .split(',')

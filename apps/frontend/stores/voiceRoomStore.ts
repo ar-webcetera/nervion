@@ -1,6 +1,7 @@
 import type { CreateVoiceRoomRequest, UpdateVoiceRoomRequest, VoiceRoom } from '@tracker/contracts';
 
 export const useVoiceRoomStore = defineStore('voiceRoom', () => {
+  const tenantFetch = useTenantFetch();
   const apiBaseUrl = useApiBaseUrl();
   const rooms = ref<VoiceRoom[]>([]);
   const loading = ref(false);
@@ -8,13 +9,13 @@ export const useVoiceRoomStore = defineStore('voiceRoom', () => {
   const requestOptions = () => ({
     baseURL: apiBaseUrl,
     credentials: 'include' as const,
-    headers: useRequestHeaders(['cookie']),
+    headers: useApiRequestHeaders(),
   });
 
   const fetchRooms = async () => {
     loading.value = true;
     try {
-      rooms.value = await $fetch<VoiceRoom[]>('/api/voice/rooms', requestOptions());
+      rooms.value = await tenantFetch<VoiceRoom[]>('/api/voice/rooms', requestOptions());
       return rooms.value;
     } finally {
       loading.value = false;
@@ -22,7 +23,7 @@ export const useVoiceRoomStore = defineStore('voiceRoom', () => {
   };
 
   const createRoom = async (data: CreateVoiceRoomRequest) => {
-    const room = await $fetch<VoiceRoom>('/api/voice/rooms', {
+    const room = await tenantFetch<VoiceRoom>('/api/voice/rooms', {
       ...requestOptions(),
       method: 'POST',
       body: data,
@@ -32,7 +33,7 @@ export const useVoiceRoomStore = defineStore('voiceRoom', () => {
   };
 
   const updateRoom = async (id: number, data: UpdateVoiceRoomRequest) => {
-    const room = await $fetch<VoiceRoom>(`/api/voice/rooms/${id}`, {
+    const room = await tenantFetch<VoiceRoom>(`/api/voice/rooms/${id}`, {
       ...requestOptions(),
       method: 'PATCH',
       body: data,
@@ -44,7 +45,7 @@ export const useVoiceRoomStore = defineStore('voiceRoom', () => {
   };
 
   const deleteRoom = async (id: number) => {
-    await $fetch(`/api/voice/rooms/${id}`, {
+    await tenantFetch(`/api/voice/rooms/${id}`, {
       ...requestOptions(),
       method: 'DELETE',
     });

@@ -1,7 +1,7 @@
 import { ROLES } from '~/types/user';
 export default defineNuxtRouteMiddleware(async (to) => {
   const projectId = Number(to.params.id);
-  const headers = useRequestHeaders(['cookie']);
+  const headers = useApiRequestHeaders();
   const userStore = useUserStore();
 
   if (userStore.user?.role !== ROLES.admin) {

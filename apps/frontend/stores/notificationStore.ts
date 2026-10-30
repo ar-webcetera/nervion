@@ -3,6 +3,7 @@ import type { ReadNotificationContextRequest, ReadNotificationContextResponse } 
 import type { Notification } from '~/types/notification';
 
 export const useNotificationStore = defineStore('notification', () => {
+  const tenantFetch = useTenantFetch();
   const apiBaseUrl = useApiBaseUrl();
   const notifications = ref<Notification[]>([]);
   const selectedMailAccountId = useState<number>('mail-selected-account-id', () => 0);
@@ -14,8 +15,8 @@ export const useNotificationStore = defineStore('notification', () => {
   };
 
   const getAllNotifications = async () => {
-    const headers = useRequestHeaders(['cookie']);
-    notifications.value = await $fetch<Notification[]>(`/api/notifications/`, {
+    const headers = useApiRequestHeaders();
+    notifications.value = await tenantFetch<Notification[]>(`/api/notifications/`, {
       headers,
       credentials: 'include',
       baseURL: apiBaseUrl,
@@ -46,7 +47,7 @@ export const useNotificationStore = defineStore('notification', () => {
   const updateNotifications = async (id: number, params: Partial<Notification>) => {
     const body: Partial<Notification> = {};
     if ('is_read' in params) body.is_read = params.is_read;
-    await $fetch(`/api/notifications/${id}/`, {
+    await tenantFetch(`/api/notifications/${id}/`, {
       method: 'PATCH',
       credentials: 'include',
       baseURL: apiBaseUrl,
@@ -60,7 +61,7 @@ export const useNotificationStore = defineStore('notification', () => {
   };
 
   const markContextAsRead = async (context: ReadNotificationContextRequest): Promise<number[]> => {
-    const response = await $fetch<ReadNotificationContextResponse>(`/api/notifications/read-context`, {
+    const response = await tenantFetch<ReadNotificationContextResponse>(`/api/notifications/read-context`, {
       method: 'PATCH',
       credentials: 'include',
       baseURL: apiBaseUrl,
@@ -78,7 +79,7 @@ export const useNotificationStore = defineStore('notification', () => {
   };
 
   const markAllAsRead = async () => {
-    await $fetch(`/api/notifications/mark-all-read`, {
+    await tenantFetch(`/api/notifications/mark-all-read`, {
       method: 'PATCH',
       credentials: 'include',
       baseURL: apiBaseUrl,

@@ -224,7 +224,7 @@ const save = async () => {
           formData.append('prefix', 'tracker-avatars/');
 
           const result = await filesStore.addFile(formData);
-          const photoUrl = buildAwsObjectUrl(result.Key, config.public.AWS_ENDPOINT) ?? result.Key;
+          const photoUrl = buildAwsObjectUrl(result.Key, config.public.AWS_ENDPOINT, String(config.public.tenancyEnabled) === 'true') ?? result.Key;
 
           await userStore.updateUser({ photo_url: photoUrl } as User, userStore.user!.id);
           if (userStore.user) userStore.user.photo_url = photoUrl;

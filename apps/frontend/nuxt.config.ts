@@ -51,12 +51,21 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     apiInternalUrl: process.env.API_INTERNAL_URL || process.env.API_URL || 'http://localhost:3026',
+    tenancyProxySecret: process.env.TENANCY_PROXY_SECRET || '',
+    tenancyAllowedHosts: process.env.TENANCY_ALLOWED_HOSTS || '',
     public: {
+      tenancyEnabled: process.env.TENANCY_ENABLED === 'true',
+      tenancyRootDomain: process.env.TENANCY_ROOT_DOMAIN || 'nervion.ru',
+      platformAdminHost: process.env.PLATFORM_ADMIN_HOST || 'admin.nervion.ru',
       AWS_ENDPOINT: process.env.AWS_ENDPOINT || "",
       API_URL: process.env.API_URL,
       SENTRY_DSN: process.env.NUXT_PUBLIC_SENTRY_DSN,
       metrikaId: process.env.NUXT_PUBLIC_METRIKA_ID || "",
     },
+  },
+
+  routeRules: {
+    '/**': { cache: false },
   },
 
   app: {

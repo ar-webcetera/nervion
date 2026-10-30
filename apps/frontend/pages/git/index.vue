@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
+import { GitRepositoryAvailability, GitRepositoryMode } from '@tracker/contracts';
+import type { LocationQueryValue } from 'vue-router';
 import { ROLES } from '~/types/user';
 import { useGitStore } from '~/stores/gitStore';
 import type { GitCommit, GitRepo, GitTreeEntry } from '~/types/git';
 import type { SelectOption } from '~/types/select';
 import { getErrorMessage } from '~/utils/error';
+import { useTenantStore } from '~/stores/tenantStore';
+import { canReadGitRepository } from '~/utils/gitRepository';
 
 definePageMeta({
   middleware: ['auth', 'role'],
@@ -22,12 +26,45 @@ const { $toast } = useNuxtApp();
 const route = useRoute();
 const router = useRouter();
 const gitStore = useGitStore();
+const tenantStore = useTenantStore();
+const syncPending = ref(false);
 
-const { repos, branches, commits, tree, currentRepoId: repoId, currentBranch: branch, detail, detailLoading } =
-  storeToRefs(gitStore);
+const syncRepository = async () => {
+  if (repoId.value === null || syncPending.value || !canFetchSelectedRepo.value) return;
+  const syncingRepoId = repoId.value;
+  syncPending.value = true;
+  try {
+    await gitStore.syncRepo(syncingRepoId);
+    if (repoId.value === syncingRepoId) {
+      await gitStore.loadInitial(syncingRepoId, branch.value, qStr(route.query.commit), qStr(route.query.file));
+    }
+    $toast.success('Репозиторий обновлен');
+  } catch (error) {
+    $toast.error(getErrorMessage(error));
+  } finally {
+    syncPending.value = false;
+  }
+};
 
-const qNum = (v: unknown): number | undefined => (typeof v === 'string' && v ? Number(v) : undefined);
-const qStr = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+const {
+  repos,
+  branches,
+  commits,
+  tree,
+  currentRepoId: repoId,
+  currentBranch: branch,
+  detail,
+  detailLoading,
+  selectionLoading,
+  selectedRepo,
+} = storeToRefs(gitStore);
+
+type QueryValue = LocationQueryValue | LocationQueryValue[] | undefined;
+const qNum = (v: QueryValue): number | undefined => {
+  const value = typeof v === 'string' && v ? Number(v) : NaN;
+  return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+};
+const qStr = (v: QueryValue): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
 const lastRepo = useCookie<number | null>('git_repo', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 });
 const lastBranch = useCookie<string | null>('git_branch', { sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 });
@@ -41,7 +78,11 @@ const setQuery = (patch: Record<string, string | number | undefined>, replace = 
   void (replace ? router.replace(loc) : router.push(loc)).catch(() => {});
 };
 
-await useAsyncData('git-initial', async () => {
+const {
+  error: initialError,
+  refresh: reloadInitial,
+  pending: initialPending,
+} = await useAsyncData('git-initial', async () => {
   await gitStore.loadInitial(
     qNum(route.query.repo) ?? lastRepo.value ?? undefined,
     qStr(route.query.branch) ?? lastBranch.value ?? undefined,
@@ -68,10 +109,20 @@ const mode = computed<'commits' | 'files'>({
   set: (v) => setQuery({ tab: v === 'files' ? 'files' : undefined }),
 });
 
-const repoOptions = computed<SelectOption[]>(() => repos.value.map((r) => ({ label: r.name, value: r.id })));
+const repoOptions = computed<SelectOption[]>(() =>
+  repos.value.map((repository) => ({
+    label:
+      repository.availability === GitRepositoryAvailability.UNAVAILABLE ? `${repository.name} · Недоступен` : repository.name,
+    value: repository.id,
+  })),
+);
 const branchOptions = computed<SelectOption[]>(() => branches.value.map((b) => ({ label: b.name, value: b.name })));
 
-const selectedRepo = computed(() => (repoId.value != null ? repos.value.find((r) => r.id === repoId.value) ?? null : null));
+const canReadSelectedRepo = computed(() => canReadGitRepository(selectedRepo.value));
+const canFetchSelectedRepo = computed(
+  () => canReadSelectedRepo.value && selectedRepo.value?.capabilities.canFetch === true && !tenantStore.readOnly,
+);
+const isExternalRepository = computed(() => selectedRepo.value?.mode === GitRepositoryMode.EXTERNAL_READ_ONLY);
 
 const cloneCommand = computed(() => {
   if (!selectedRepo.value?.cloneUrl) return null;
@@ -84,7 +135,7 @@ let cloneCopiedTimer: ReturnType<typeof setTimeout> | null = null;
 const copyCloneCommand = async () => {
   const command = cloneCommand.value;
   if (!command) {
-    $toast.error('URL клонирования не настроен (GIT_CLONE_BASE_URL)');
+    $toast.error('Адрес клонирования не настроен');
     return;
   }
 
@@ -135,12 +186,16 @@ const onRepoChange = (v: string | number | (string | number)[] | null) =>
 const onBranchChange = (v: string | number | (string | number)[] | null) =>
   setQuery({ branch: String(v ?? ''), commit: undefined, file: undefined });
 
-const openCommit = (c: GitCommit) => setQuery({ commit: c.hash, file: undefined });
-const openFile = (entry: GitTreeEntry) => setQuery({ file: entry.path, commit: undefined });
+const openCommit = (c: GitCommit) => {
+  if (canReadSelectedRepo.value) setQuery({ commit: c.hash, file: undefined });
+};
+const openFile = (entry: GitTreeEntry) => {
+  if (canReadSelectedRepo.value) setQuery({ file: entry.path, commit: undefined });
+};
 
 const toggleFolder = async (index: number) => {
   const row = treeRows.value[index];
-  if (repoId.value == null || !row) return;
+  if (repoId.value == null || !row || !canReadSelectedRepo.value) return;
   if (row.expanded) {
     let count = 0;
     for (let i = index + 1; i < treeRows.value.length; i++) {
@@ -151,8 +206,11 @@ const toggleFolder = async (index: number) => {
     row.expanded = false;
     return;
   }
+  const loadingRepoId = repoId.value;
+  const loadingBranch = branch.value;
   try {
-    const children = await gitStore.fetchTree(repoId.value, branch.value, row.entry.path);
+    const children = await gitStore.fetchTree(loadingRepoId, loadingBranch, row.entry.path);
+    if (repoId.value !== loadingRepoId || branch.value !== loadingBranch || treeRows.value[index] !== row) return;
     const childRows: TreeRow[] = children.map((entry) => ({ entry, depth: row.depth + 1, expanded: false }));
     treeRows.value.splice(index + 1, 0, ...childRows);
     row.expanded = true;
@@ -196,7 +254,11 @@ const reconcile = async () => {
 };
 
 onMounted(() => {
-  watch(() => route.query, () => void reconcile(), { deep: true, immediate: true });
+  watch(
+    () => route.query,
+    () => void reconcile(),
+    { deep: true, immediate: true },
+  );
 });
 
 const onRepoCreated = async (repo: GitRepo) => {
@@ -217,11 +279,14 @@ let pollTimer: ReturnType<typeof setInterval> | null = null;
 const currentSha = () => branches.value.find((b) => b.name === branch.value)?.sha ?? null;
 
 const checkGitUpdates = async () => {
-  if (!repoId.value || !branch.value) return;
-  if (typeof document !== "undefined" && document.hidden) return;
+  if (!repoId.value || !branch.value || !canReadSelectedRepo.value || selectionLoading.value) return;
+  if (typeof document !== 'undefined' && document.hidden) return;
+  const pollingRepoId = repoId.value;
+  const pollingBranch = branch.value;
   try {
-    await gitStore.fetchBranches(repoId.value);
-    const cur = currentSha();
+    const updatedBranches = await gitStore.fetchBranches(pollingRepoId);
+    if (repoId.value !== pollingRepoId || branch.value !== pollingBranch) return;
+    const cur = updatedBranches.find((item) => item.name === pollingBranch)?.sha ?? null;
     if (knownSha.value && cur && cur !== knownSha.value) {
       await gitStore.loadInitial(repoId.value, branch.value, qStr(route.query.commit), qStr(route.query.file));
     }
@@ -231,13 +296,17 @@ const checkGitUpdates = async () => {
   }
 };
 
-watch([repoId, branch], () => { knownSha.value = currentSha(); });
+watch([repoId, branch], () => {
+  knownSha.value = currentSha();
+});
 
 onMounted(() => {
   knownSha.value = currentSha();
   pollTimer = setInterval(checkGitUpdates, POLL_MS);
 });
-onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
+onBeforeUnmount(() => {
+  if (pollTimer) clearInterval(pollTimer);
+});
 </script>
 
 <template>
@@ -255,7 +324,7 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
           @update:model-value="onRepoChange"
         />
         <BaseSelect
-          v-if="branchOptions.length"
+          v-if="canReadSelectedRepo && branchOptions.length"
           class="git__select"
           :options="branchOptions"
           :model-value="branch"
@@ -266,11 +335,21 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
       </div>
       <div class="git__topbar-actions">
         <button
-          v-if="selectedRepo"
+          v-if="selectedRepo?.capabilities.canFetch"
+          type="button"
+          class="git__clone"
+          :disabled="syncPending || selectionLoading || !canFetchSelectedRepo"
+          @click="syncRepository"
+        >
+          {{ syncPending ? 'Обновляю...' : 'Получить изменения' }}
+        </button>
+        <button
+          v-if="selectedRepo?.cloneUrl && canReadSelectedRepo"
+          type="button"
           class="git__clone"
           :class="{ git__clone_copied: cloneCopied }"
           :disabled="!cloneCommand"
-          :title="cloneCommand ? 'Скопировать git clone' : 'Настройте GIT_CLONE_BASE_URL на сервере'"
+          :title="cloneCommand ? 'Скопировать git clone' : 'Адрес клонирования не настроен'"
           @click="copyCloneCommand"
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -284,7 +363,7 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
           </svg>
           {{ cloneCopied ? 'Скопировано' : 'Клонировать' }}
         </button>
-        <button class="git__connect" @click="connectModal?.open()">
+        <button type="button" class="git__connect" :disabled="tenantStore.readOnly" @click="connectModal?.open()">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M8 3.5V12.5M3.5 8H12.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
           </svg>
@@ -295,27 +374,35 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
 
     <hr class="git__divider" />
 
-    <div class="git__body">
+    <div v-if="isExternalRepository && canReadSelectedRepo" class="git__repository-status" role="status">
+      <span class="git__repository-badge">Только просмотр</span>
+      <p>Изменения выполняются через внешний Git-сервер.</p>
+    </div>
+
+    <div v-if="initialError" class="git__error" role="alert">
+      <span>{{ getErrorMessage(initialError) }}</span>
+      <button type="button" class="git__clone" :disabled="initialPending" @click="() => reloadInitial()">Повторить</button>
+    </div>
+
+    <div v-else-if="selectedRepo && !canReadSelectedRepo" class="git__unavailable" role="status">
+      <h2>Репозиторий недоступен</h2>
+      <p>Не удалось открыть репозиторий. Администратору нужно проверить его подключение.</p>
+      <button type="button" class="git__clone" :disabled="initialPending || selectionLoading" @click="() => reloadInitial()">
+        {{ initialPending || selectionLoading ? 'Проверяю...' : 'Проверить снова' }}
+      </button>
+    </div>
+
+    <div v-else class="git__body" :aria-busy="selectionLoading">
       <div class="git__list">
         <div class="git__tabs">
-          <button
-            :class="['git__tab', { git__tab_active: mode === 'commits' }]"
-            @click="mode = 'commits'"
-          >
-            Коммиты
-          </button>
-          <button
-            :class="['git__tab', { git__tab_active: mode === 'files' }]"
-            @click="mode = 'files'"
-          >
-            Файлы
-          </button>
+          <button :class="['git__tab', { git__tab_active: mode === 'commits' }]" @click="mode = 'commits'">Коммиты</button>
+          <button :class="['git__tab', { git__tab_active: mode === 'files' }]" @click="mode = 'files'">Файлы</button>
         </div>
 
         <div class="git__list-scroll">
-          <div v-if="!repoOptions.length" class="git__list-empty">
-            Нет подключённых репозиториев
-          </div>
+          <div v-if="selectionLoading" class="git__list-empty" role="status">Загрузка...</div>
+          <div v-else-if="!repoOptions.length" class="git__list-empty">Нет подключённых репозиториев</div>
+          <div v-else-if="!selectedRepo" class="git__list-empty">Выберите репозиторий</div>
           <template v-if="mode === 'commits'">
             <button
               v-for="c in commits"
@@ -335,7 +422,10 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
             <button
               v-for="(row, i) in treeRows"
               :key="row.entry.path"
-              :class="['git__node', { git__node_active: activeKey === `f:${row.entry.path}`, git__node_dir: row.entry.type === 'tree' }]"
+              :class="[
+                'git__node',
+                { git__node_active: activeKey === `f:${row.entry.path}`, git__node_dir: row.entry.type === 'tree' },
+              ]"
               :style="{ paddingLeft: 6 + row.depth * 14 + 'px' }"
               @click="onNodeClick(row, i)"
             >
@@ -349,7 +439,13 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
                   viewBox="0 0 16 16"
                   fill="none"
                 >
-                  <path d="M6 3.5L10.5 8L6 12.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                  <path
+                    d="M6 3.5L10.5 8L6 12.5"
+                    stroke="currentColor"
+                    stroke-width="1.6"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
                 </svg>
               </span>
               <span class="git__node-name">{{ row.entry.name }}</span>
@@ -359,7 +455,7 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
       </div>
 
       <div class="git__detail">
-        <div v-if="detailLoading" class="git__detail-state">Загрузка…</div>
+        <div v-if="detailLoading || selectionLoading" class="git__detail-state" role="status">Загрузка...</div>
         <template v-else-if="detail">
           <div class="git__detail-head">
             <template v-if="detail.kind === 'diff'">
@@ -374,12 +470,7 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
             </template>
           </div>
           <div class="git__detail-scroll">
-            <GitDiffView
-              v-if="detail.kind === 'diff'"
-              :diff="detail.data"
-              :repo-id="diffRepoId"
-              :head-ref="diffHeadRef"
-            />
+            <GitDiffView v-if="detail.kind === 'diff'" :diff="detail.data" :repo-id="diffRepoId" :head-ref="diffHeadRef" />
             <GitFileView v-else :file="detail.data" :repo-id="repoId" :git-ref="branch" />
           </div>
         </template>
@@ -413,7 +504,7 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
   }
 
   &__topbar-main {
-    @include flex(rn, a-center);
+    @include flex(rw, a-center);
     gap: 12px;
     min-width: 0;
   }
@@ -425,13 +516,64 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
   }
 
   &__select {
-    flex-shrink: 0;
+    min-width: 0;
+    max-width: 100%;
   }
 
   &__topbar-actions {
     @include flex(rn, a-center);
     gap: 8px;
     flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  &__error {
+    @include flex(cn);
+    align-items: flex-start;
+    gap: 16px;
+    color: var(--danger-delete);
+    overflow-wrap: anywhere;
+    @extend %text-s-regular;
+  }
+
+  &__repository-status {
+    @include flex(rw, a-center);
+    gap: 8px 12px;
+    color: var(--light-text-backgroung-primary);
+    @extend %text-s-regular;
+
+    p {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  &__repository-badge {
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: var(--light-text-backgroung-primary-5);
+    @extend %p12-medium;
+  }
+
+  &__unavailable {
+    @include flex(cn, a-start);
+    gap: 12px;
+    padding: 16px;
+    background: var(--light-text-backgroung-primary-5);
+    border-radius: 12px;
+    color: var(--light-text-backgroung-primary);
+    @extend %text-s-regular;
+
+    h2 {
+      margin: 0;
+      @extend %text-s-medium;
+    }
+
+    p {
+      max-width: 60ch;
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
   }
 
   &__connect,
@@ -439,6 +581,7 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
     @include flex(rn, a-center, j-center);
     gap: 8px;
     padding: 10px 14px;
+    min-height: 44px;
     border: 1px solid var(--light-text-backgroung-primary-10);
     border-radius: 8px;
     background: var(--light-text-backgroung-primary-5);
@@ -449,6 +592,11 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
 
     &:hover:not(:disabled) {
       border-color: var(--primary-50);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary);
+      outline-offset: 2px;
     }
 
     &:disabled {
@@ -495,11 +643,11 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); });
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: 380px 1fr;
+    grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
     gap: 16px;
     overflow: hidden;
     @media (max-width: $screen-tablet) {
-      grid-template-columns: 1fr;
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 

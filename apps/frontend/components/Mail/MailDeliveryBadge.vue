@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { MailDeliveryStatus } from '@tracker/contracts';
 import { resolveMailDeliveryLabel } from '~/composables/useMailDeliveryLabel';
+import type { MailMessageStatus } from '~/types/mail';
 
 const props = defineProps<{
-  status?: 'received' | 'sent' | 'failed' | 'draft' | null;
+  status?: MailMessageStatus | null;
   deliveryStatus?: MailDeliveryStatus | null;
   openCount?: number | null;
   clickCount?: number | null;

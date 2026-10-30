@@ -1,0 +1,407 @@
+# Isolated server-side preproduction. Never combine with the production compose.
+# Keep the real env file and secrets outside this checkout. See docs/preprod.md.
+name: ${PREPROD_PROJECT_NAME:-nervion-preprod}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+x-service: &service
+  restart: unless-stopped
+  logging: *logging
+  security_opt: [no-new-privileges:true]
+
+x-backend-image: &backend-image
+  image: ${PREPROD_BACKEND_IMAGE:-nervion-preprod-backend:local}
+  build:
+    context: .
+    dockerfile: apps/backend/Dockerfile
+
+services:
+  postgres:
+    <<: *service
+    image: postgres:17-bookworm
+    mem_limit: ${PREPROD_POSTGRES_MEMORY:-384m}
+    cpus: ${PREPROD_POSTGRES_CPUS:-0.50}
+    pids_limit: 150
+    shm_size: 128m
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    command:
+      [
+        postgres,
+        -c,
+        password_encryption=scram-sha-256,
+        -c,
+        max_connections=60,
+        -c,
+        shared_buffers=128MB,
+        -c,
+        work_mem=4MB,
+      ]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/saas/postgres/001-bootstrap.sh:/docker-entrypoint-initdb.d/001-bootstrap.sh:ro
+      - ./deploy/saas/postgres/bootstrap.sql:/opt/nervion/bootstrap.sql:ro
+    secrets:
+      [
+        postgres_password,
+        data_password,
+        platform_password,
+        data_migrator_password,
+        platform_migrator_password,
+      ]
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U postgres -d postgres]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  pgbouncer:
+    <<: *service
+    build: ./deploy/saas/pgbouncer
+    image: ${PREPROD_PGBOUNCER_IMAGE:-nervion-preprod-pgbouncer:local}
+    mem_limit: 64m
+    cpus: 0.20
+    pids_limit: 40
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: ["/run/pgbouncer:uid=10001,gid=10001,mode=0700"]
+    volumes:
+      - ./deploy/preprod/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+    secrets: [data_password, platform_password]
+    networks: [database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -p, "6432"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    <<: *service
+    image: redis:7.4-alpine
+    mem_limit: 96m
+    cpus: 0.20
+    pids_limit: 40
+    read_only: true
+    tmpfs: ["/run/nervion:mode=0700"]
+    entrypoint: [/bin/sh, /opt/nervion/redis-entrypoint.sh]
+    volumes:
+      - redis_data:/data
+      - ./deploy/preprod/redis-entrypoint.sh:/opt/nervion/redis-entrypoint.sh:ro
+    secrets: [redis_password]
+    networks: [realtime]
+    healthcheck:
+      test:
+        [
+          CMD-SHELL,
+          'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -qx PONG',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  storage:
+    <<: *service
+    # Official upstream release. Operators can set a verified digest in the private env.
+    image: ${PREPROD_STORAGE_IMAGE:-chrislusf/seaweedfs:4.51}
+    # The official image seeds /data as UID 1000. Keep it non-root and make only
+    # its two secret files readable inside the root-owned private secrets dir.
+    user: "1000:1000"
+    mem_limit: ${PREPROD_STORAGE_MEMORY:-256m}
+    cpus: ${PREPROD_STORAGE_CPUS:-0.30}
+    pids_limit: 100
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    entrypoint: [/bin/sh, /opt/nervion/storage-entrypoint.sh]
+    environment:
+      S3_BUCKET: nervion-preprod
+      GOMEMLIMIT: 192MiB
+    volumes:
+      - storage_data:/data
+      - ./deploy/preprod/storage-entrypoint.sh:/opt/nervion/storage-entrypoint.sh:ro
+    secrets: [storage_access_key, storage_secret_key]
+    networks: [storage]
+    healthcheck:
+      test:
+        [
+          CMD-SHELL,
+          'wget --server-response --spider http://127.0.0.1:8333/ 2>&1 | grep -q "403 Forbidden"',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  migrate:
+    <<: *backend-image
+    restart: "no"
+    logging: *logging
+    profiles: [deployment]
+    mem_limit: ${PREPROD_MIGRATION_MEMORY:-768m}
+    cpus: ${PREPROD_MIGRATION_CPUS:-0.50}
+    pids_limit: 100
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: ["/tmp:size=128m,mode=1777"]
+    entrypoint: [node, /opt/nervion/migrate.mjs]
+    environment:
+      NODE_ENV: production
+      TENANCY_ENABLED: "true"
+      TENANCY_BOOTSTRAP_TENANT_ID: ${PREPROD_BOOTSTRAP_TENANT_ID:?Set a fixed UUID for the fresh preproduction database}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: nervion_data_1
+      POSTGRES_USER: nervion_data
+      MIGRATION_POSTGRES_HOST: postgres
+      MIGRATION_POSTGRES_PORT: "5432"
+      MIGRATION_POSTGRES_USER: nervion_data_migrator
+      PLATFORM_POSTGRES_HOST: postgres
+      PLATFORM_POSTGRES_PORT: "5432"
+      PLATFORM_POSTGRES_DB: nervion_platform
+      PLATFORM_POSTGRES_USER: nervion_platform
+      PLATFORM_MIGRATION_POSTGRES_HOST: postgres
+      PLATFORM_MIGRATION_POSTGRES_PORT: "5432"
+      PLATFORM_MIGRATION_POSTGRES_USER: nervion_platform_migrator
+    volumes:
+      - ./deploy/preprod/migrate.mjs:/opt/nervion/migrate.mjs:ro
+    secrets: [data_migrator_password, platform_migrator_password]
+    networks: [database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    <<: [*service, *backend-image]
+    init: true
+    mem_limit: ${PREPROD_BACKEND_MEMORY:-640m}
+    cpus: ${PREPROD_BACKEND_CPUS:-0.70}
+    pids_limit: 200
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: ["/tmp:size=256m,mode=1777"]
+    entrypoint: [node, /opt/nervion/runtime.mjs, backend]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=384
+      PORT: "3026"
+      TENANCY_ENABLED: "true"
+      TENANCY_ROOT_DOMAIN: ${PREPROD_ROOT_DOMAIN:?Set the preproduction root domain}
+      PLATFORM_ADMIN_HOST: ${PREPROD_ADMIN_HOST:?Set the preproduction admin hostname}
+      PLATFORM_ADMIN_EMAIL: ${PREPROD_ADMIN_EMAIL:?Set the preproduction administrator email}
+      APP_DOMAIN: ${PREPROD_ROOT_DOMAIN}
+      APP_PUBLIC_ORIGIN: https://${PREPROD_ROOT_DOMAIN}
+      AUTH_PUBLIC_ORIGIN: ""
+      CORS_ALLOWED_ORIGINS: https://${PREPROD_ADMIN_HOST}
+      CORS_ALLOWED_ROOT_HOST: ${PREPROD_ROOT_DOMAIN}
+      POSTGRES_HOST: pgbouncer
+      POSTGRES_PORT: "6432"
+      POSTGRES_DB: nervion_data_1
+      POSTGRES_USER: nervion_data
+      PLATFORM_POSTGRES_HOST: pgbouncer
+      PLATFORM_POSTGRES_PORT: "6432"
+      PLATFORM_POSTGRES_DB: nervion_platform
+      PLATFORM_POSTGRES_USER: nervion_platform
+      DB_POOL_MAX: "8"
+      TENANT_JOBS_CONCURRENCY: "2"
+      TENANT_JOBS_WORKER_ENABLED: "true"
+      AWS_ENDPOINT: http://storage:8333
+      AWS_REGION: us-east-1
+      AWS_BUCKET_ID: nervion-preprod
+      GIT_TENANT_ROOT: /var/git
+      GIT_ALLOWED_HOSTS: ${PREPROD_GIT_ALLOWED_HOSTS:-}
+      GIT_MAX_REPO_BYTES: "268435456"
+      GIT_MAX_TENANT_BYTES: "536870912"
+      GIT_MAX_REPOS_PER_TENANT: "5"
+      HEALTHCHECK_ALLOWED_HOSTS: ${PREPROD_HEALTHCHECK_ALLOWED_HOSTS:-}
+      HEALTHCHECK_TENANT_LIMIT: "10"
+      MEDIASOUP_ANNOUNCED_IP: ${PREPROD_MEDIA_PUBLIC_IP:?Set the public media IP, even when voice is disabled}
+      MEDIASOUP_LISTEN_IP: 0.0.0.0
+      MEDIASOUP_MIN_PORT: ${PREPROD_MEDIA_MIN_PORT:-52000}
+      MEDIASOUP_MAX_PORT: ${PREPROD_MEDIA_MAX_PORT:-52099}
+      MEDIASOUP_ICE_SERVERS: "[]"
+      MEDIASOUP_TURN_URLS: ${PREPROD_TURN_URLS:-}
+      MEDIASOUP_TURN_TTL_SECONDS: "3600"
+      MAILBOX_TENANTS_JSON: "[]"
+      AI_ENABLED: "false"
+      PUSH_ENABLED: "false"
+      OPENAI_API_KEY: ""
+      OPENROUTER_API_KEY: ""
+      SENTRY_DSN: ""
+      PROXY_ENABLE: "0"
+      DEMO_AUTH_ENABLED: "false"
+    volumes:
+      - git_data:/var/git
+      - ./deploy/preprod/runtime.mjs:/opt/nervion/runtime.mjs:ro
+    secrets:
+      - data_password
+      - platform_password
+      - redis_password
+      - jwt_secret
+      - tenancy_proxy_secret
+      - platform_admin_password_hash
+      - storage_access_key
+      - storage_secret_key
+      - git_credential_key
+      - turn_secret
+      - mail_tenants_json
+    networks: [web, database, realtime, storage, outbound]
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          'require("node:http").get({hostname:"127.0.0.1",port:3026,path:"/api/platform/auth/me",headers:{Host:process.env.PLATFORM_ADMIN_HOST},timeout:4000},r=>{r.resume();process.exit(r.statusCode===401?0:1)}).on("timeout",function(){this.destroy();process.exit(1)}).on("error",()=>process.exit(1))',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+  frontend:
+    <<: *service
+    image: ${PREPROD_FRONTEND_IMAGE:-nervion-preprod-frontend:local}
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    init: true
+    mem_limit: ${PREPROD_FRONTEND_MEMORY:-384m}
+    cpus: ${PREPROD_FRONTEND_CPUS:-0.40}
+    pids_limit: 100
+    read_only: true
+    cap_drop: [ALL]
+    tmpfs: ["/tmp:size=64m,mode=1777"]
+    entrypoint: [node, /opt/nervion/runtime.mjs, frontend]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=256
+      NITRO_HOST: 0.0.0.0
+      PORT: "3012"
+      NUXT_API_INTERNAL_URL: http://backend:3026
+      NUXT_PUBLIC_API_URL: /api
+      NUXT_PUBLIC_TENANCY_ENABLED: "true"
+      NUXT_PUBLIC_TENANCY_ROOT_DOMAIN: ${PREPROD_ROOT_DOMAIN}
+      NUXT_PUBLIC_PLATFORM_ADMIN_HOST: ${PREPROD_ADMIN_HOST}
+      NUXT_PUBLIC_SENTRY_DSN: ""
+      NUXT_PUBLIC_METRIKA_ID: ""
+      NUXT_PUBLIC_AWS_ENDPOINT: ""
+      NUXT_TELEMETRY_DISABLED: "1"
+    volumes:
+      - ./deploy/preprod/runtime.mjs:/opt/nervion/runtime.mjs:ro
+    secrets: [tenancy_proxy_secret]
+    networks: [web]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          'require("node:http").get({hostname:"127.0.0.1",port:3012,path:"/platform",headers:{Host:process.env.NUXT_PUBLIC_PLATFORM_ADMIN_HOST},timeout:4000},r=>{r.resume();process.exit(r.statusCode===200?0:1)}).on("timeout",function(){this.destroy();process.exit(1)}).on("error",()=>process.exit(1))',
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  gateway:
+    <<: *service
+    image: nginx:1.28-alpine
+    mem_limit: 32m
+    cpus: 0.20
+    pids_limit: 50
+    read_only: true
+    tmpfs:
+      [
+        "/var/cache/nginx:size=16m",
+        "/var/run:size=1m",
+        "/etc/nginx/conf.d:size=1m",
+      ]
+    environment:
+      PREPROD_ROOT_DOMAIN: ${PREPROD_ROOT_DOMAIN}
+      PREPROD_ADMIN_HOST: ${PREPROD_ADMIN_HOST}
+      NGINX_ENVSUBST_FILTER: ^PREPROD_
+    volumes:
+      - ./deploy/preprod/gateway.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./deploy/preprod/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "${PREPROD_HTTP_BIND_IP:-127.0.0.1}:${PREPROD_HTTP_PORT:-3088}:8080"
+    networks: [web, edge]
+    depends_on:
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/__preprod_health]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+networks:
+  web:
+    internal: true
+  database:
+    internal: true
+  realtime:
+    internal: true
+  storage:
+    internal: true
+  outbound: {}
+  edge: {}
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:
+  git_data:
+
+secrets:
+  postgres_password:
+    file: ${PREPROD_SECRETS_DIR:?Set a secret directory outside the checkout}/postgres_password
+  data_password:
+    file: ${PREPROD_SECRETS_DIR}/data_password
+  platform_password:
+    file: ${PREPROD_SECRETS_DIR}/platform_password
+  data_migrator_password:
+    file: ${PREPROD_SECRETS_DIR}/data_migrator_password
+  platform_migrator_password:
+    file: ${PREPROD_SECRETS_DIR}/platform_migrator_password
+  redis_password:
+    file: ${PREPROD_SECRETS_DIR}/redis_password
+  jwt_secret:
+    file: ${PREPROD_SECRETS_DIR}/jwt_secret
+  tenancy_proxy_secret:
+    file: ${PREPROD_SECRETS_DIR}/tenancy_proxy_secret
+  platform_admin_password_hash:
+    file: ${PREPROD_SECRETS_DIR}/platform_admin_password_hash
+  storage_access_key:
+    file: ${PREPROD_SECRETS_DIR}/storage_access_key
+  storage_secret_key:
+    file: ${PREPROD_SECRETS_DIR}/storage_secret_key
+  git_credential_key:
+    file: ${PREPROD_SECRETS_DIR}/git_credential_key
+  turn_secret:
+    file: ${PREPROD_SECRETS_DIR}/turn_secret
+  mail_tenants_json:
+    file: ${PREPROD_SECRETS_DIR}/mail_tenants_json

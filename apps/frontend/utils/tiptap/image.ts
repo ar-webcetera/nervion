@@ -10,6 +10,7 @@ export interface ImageOptions {
   allowBase64: boolean;
   HTMLAttributes: Record<string, never>;
   awsEndpoint: string;
+  tenantStorage: boolean;
 }
 
 declare module '@tiptap/core' {
@@ -38,6 +39,7 @@ export const Image = Node.create<ImageOptions>({
       allowBase64: false,
       HTMLAttributes: {},
       awsEndpoint: '',
+      tenantStorage: false,
     };
   },
 
@@ -97,7 +99,8 @@ export const Image = Node.create<ImageOptions>({
         }),
       ];
     }
-    const fullSrc = src && !src.startsWith('http') ? buildAwsObjectUrl(src, this.options.awsEndpoint) : src;
+    const fullSrc = this.options.tenantStorage || (src && !src.startsWith('http'))
+      ? buildAwsObjectUrl(src, this.options.awsEndpoint, this.options.tenantStorage) : src;
 
     return ['img', mergeAttributes(this.options.HTMLAttributes, { ...rest, src: fullSrc })];
   },

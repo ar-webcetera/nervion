@@ -6,7 +6,8 @@ import { getValidPushSubscription, urlBase64ToUint8Array, waitForServiceWorker }
 import { getErrorMessage } from '~/utils/error';
 
 export const usePushStore = defineStore('push', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const userStore = useUserStore();
   const status = ref(PushStatus.Checking);
   const enabled = ref(false);
@@ -25,7 +26,7 @@ export const usePushStore = defineStore('push', () => {
     'serviceWorker' in navigator;
   const disabled = () => Boolean(localStorage.getItem(disabledKey));
   const dismissed = () => Date.now() < Number(localStorage.getItem('push-banner-dismissed-until') || 0);
-  const apiOptions = () => ({ baseURL: config.public.API_URL as string, credentials: 'include' as const, timeout: 15000 });
+  const apiOptions = () => ({ baseURL: tenantApiBaseUrl as string, credentials: 'include' as const, timeout: 15000 });
 
   const dismissBanner = () => {
     showBanner.value = false;
@@ -48,7 +49,7 @@ export const usePushStore = defineStore('push', () => {
     attemptedAt = Date.now();
     let stage = PushFailureStage.PublicKey;
     try {
-      const { key } = await $fetch<{ key: string }>('/api/push/vapid-public-key', apiOptions());
+      const { key } = await tenantFetch<{ key: string }>('/api/push/vapid-public-key', apiOptions());
       if (!key) throw new Error('Уведомления не настроены на сервере.');
       stage = PushFailureStage.ServiceWorker;
       const registration = await waitForServiceWorker(navigator.serviceWorker);
@@ -58,7 +59,7 @@ export const usePushStore = defineStore('push', () => {
       if (!keys?.p256dh || !keys.auth) throw new Error('Не удалось создать подписку. Повторите попытку.');
       if (userStore.user?.id !== userId || disabled()) return false;
       stage = PushFailureStage.SaveSubscription;
-      await $fetch('/api/push/subscribe', {
+      await tenantFetch('/api/push/subscribe', {
         ...apiOptions(),
         method: 'POST',
         body: { endpoint: subscription.endpoint, keys },
@@ -66,7 +67,7 @@ export const usePushStore = defineStore('push', () => {
       if (userStore.user?.id !== userId) return false;
       if (disabled()) {
         stage = PushFailureStage.UnsubscribeServer;
-        await $fetch('/api/push/unsubscribe', {
+        await tenantFetch('/api/push/unsubscribe', {
           ...apiOptions(),
           method: 'DELETE',
           body: { endpoint: subscription.endpoint },
@@ -161,7 +162,7 @@ export const usePushStore = defineStore('push', () => {
       const subscription = await registration?.pushManager.getSubscription();
       if (subscription) {
         const results = await Promise.allSettled([
-          $fetch('/api/push/unsubscribe', {
+          tenantFetch('/api/push/unsubscribe', {
             ...apiOptions(),
             method: 'DELETE',
             body: { endpoint: subscription.endpoint },
@@ -208,7 +209,7 @@ export const usePushStore = defineStore('push', () => {
       if (!subscription) throw new Error('Подписка отсутствует. Включите уведомления повторно.');
       const body: PushTestRequest = { endpoint: subscription.endpoint };
       stage = PushFailureStage.Test;
-      await $fetch('/api/push/test', { ...apiOptions(), method: 'POST', body });
+      await tenantFetch('/api/push/test', { ...apiOptions(), method: 'POST', body });
       message.value =
         'Запрос отправлен. Проверьте уведомления устройства. Если ничего нет, проверьте разрешения браузера и Android.';
       return true;

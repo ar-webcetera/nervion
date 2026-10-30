@@ -1,4 +1,8 @@
 export interface JwtPayload {
+  tenantId?: string;
+  identityId?: string;
+  membershipId?: string;
+  identityVersion?: number;
   id: number;
   email: string;
   role: string;

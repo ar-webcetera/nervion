@@ -165,10 +165,11 @@ const displayedAllocations = computed(() => {
 const fetchActualData = async () => {
   try {
     const config = useRuntimeConfig();
-    const headers = useRequestHeaders(['cookie']);
+    const tenantApiBaseUrl = useApiBaseUrl();
+    const headers = useApiRequestHeaders();
 
     const response = await $fetch<TimelogSummaryItem[]>(`/api/timelogs/summary`, {
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,
@@ -209,10 +210,11 @@ const fetchActualData = async () => {
 const fetchMonthData = async () => {
   try {
     const config = useRuntimeConfig();
-    const headers = useRequestHeaders(['cookie']);
+    const tenantApiBaseUrl = useApiBaseUrl();
+    const headers = useApiRequestHeaders();
 
     const response = await $fetch<TimelogSummaryItem[]>(`/api/timelogs/summary`, {
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       method: 'GET',
       credentials: 'include',
       headers,

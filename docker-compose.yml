@@ -7,7 +7,7 @@
 # Открыть: http://localhost:3000 (frontend), API на http://localhost:3026.
 #
 # Примечания:
-#  - Миграции БД накатываются автоматически при старте backend.
+#  - Production-миграции выполняются отдельным заданием до запуска backend.
 #  - Голосовые комнаты/звонки (WebRTC, mediasoup) требуют проброса UDP-диапазона и
 #    публичного IP (MEDIASOUP_ANNOUNCED_IP) — в bridge-сети не работают. Для звонков
 #    запускайте backend в host-network или пробрасывайте UDP-порты. См. docs/development.md.
@@ -49,6 +49,28 @@ services:
       - "3026:3026"
     volumes:
       - git_repos:/var/git   # self-hosted git-репозитории проектов
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    restart: "no"
+    env_file: apps/backend/.env
+    environment:
+      NODE_ENV: production
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-nervion}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nervion}
+      POSTGRES_DB: ${POSTGRES_DB:-nervion}
+      MIGRATION_POSTGRES_HOST: postgres
+      MIGRATION_POSTGRES_PORT: 5432
+    command: ["node", "node_modules/typeorm/cli.js", "-d", "dist/data-source.js", "migration:run"]
     depends_on:
       postgres:
         condition: service_healthy

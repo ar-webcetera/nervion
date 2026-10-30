@@ -1,4 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { execFile } from 'child_process';
@@ -6,6 +13,18 @@ import { Repo } from './entities/repo.entity';
 import { CreateRepoDto } from './dto/create-repo.dto';
 import { GitRepoListItem, toGitRepoListItem } from './git-clone-url.util';
 import { Projects } from '../projects/entities/project.entity';
+import { requireTenantContext } from '../tenancy/tenant-context.service';
+import { TenantJobsService } from '../tenancy/tenant-jobs.service';
+import {
+  assertTenantGitDirectory,
+  createTenantGitCopy,
+  readGitConnection,
+  removeTenantGitCopy,
+  validateGitRemote,
+} from './git-tenant-storage';
+import { executeGit } from './git-runtime';
+import { GitRepositoryAvailability, GitRepositoryMode } from '@tracker/contracts';
+import { assertNoExternalGitCleanup, resolveExternalGitRepository } from './git-external-readonly';
 
 /** Хеш пустого дерева git — база для диффа первого коммита (у него нет родителя). */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
@@ -81,17 +100,99 @@ export interface DiffResult {
 }
 
 @Injectable()
-export class GitService {
+export class GitService implements OnModuleInit {
   constructor(
     @InjectRepository(Repo)
     private readonly reposRepo: Repository<Repo>,
     @InjectRepository(Projects)
     private readonly projectsRepo: Repository<Projects>,
+    private readonly tenantJobs: TenantJobsService,
   ) {}
+
+  onModuleInit(): void {
+    if (!this.isTenantMode()) return;
+    this.tenantJobs.register('git.cleanup', async (job) => {
+      const context = requireTenantContext();
+      const gitdir = job.payload.gitdir;
+      if (typeof gitdir !== 'string' || job.tenant_id !== context.tenant.id) throw new Error('Invalid Git cleanup context');
+      assertNoExternalGitCleanup(gitdir);
+      if (await this.reposRepo.existsBy({ gitdir })) return;
+      await removeTenantGitCopy(context.tenant.id, gitdir);
+    });
+  }
+
+  private isTenantMode(): boolean {
+    return process.env.TENANCY_ENABLED === 'true';
+  }
+
+  private assertFeature(): void {
+    if (this.isTenantMode() && requireTenantContext().tenant.featureFlags.git !== true) {
+      throw new ForbiddenException('Git отключен для пространства');
+    }
+  }
+
+  private async assertWritable(): Promise<void> {
+    this.assertFeature();
+    if (!this.isTenantMode()) return;
+    const context = requireTenantContext();
+    if (context.tenant.readOnly) throw new ForbiddenException('Пространство доступно только для чтения');
+    const rows = await context.manager.query<Array<{ acquired: boolean }>>(
+      'SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0)) AS acquired',
+      [`${context.tenant.id}:git`],
+    );
+    if (!rows[0]?.acquired) throw new ConflictException('Операция Git уже выполняется. Повторите позже');
+  }
+
+  private async publicRepo(repo: Repo): Promise<GitRepoListItem> {
+    if (!this.isTenantMode()) return toGitRepoListItem(repo);
+    const tenant = requireTenantContext().tenant;
+    const tenantId = tenant.id;
+    const external = resolveExternalGitRepository(tenantId, repo.id, repo.gitdir);
+    let available = false;
+    let cloneUrl: string | null = null;
+    if (external) {
+      available = await external.available();
+      cloneUrl = available ? external.cloneUrl : null;
+    } else {
+      try {
+        const connection = await readGitConnection(tenantId, repo.gitdir);
+        available = true;
+        cloneUrl = connection.remoteUrl;
+      } catch {
+        // An unavailable repository must not hide all other repository metadata.
+      }
+    }
+    return {
+      id: repo.id,
+      projectId: repo.projectId,
+      name: repo.name,
+      defaultBranch: repo.defaultBranch,
+      cloneUrl,
+      mode: external ? GitRepositoryMode.EXTERNAL_READ_ONLY : GitRepositoryMode.MANAGED,
+      availability: available ? GitRepositoryAvailability.AVAILABLE : GitRepositoryAvailability.UNAVAILABLE,
+      capabilities: {
+        canRead: available,
+        canFetch: available && !external && cloneUrl !== null && !tenant.readOnly,
+        canDelete: available && !external && !tenant.readOnly,
+      },
+    };
+  }
+
+  private async scheduleCleanup(gitdir: string): Promise<void> {
+    assertNoExternalGitCleanup(gitdir);
+    const idempotencyKey = `git.cleanup:${gitdir.split('/').slice(-2, -1)[0]}`;
+    await this.tenantJobs.enqueue('git.cleanup', idempotencyKey, { gitdir });
+    // Readers holding an older MVCC snapshot may still use the previous copy.
+    await requireTenantContext().manager.query(
+      "UPDATE tenant_jobs SET available_at = now() + interval '2 minutes' WHERE idempotency_key = $1 AND status = 'pending'",
+      [idempotencyKey],
+    );
+  }
 
   // ---------------------------------------------------------------- репозитории
 
   async listRepos(userId: number, projectId?: number): Promise<GitRepoListItem[]> {
+    this.assertFeature();
     if (projectId) await this.assertProjectAccess(projectId, userId);
 
     const query = this.reposRepo
@@ -101,13 +202,44 @@ export class GitService {
       .orderBy('repo.name', 'ASC');
     if (projectId) query.andWhere('repo.projectId = :projectId', { projectId });
 
-    return (await query.getMany()).map(toGitRepoListItem);
+    const repositories = await query.getMany();
+    const result: GitRepoListItem[] = [];
+    // Bound filesystem inspection across external repositories. Preserve ordering.
+    for (let offset = 0; offset < repositories.length; offset += 4) {
+      result.push(...(await Promise.all(repositories.slice(offset, offset + 4).map((repo) => this.publicRepo(repo)))));
+    }
+    return result;
   }
 
   /** Подключить существующий git-каталог (bare-репа или .../.git) как репозиторий трекера. */
   async createRepo(dto: CreateRepoDto, userId: number): Promise<GitRepoListItem> {
+    if (!dto.name.trim()) throw new BadRequestException('Укажите название репозитория');
+    if (dto.defaultBranch?.trim()) this.assertRef(dto.defaultBranch);
+    await this.assertWritable();
     if (dto.projectId) await this.assertProjectAccess(dto.projectId, userId);
-    const gitdir = dto.gitdir.trim();
+    let gitdir: string;
+    if (this.isTenantMode()) {
+      if (dto.gitdir || !dto.remoteUrl)
+        throw new BadRequestException('В облачной версии нужен HTTPS-адрес репозитория, а не путь на сервере');
+      const context = requireTenantContext();
+      const maxRepos = Number(process.env.GIT_MAX_REPOS_PER_TENANT || 25);
+      if (!Number.isSafeInteger(maxRepos) || maxRepos < 1 || maxRepos > 1000)
+        throw new BadRequestException('Некорректный лимит репозиториев');
+      if ((await this.reposRepo.count()) >= maxRepos) throw new BadRequestException('Достигнут лимит репозиториев пространства');
+      const connection = {
+        remoteUrl: validateGitRemote(dto.remoteUrl).href,
+        username: dto.username?.trim() || '',
+        token: dto.token || '',
+      };
+      gitdir = await createTenantGitCopy(context.tenant.id, connection, undefined, false, (allocated) => {
+        requireTenantContext();
+        context.afterRollback.push(() => removeTenantGitCopy(context.tenant.id, allocated));
+      });
+      requireTenantContext();
+    } else {
+      if (!dto.gitdir || dto.remoteUrl || dto.token || dto.username) throw new BadRequestException('Укажите путь к git-каталогу');
+      gitdir = dto.gitdir.trim();
+    }
     if (!gitdir.startsWith('/')) {
       throw new BadRequestException('Путь должен быть абсолютным');
     }
@@ -144,7 +276,7 @@ export class GitService {
 
     try {
       const saved = await this.reposRepo.save(repo);
-      return toGitRepoListItem(saved);
+      return this.publicRepo(saved);
     } catch (e) {
       const code =
         (e as { code?: string; driverError?: { code?: string } })?.code ??
@@ -157,8 +289,32 @@ export class GitService {
   }
 
   async deleteRepo(id: number, userId: number): Promise<void> {
-    const repo = await this.getRepoOrThrow(id, userId);
+    await this.assertWritable();
+    const repo = await this.getRepoOrThrow(id, userId, false);
+    await this.assertMutableRepository(repo);
     await this.reposRepo.remove(repo);
+    if (this.isTenantMode()) await this.scheduleCleanup(repo.gitdir);
+  }
+
+  async fetchRepo(id: number, userId: number): Promise<GitRepoListItem> {
+    await this.assertWritable();
+    if (!this.isTenantMode()) throw new BadRequestException('Обновление источника через API доступно только для пространств');
+    const repo = await this.getRepoOrThrow(id, userId, false);
+    await this.assertMutableRepository(repo);
+    const context = requireTenantContext();
+    const previous = repo.gitdir;
+    const connection = await readGitConnection(context.tenant.id, previous);
+    if (!connection.remoteUrl)
+      throw new BadRequestException('Подключите удаленный источник заново для обновления импортированной копии');
+    const gitdir = await createTenantGitCopy(context.tenant.id, connection, previous, true, (allocated) => {
+      requireTenantContext();
+      context.afterRollback.push(() => removeTenantGitCopy(context.tenant.id, allocated));
+    });
+    requireTenantContext();
+    repo.gitdir = gitdir;
+    await this.reposRepo.save(repo);
+    await this.scheduleCleanup(previous);
+    return this.publicRepo(repo);
   }
 
   /**
@@ -186,7 +342,13 @@ export class GitService {
     if (!reposList.length) {
       return { repos: [], repoId: null, branch: '', branches: [], commits: [], tree: [], detail: null };
     }
-    const selected = (repoId != null ? reposList.find((r) => r.id === repoId) : undefined) ?? reposList[0];
+    const selected =
+      (repoId != null ? reposList.find((r) => r.id === repoId) : undefined) ??
+      reposList.find((repo) => repo.capabilities.canRead) ??
+      reposList[0];
+    if (!selected.capabilities.canRead) {
+      return { repos: reposList, repoId: selected.id, branch: '', branches: [], commits: [], tree: [], detail: null };
+    }
     const branchList = await this.branches(selected.id, userId);
     const wanted = branchName && branchList.some((b) => b.name === branchName) ? branchName : undefined;
     const branch = wanted ?? (branchList.find((b) => b.isDefault) ?? branchList[0])?.name ?? '';
@@ -245,11 +407,22 @@ export class GitService {
     }
   }
 
-  private async getRepoOrThrow(repoId: number, userId: number): Promise<Repo> {
+  private async getRepoOrThrow(repoId: number, userId: number, requireReadable = true): Promise<Repo> {
+    this.assertFeature();
     const repo = await this.reposRepo.findOne({ where: { id: repoId } });
     if (!repo) throw new NotFoundException('Репозиторий не найден');
     if (repo.projectId) await this.assertProjectAccess(repo.projectId, userId);
+    if (this.isTenantMode() && requireReadable) {
+      const tenantId = requireTenantContext().tenant.id;
+      if (!resolveExternalGitRepository(tenantId, repo.id, repo.gitdir)) await assertTenantGitDirectory(tenantId, repo.gitdir);
+    }
     return repo;
+  }
+
+  private async assertMutableRepository(repo: Repo): Promise<void> {
+    if (!this.isTenantMode()) return;
+    assertNoExternalGitCleanup(repo.gitdir);
+    await assertTenantGitDirectory(requireTenantContext().tenant.id, repo.gitdir);
   }
 
   // ------------------------------------------------------------ низкоуровневый git
@@ -259,6 +432,12 @@ export class GitService {
    * инъекции невозможны. ref/path дополнительно валидируем, пути ставим после '--'.
    */
   private execGitText(gitdir: string, args: string[]): Promise<string> {
+    if (this.isTenantMode()) {
+      this.assertFeature();
+      return assertTenantGitDirectory(requireTenantContext().tenant.id, gitdir)
+        .then(() => executeGit(['--git-dir', gitdir, ...args]))
+        .then((output) => output.toString('utf8'));
+    }
     return new Promise((resolve, reject) => {
       execFile(
         'git',
@@ -273,10 +452,18 @@ export class GitService {
   }
 
   private runGitText(repo: Repo, args: string[]): Promise<string> {
+    if (this.isTenantMode()) return this.runGitBuffer(repo, args).then((buffer) => buffer.toString('utf8'));
     return this.execGitText(repo.gitdir, args);
   }
 
   private runGitBuffer(repo: Repo, args: string[]): Promise<Buffer> {
+    if (this.isTenantMode()) {
+      this.assertFeature();
+      const tenantId = requireTenantContext().tenant.id;
+      const external = resolveExternalGitRepository(tenantId, repo.id, repo.gitdir);
+      if (external) return external.execute(args);
+      return assertTenantGitDirectory(tenantId, repo.gitdir).then(() => executeGit(['--git-dir', repo.gitdir, ...args]));
+    }
     return new Promise((resolve, reject) => {
       execFile(
         'git',
@@ -297,7 +484,11 @@ export class GitService {
 
   private assertRef(ref: string | undefined, fallback?: string): string {
     const value = (ref && ref.trim()) || fallback;
-    if (!value || value.startsWith('-') || value.includes('\x00') || value.includes('\n')) {
+    if (
+      !value ||
+      value.startsWith('-') ||
+      Array.from(value).some((character) => character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127)
+    ) {
       throw new BadRequestException('Некорректная ссылка (ref)');
     }
     return value;
@@ -341,7 +532,9 @@ export class GitService {
   ): Promise<CommitInfo[]> {
     const repo = await this.getRepoOrThrow(repoId, userId);
     const ref = this.assertRef(branch, repo.defaultBranch);
-    const skip = (Math.max(1, page) - 1) * perPage;
+    perPage = Number.isFinite(perPage) ? Math.min(100, Math.max(1, Math.floor(perPage))) : 30;
+    page = Number.isFinite(page) ? Math.min(100000, Math.max(1, Math.floor(page))) : 1;
+    const skip = (page - 1) * perPage;
     const out = await this.runGitText(repo, [
       'log',
       `--skip=${skip}`,
@@ -470,7 +663,7 @@ export class GitService {
     } catch {
       base = EMPTY_TREE;
     }
-    const patch = await this.runGitText(repo, ['diff', '--no-color', '-M', base, c, '--']);
+    const patch = await this.runGitText(repo, ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '-M', base, c, '--']);
     return this.parsePatch(patch);
   }
 
@@ -479,7 +672,15 @@ export class GitService {
     const repo = await this.getRepoOrThrow(repoId, userId);
     const b = this.assertRef(baseRef);
     const h = this.assertRef(headRef);
-    const patch = await this.runGitText(repo, ['diff', '--no-color', '-M', `${b}...${h}`, '--']);
+    const patch = await this.runGitText(repo, [
+      'diff',
+      '--no-color',
+      '--no-ext-diff',
+      '--no-textconv',
+      '-M',
+      `${b}...${h}`,
+      '--',
+    ]);
     return this.parsePatch(patch);
   }
 

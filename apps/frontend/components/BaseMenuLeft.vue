@@ -35,6 +35,7 @@ import {
   UserRound,
 } from '@lucide/vue';
 
+const { resolveAwsUrl } = useResolveUrl();
 const navigationIconProps = { size: 20, strokeWidth: 1.75, 'aria-hidden': true } as const;
 const mainNavigationIconProps = { size: 19, strokeWidth: 1.75, 'aria-hidden': true } as const;
 
@@ -43,6 +44,7 @@ defineProps<{
 }>();
 
 const rootStore = useRootStore();
+const tenantStore = useTenantStore();
 const userStore = useUserStore();
 const notificationStore = useNotificationStore();
 const taskStore = useTaskStore();
@@ -56,7 +58,7 @@ const mailDetailOpen = computed(
 );
 const hideChrome = computed(() => Boolean(chatId.value) || mailDetailOpen.value || rootStore.isDetailFullscreen);
 
-const isMenuVisible = (key: string) => !(userStore.user?.hidden_menu_items ?? []).includes(key);
+const isMenuVisible = (key: string) => tenantStore.menuAllowed(key) && !(userStore.user?.hidden_menu_items ?? []).includes(key);
 
 const mailStore = useMailStore();
 const selectedMailAccountId = useState<number>('mail-selected-account-id', () => 0);
@@ -154,7 +156,7 @@ const trapMobileMenuFocus = (event: KeyboardEvent) => {
 let mailUnreadTimer: ReturnType<typeof setInterval> | null = null;
 
 const refreshMailUnread = () => {
-  if (!selectedMailAccountId.value) return;
+  if (!selectedMailAccountId.value || !tenantStore.canUse('mail')) return;
   void mailStore.fetchAccountUnreadCount(selectedMailAccountId.value).catch(() => {});
 };
 
@@ -181,7 +183,8 @@ onMounted(() => {
   window.addEventListener('pageshow', handleMailPageShow);
   void nextTick(updateNavScroll);
   window.addEventListener('resize', updateNavScroll);
-  if (userStore.user?.role === ROLES.admin) void reportStore.fetchPendingCount().catch(() => {});
+  if (userStore.user?.role === ROLES.admin && tenantStore.canUse('reports'))
+    void reportStore.fetchPendingCount().catch(() => {});
 });
 
 onUnmounted(() => {
@@ -198,7 +201,7 @@ watch(
 );
 
 const goToLink = (currentTaskId: number, link: string) => {
-  if (currentTaskId > 0) taskStore.currentTaskId = currentTaskId;
+  if (currentTaskId > 0 && tenantStore.canUse('tasks')) taskStore.currentTaskId = currentTaskId;
   router.push(link);
 };
 
@@ -222,7 +225,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
 <template>
   <div :class="['base-menu-left', { 'base-menu-left_hide': rootStore.isHideSideBar, 'base-menu-left_chat-opened': hideChrome }]">
     <div class="base-menu-left__header">
-      <NuxtLink class="base-menu-left__logo" :to="{ name: PAGE_NAMES.home }">
+      <NuxtLink class="base-menu-left__logo" :to="tenantStore.getLandingPath(userStore.user?.role)">
         <IconsIconLogo />
       </NuxtLink>
       <BaseNotification
@@ -232,7 +235,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
         @mark-all-as-read="markAllAsRead"
         @update-notifications="updateNotification"
       />
-      <BaseTopTracker ref="timeTrackerPanelRef" />
+      <BaseTopTracker v-if="tenantStore.canUse('tasks')" ref="timeTrackerPanelRef" />
     </div>
     <div class="base-menu-left__nav">
       <div v-show="canScrollUp" class="base-menu-left__nav-fade base-menu-left__nav-fade_top" aria-hidden="true"></div>
@@ -244,6 +247,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
       >
         <div class="base-menu-left__items">
           <NuxtLink
+            v-if="isMenuVisible('home')"
             aria-label="Задачи"
             :to="{ name: PAGE_NAMES.home }"
             class="base-menu-left__item"
@@ -420,7 +424,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
       <div :data-tooltip="'Управление пользователями'" class="base-menu-left__profile">
         <img
           v-if="userStore.user?.photo_url?.length"
-          :src="userStore.user?.photo_url"
+          :src="resolveAwsUrl(userStore.user?.photo_url)"
           alt=""
           @click.stop="openPopup()"
           @error="($event.target as HTMLImageElement).style.display = 'none'"
@@ -433,8 +437,9 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
         </div>
       </Transition>
     </div>
-    <div v-if="!hideChrome && !isHiddenMenu" class="base-menu-left__mobile-menu">
+    <div v-if="!hideChrome && (!isHiddenMenu || tenantStore.enabled)" class="base-menu-left__mobile-menu">
       <NuxtLink
+        v-if="isMenuVisible('home')"
         :to="{ name: PAGE_NAMES.home }"
         class="base-menu-left__item base-menu-left__item_mob"
         active-class="base-menu-left__item_active"
@@ -444,6 +449,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
         <ListTodo v-bind="navigationIconProps" />
       </NuxtLink>
       <NuxtLink
+        v-if="isMenuVisible('chat')"
         aria-label="Чаты"
         title="Чаты"
         :to="{ name: PAGE_NAMES.CHAT }"
@@ -523,7 +529,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
                   </span>
                   <span>Уведомления</span>
                 </button>
-                <button type="button" class="mobile-more-menu__quick-action" @click="openTimeTracker">
+                <button v-if="tenantStore.canUse('tasks')" type="button" class="mobile-more-menu__quick-action" @click="openTimeTracker">
                   <span class="mobile-more-menu__quick-icon">
                     <Timer :size="20" :stroke-width="1.75" aria-hidden="true" />
                   </span>
@@ -531,7 +537,7 @@ const updateNotification = async (notificationId: number, { is_read }: { is_read
                 </button>
                 <button type="button" class="mobile-more-menu__quick-action" @click="openMobileProfile">
                   <span class="mobile-more-menu__quick-icon mobile-more-menu__quick-icon_profile">
-                    <img v-if="userStore.user?.photo_url" :src="userStore.user.photo_url" alt="" />
+                    <img v-if="userStore.user?.photo_url" :src="resolveAwsUrl(userStore.user.photo_url)" alt="" />
                     <UserRound v-else :size="20" :stroke-width="1.75" aria-hidden="true" />
                   </span>
                   <span>Профиль</span>

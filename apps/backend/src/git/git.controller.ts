@@ -72,6 +72,14 @@ export class GitController {
     return this.gitService.createRepo(dto, req.user.id);
   }
 
+  @Post('repos/:id/fetch')
+  @UseGuards(RolesGuard)
+  @Roles(ROLES.admin)
+  @ApiOperation({ summary: 'Получить изменения из HTTPS-источника репозитория' })
+  fetchRepo(@Param('id') id: string, @Req() req: RequestWithCookies) {
+    return this.gitService.fetchRepo(Number(id), req.user.id);
+  }
+
   @Delete('repos/:id')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles(ROLES.admin)
@@ -146,7 +154,9 @@ export class GitController {
   ) {
     const { buffer, contentType } = await this.gitService.rawBlob(Number(repoId), ref, path, req.user.id);
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
     res.send(buffer);
   }
 

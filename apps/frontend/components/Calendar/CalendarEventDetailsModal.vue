@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import { CalendarParticipationStatus, type CalendarEvent, type CalendarParticipant, type CalendarUser } from '@tracker/contracts';
 import { Bell, CalendarDays, Check, CircleCheck, Clock3, ExternalLink, Link2, LoaderCircle } from '@lucide/vue';
 
@@ -124,7 +125,7 @@ const canAccept = computed(
         <div class="event-details__participants">
           <div v-for="attendee in attendees" :key="attendee.user.id" class="event-details__person">
             <span class="event-details__avatar" aria-hidden="true">
-              <img v-if="attendee.user.photo_url" :src="attendee.user.photo_url" alt="" />
+              <img v-if="attendee.user.photo_url" :src="resolveAwsUrl(attendee.user.photo_url)" alt="" />
               <span v-else>{{ userInitials(attendee.user) }}</span>
             </span>
             <span class="event-details__person-copy">

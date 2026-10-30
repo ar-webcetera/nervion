@@ -25,7 +25,9 @@ export interface VoiceParticipant {
 }
 
 interface IceServer {
-  urls: string;
+  urls: string | string[];
+  username?: string;
+  credential?: string;
 }
 
 interface TransportParams {
@@ -94,6 +96,8 @@ const recvTransport = ref<Transport | null>(null);
 const producer = ref<Producer | null>(null);
 const screenProducer = ref<Producer | null>(null);
 const ownScreenStream = ref<MediaStream | null>(null);
+let microphoneStream: MediaStream | null = null;
+let sessionGeneration = 0;
 const consumers = ref<Map<string, Consumer>>(new Map());
 const audioElements = new Map<string, HTMLAudioElement>();
 const screenShareStreams = ref<Map<string, MediaStream>>(new Map());
@@ -112,8 +116,9 @@ type SocketAck<T> = T & { error?: string };
 
 const emit = <TResponse, TData extends object = object>(event: string, data?: TData): Promise<TResponse> => {
   return new Promise((resolve, reject) => {
-    if (!socket.value) return reject(new Error('No socket'));
-    socket.value.emit(event, data, (response: SocketAck<TResponse>) => {
+    if (!socket.value?.connected) return reject(new Error('Соединение с голосовым сервером закрыто'));
+    socket.value.timeout(15000).emit(event, data, (timeoutError: Error | null, response: SocketAck<TResponse>) => {
+      if (timeoutError) return reject(new Error('Голосовой сервер не ответил. Подключитесь повторно'));
       if (response && typeof response === 'object' && 'error' in response && response.error) {
         reject(new Error(response.error as string));
       } else {
@@ -128,16 +133,20 @@ const consumeProducer = async (roomId: number, producerId: string) => {
   if (consumers.value.has(producerId)) return;
 
   const rtpCapabilities = device.value.rtpCapabilities;
+  const transport = recvTransport.value;
+  const generation = sessionGeneration;
 
   try {
     const consumerParams = await emit<ConsumeParams>('consume', { roomId, producerId, rtpCapabilities });
 
-    const consumer = await recvTransport.value.consume({
+    if (generation !== sessionGeneration || recvTransport.value !== transport) return;
+    const consumer = await transport.consume({
       id: consumerParams.id,
       producerId: consumerParams.producerId,
       kind: consumerParams.kind,
       rtpParameters: consumerParams.rtpParameters,
     });
+    if (generation !== sessionGeneration) { consumer.close(); return; }
 
     consumers.value.set(producerId, consumer);
 
@@ -178,20 +187,32 @@ const stopAudio = (producerId: string) => {
 };
 
 export const useVoiceRoom = () => {
-  const config = useRuntimeConfig();
+  const tenantApiBaseUrl = usePublicApiBaseUrl();
   const userStore = useUserStore();
+  const tenantStore = useTenantStore();
 
   const joinRoom = async (roomId: number) => {
     if (isConnecting.value || isConnected.value) return;
+    if (!tenantStore.canUse('voice') || tenantStore.readOnly) {
+      error.value = tenantStore.readOnly ? 'Пространство доступно только для чтения' : 'Голосовая связь отключена';
+      return;
+    }
     isConnecting.value = true;
     activeRoomId.value = roomId;
     error.value = null;
+    const generation = ++sessionGeneration;
+    const assertCurrent = () => {
+      if (sessionGeneration !== generation || !socket.value?.connected) throw new Error('Подключение отменено');
+    };
 
     try {
       if (!socket.value) {
-        socket.value = io(new URL('/voice', config.public.API_URL).toString(), {
+        socket.value = io(new URL('/voice', tenantApiBaseUrl || window.location.origin).toString(), {
           transports: ['websocket'],
-          auth: { user_id: userStore.user?.id },
+          withCredentials: true,
+          forceNew: true,
+          reconnection: false,
+          autoConnect: false,
         });
 
         socket.value.on('new-producer', async ({ producerId }: NewProducerEvent) => {
@@ -203,10 +224,11 @@ export const useVoiceRoom = () => {
           await consumeProducer(activeRoomId.value, producerId);
         });
 
-        socket.value.on('producer-closed', ({ producerId, userId, kind }: ProducerClosedEvent) => {
+        socket.value.on('producer-closed', ({ producerId, kind }: ProducerClosedEvent) => {
           if (kind === 'video' && screenProducer.value?.id === producerId) {
             screenProducer.value.close();
             screenProducer.value = null;
+            ownScreenStream.value?.getTracks().forEach((track) => track.stop());
             ownScreenStream.value = null;
             isScreenSharing.value = false;
           }
@@ -221,7 +243,6 @@ export const useVoiceRoom = () => {
             screenShareStreams.value = new Map([...screenShareStreams.value].filter(([k]) => k !== producerId));
           } else {
             stopAudio(producerId);
-            participants.value = participants.value.filter((p) => p.userId !== userId);
           }
         });
 
@@ -236,7 +257,21 @@ export const useVoiceRoom = () => {
           if (p) p.muted = muted;
         });
 
-        socket.value.on('disconnect', () => {
+        socket.value.on('participant-left', ({ userId }: { userId: number }) => {
+          participants.value = participants.value.filter((participant) => participant.userId !== userId);
+        });
+
+        socket.value.on('voice-session-ended', ({ reason }: { reason: string }) => {
+          error.value = reason;
+          void leaveRoom();
+        });
+
+        socket.value.on('disconnect', (reason: string) => {
+          if (reason !== 'io client disconnect' && isConnected.value && !error.value) error.value = 'Соединение с голосовой комнатой прервано';
+          sessionGeneration++;
+          microphoneStream?.getTracks().forEach((track) => track.stop());
+          microphoneStream = null;
+          ownScreenStream.value?.getTracks().forEach((track) => track.stop());
           producer.value?.close();
           producer.value = null;
           screenProducer.value?.close();
@@ -259,10 +294,32 @@ export const useVoiceRoom = () => {
           participants.value = [];
           screenShareStreams.value = new Map();
           isMuted.value = false;
+          isConnecting.value = false;
+          pendingProducers.splice(0);
+          socket.value?.removeAllListeners();
+          socket.value = null;
         });
       }
 
+      const connectingSocket = socket.value;
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => finish(new Error('Не удалось подключиться к голосовому серверу')), 15000);
+        const connected = () => finish();
+        const failed = (cause: Error) => finish(cause);
+        const finish = (cause?: Error) => {
+          clearTimeout(timeout);
+          connectingSocket.off('connect', connected);
+          connectingSocket.off('connect_error', failed);
+          if (cause) reject(cause); else resolve();
+        };
+        connectingSocket.once('connect', connected);
+        connectingSocket.once('connect_error', failed);
+        connectingSocket.connect();
+      });
+      assertCurrent();
+
       const joinResult = await emit<JoinRoomResponse>('join-room', { roomId });
+      assertCurrent();
 
       activeRoomId.value = roomId;
       participants.value = joinResult.participants.map((p) => ({ ...p, muted: false }));
@@ -270,10 +327,12 @@ export const useVoiceRoom = () => {
       const { Device: DeviceClass } = await import('mediasoup-client');
       const newDevice = new DeviceClass();
       await newDevice.load({ routerRtpCapabilities: joinResult.rtpCapabilities });
+      assertCurrent();
       device.value = newDevice;
 
       // --- Send transport ---
       const sendParams = await emit<TransportParams>('create-transport', { roomId, direction: 'send' });
+      assertCurrent();
 
       const st = newDevice.createSendTransport({
         id: sendParams.id,
@@ -297,10 +356,17 @@ export const useVoiceRoom = () => {
           .then(({ producerId: id }) => callback({ id }))
           .catch(errback);
       });
+      st.on('connectionstatechange', (state) => {
+        if (state === 'failed' && generation === sessionGeneration) {
+          error.value = 'Не удалось установить медиасоединение. Проверьте сеть и подключитесь повторно';
+          void leaveRoom();
+        }
+      });
 
       sendTransport.value = st;
 
       const recvParams = await emit<TransportParams>('create-transport', { roomId, direction: 'recv' });
+      assertCurrent();
 
       const rt = newDevice.createRecvTransport({
         id: recvParams.id,
@@ -315,6 +381,12 @@ export const useVoiceRoom = () => {
           .then(() => callback())
           .catch(errback);
       });
+      rt.on('connectionstatechange', (state) => {
+        if (state === 'failed' && generation === sessionGeneration) {
+          error.value = 'Соединение с голосовой комнатой прервано';
+          void leaveRoom();
+        }
+      });
 
       recvTransport.value = rt;
 
@@ -324,6 +396,11 @@ export const useVoiceRoom = () => {
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      if (generation !== sessionGeneration || !socket.value?.connected) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error('Подключение отменено');
+      }
+      microphoneStream = stream;
       const audioTrack = stream.getAudioTracks()[0];
 
       const prod = await st.produce({
@@ -337,29 +414,36 @@ export const useVoiceRoom = () => {
           opusPtime: 20,
         },
       });
+      if (generation !== sessionGeneration) { prod.close(); return; }
       producer.value = prod;
 
       for (const { producerId } of joinResult.existingProducers) {
         await consumeProducer(roomId, producerId);
       }
 
+      assertCurrent();
       isConnected.value = true;
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Ошибка подключения к голосовой комнате';
+      if (generation !== sessionGeneration) return;
       error.value = msg;
       console.error('[VoiceRoom]', e);
       await leaveRoom();
     } finally {
-      isConnecting.value = false;
+      if (generation === sessionGeneration) isConnecting.value = false;
     }
   };
 
   const leaveRoom = async () => {
+    sessionGeneration++;
     if (activeRoomId.value !== null && socket.value) {
       socket.value.emit('leave-room', { roomId: activeRoomId.value });
     }
 
     screenProducer.value?.close();
+    ownScreenStream.value?.getTracks().forEach((track) => track.stop());
+    microphoneStream?.getTracks().forEach((track) => track.stop());
+    microphoneStream = null;
     screenProducer.value = null;
     ownScreenStream.value = null;
     isScreenSharing.value = false;
@@ -388,39 +472,54 @@ export const useVoiceRoom = () => {
     activeRoomId.value = null;
     participants.value = [];
     isConnected.value = false;
+    isConnecting.value = false;
     isMuted.value = false;
   };
 
   const toggleMute = async () => {
     if (!activeRoomId.value || !socket.value) return;
-    isMuted.value = !isMuted.value;
-    socket.value.emit('set-mute', { roomId: activeRoomId.value, muted: isMuted.value });
-
-    const myParticipant = participants.value.find((p) => p.userId === userStore.user?.id);
-    if (myParticipant) myParticipant.muted = isMuted.value;
+    const generation = sessionGeneration;
+    const muted = !isMuted.value;
+    try {
+      await emit('set-mute', { roomId: activeRoomId.value, muted });
+      if (generation !== sessionGeneration) return;
+      isMuted.value = muted;
+      if (muted) producer.value?.pause(); else producer.value?.resume();
+      const myParticipant = participants.value.find((p) => p.userId === userStore.user?.id);
+      if (myParticipant) myParticipant.muted = muted;
+    } catch (cause) { if (generation === sessionGeneration) error.value = cause instanceof Error ? cause.message : 'Не удалось переключить микрофон'; }
   };
 
   const startScreenShare = async () => {
     if (!sendTransport.value || !activeRoomId.value || isScreenSharing.value) return;
+    const generation = sessionGeneration;
+    const transport = sendTransport.value;
 
     try {
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      if (generation !== sessionGeneration || sendTransport.value !== transport) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const videoTrack = stream.getVideoTracks()[0];
 
       ownScreenStream.value = new MediaStream([videoTrack]);
 
-      const prod = await sendTransport.value.produce({
+      const prod = await transport.produce({
         track: videoTrack,
         appData: { source: ProducerSource.Screen },
       });
+      if (generation !== sessionGeneration) { prod.close(); stream.getTracks().forEach((track) => track.stop()); return; }
 
       screenProducer.value = prod;
       isScreenSharing.value = true;
 
       videoTrack.onended = () => {
-        stopScreenShare();
+        void stopScreenShare();
       };
     } catch (e) {
+      if (generation !== sessionGeneration) return;
+      ownScreenStream.value?.getTracks().forEach((track) => track.stop());
       ownScreenStream.value = null;
       const msg = e instanceof Error ? e.message : 'Ошибка демонстрации экрана';
       if (!(e instanceof Error && e.name === 'NotAllowedError')) {
@@ -435,11 +534,13 @@ export const useVoiceRoom = () => {
 
     const producerId = screenProducer.value.id;
     screenProducer.value.close();
+    ownScreenStream.value?.getTracks().forEach((track) => track.stop());
     screenProducer.value = null;
     ownScreenStream.value = null;
     isScreenSharing.value = false;
 
-    await emit('stop-screen-share', { roomId: activeRoomId.value, producerId });
+    try { await emit('stop-screen-share', { roomId: activeRoomId.value, producerId }); }
+    catch (cause) { error.value = cause instanceof Error ? cause.message : 'Не удалось завершить демонстрацию'; }
   };
 
   return {

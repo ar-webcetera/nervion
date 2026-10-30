@@ -7,7 +7,8 @@ export interface ParsedTask {
 }
 
 export const useAiStore = defineStore('ai', () => {
-  const config = useRuntimeConfig();
+  const tenantFetch = useTenantFetch();
+  const tenantApiBaseUrl = useApiBaseUrl();
   const parseTextToTask = async (text: string, instruction?: string, images: File[] = []) => {
     if (images.length > 0) {
       const body = new FormData();
@@ -15,8 +16,8 @@ export const useAiStore = defineStore('ai', () => {
       if (instruction) body.append('instruction', instruction);
       images.forEach((image) => body.append('images', image));
 
-      return await $fetch<ParsedTask>('/api/deepseek/parse-text-to-task', {
-        baseURL: config.public.API_URL,
+      return await tenantFetch<ParsedTask>('/api/deepseek/parse-text-to-task', {
+        baseURL: tenantApiBaseUrl,
         method: 'POST',
         body,
         credentials: 'include',
@@ -24,8 +25,8 @@ export const useAiStore = defineStore('ai', () => {
       });
     }
 
-    const response = await $fetch<ParsedTask>('/api/deepseek/parse-text-to-task', {
-      baseURL: config.public.API_URL,
+    const response = await tenantFetch<ParsedTask>('/api/deepseek/parse-text-to-task', {
+      baseURL: tenantApiBaseUrl,
       method: 'POST',
       body: { text, ...(instruction ? { instruction } : {}) },
       credentials: 'include',

@@ -1,0 +1,52 @@
+map $http_upgrade $preprod_connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 8080 default_server;
+    server_name _;
+    location = /__preprod_health { access_log off; return 200 'ok'; }
+    location / { return 444; }
+}
+
+server {
+    listen 8080;
+    server_name ${PREPROD_ADMIN_HOST} *.${PREPROD_ROOT_DOMAIN};
+    client_max_body_size 128m;
+    add_header X-Robots-Tag 'noindex, nofollow, noarchive' always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Nervion-Host '';
+    proxy_set_header X-Nervion-Timestamp '';
+    proxy_set_header X-Nervion-Signature '';
+    proxy_set_header X-Forwarded-Host '';
+
+    location = /robots.txt { return 200 "User-agent: *\nDisallow: /\n"; }
+    location /api/ {
+        proxy_pass http://backend:3026;
+        proxy_http_version 1.1;
+        proxy_read_timeout 120s;
+        proxy_request_buffering off;
+        proxy_buffering off;
+    }
+    location /socket.io/ {
+        proxy_pass http://backend:3026;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $preprod_connection_upgrade;
+        proxy_set_header X-Nervion-Host '';
+        proxy_set_header X-Nervion-Timestamp '';
+        proxy_set_header X-Nervion-Signature '';
+        proxy_read_timeout 300s;
+        proxy_buffering off;
+    }
+    location / {
+        proxy_pass http://frontend:3012;
+        proxy_http_version 1.1;
+    }
+}

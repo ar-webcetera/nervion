@@ -86,7 +86,7 @@ const uploadFile = async (file: File) => {
 };
 
 const insertFileByKey = (currentEditor: Editor, key: string) => {
-  const href = buildAwsObjectUrl(key, AWS_ENDPOINT) ?? key;
+  const href = buildAwsObjectUrl(key, AWS_ENDPOINT, String(config.public.tenancyEnabled) === 'true') ?? key;
   const raw = key.split('/').pop() || key;
   const dot = raw.lastIndexOf('.');
   const name = dot > -1 ? raw.slice(0, dot) : raw;
@@ -164,9 +164,9 @@ const editor = useEditor({
   extensions: [
     StarterKit.configure({ codeBlock: false }),
     Placeholder.configure({ placeholder: props.placeholder || 'Напишите...' }),
-    Image.configure({ awsEndpoint: config.public.AWS_ENDPOINT, inline: false }),
+    Image.configure({ awsEndpoint: config.public.AWS_ENDPOINT, tenantStorage: String(config.public.tenancyEnabled) === 'true', inline: false }),
     Iframe,
-    Video,
+    Video.configure({ awsEndpoint: config.public.AWS_ENDPOINT, tenantStorage: String(config.public.tenancyEnabled) === 'true' }),
     FileInlineNode,
     AudioMessage,
     CodeBlockLowlight.extend({
@@ -278,7 +278,7 @@ const insertVideo = (file: string) => {
     .insertContentAt(to, { type: 'paragraph' })
     .insertContentAt(to + 1, {
       type: 'video',
-      attrs: { src: buildAwsObjectUrl(file, AWS_ENDPOINT) ?? file, width: '100%', controls: true },
+      attrs: { src: buildAwsObjectUrl(file, AWS_ENDPOINT, String(config.public.tenancyEnabled) === 'true') ?? file, width: '100%', controls: true },
     })
     .run();
   fileManagerModal.value?.close();

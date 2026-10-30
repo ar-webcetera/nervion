@@ -5,7 +5,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { MailDeliveryEventType, MailDeliveryStatus } from '@tracker/contracts';
 import { MailDeliveryService } from './mail-delivery.service';
 import { MailDeliveryEvents } from './entities/mail-delivery-event.entity';
-import { MailMessages, MAIL_DIRECTIONS } from './entities/mail-message.entity';
+import { MailMessages, MAIL_DIRECTIONS, MAIL_MESSAGE_STATUSES } from './entities/mail-message.entity';
 import { MailAccounts } from './entities/mail-account.entity';
 
 describe('MailDeliveryService', () => {
@@ -139,6 +139,7 @@ describe('MailDeliveryService', () => {
         {
           thread_id: '2830',
           delivery_status: MailDeliveryStatus.SENT,
+          message_status: MAIL_MESSAGE_STATUSES.sent,
           open_count: '1',
           click_count: '2',
         },
@@ -150,6 +151,7 @@ describe('MailDeliveryService', () => {
 
     expect(map.get(2830)).toEqual({
       delivery_status: MailDeliveryStatus.SENT,
+      message_status: MAIL_MESSAGE_STATUSES.sent,
       open_count: 1,
       click_count: 2,
     });

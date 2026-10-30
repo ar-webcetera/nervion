@@ -48,7 +48,7 @@ const html = computed<string | null>(() => {
   if (!props.value || isEmpty.value) return '';
   if (docHasInteractiveNodes(props.value)) return null;
   try {
-    return generateHTML(props.value, getTiptapRenderExtensions(config.public.AWS_ENDPOINT as string | undefined));
+    return generateHTML(props.value, getTiptapRenderExtensions(config.public.AWS_ENDPOINT as string | undefined, String(config.public.tenancyEnabled) === 'true'));
   } catch (e) {
     console.error('MessageContent: статический рендер не удался, fallback на редактор', e);
     return null;

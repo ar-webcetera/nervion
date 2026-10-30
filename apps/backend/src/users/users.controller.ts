@@ -6,6 +6,8 @@ import { AuthGuard } from '../auth/guards/auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { RequestWithCookies } from 'src/common/types/request';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { ROLES } from '../common/enums/roles.enum';
 
 @Controller('users')
 @ApiTags('Пользователи')
@@ -62,6 +64,7 @@ export class UsersController {
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Недостаточно прав для создания пользователя' })
   @UseGuards(AuthGuard, RolesGuard)
   @Post()
+  @Roles(ROLES.admin)
   createUser(@Body() body: CreateUserDto, @Req() req: RequestWithCookies) {
     return this.usersService.createUser(body, req.user);
   }
@@ -72,6 +75,7 @@ export class UsersController {
   @ApiResponse({ status: HttpStatus.FORBIDDEN, description: 'Недостаточно прав' })
   @UseGuards(AuthGuard, RolesGuard)
   @Get('archived')
+  @Roles(ROLES.admin)
   getArchivedUsers() {
     return this.usersService.getArchivedUsers();
   }
@@ -93,6 +97,7 @@ export class UsersController {
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Пользователь не найден' })
   @UseGuards(AuthGuard, RolesGuard)
   @Patch(':id')
+  @Roles(ROLES.admin)
   updateUser(@Param('id') id: number, @Body() body: UpdateUserDto, @Req() req: RequestWithCookies) {
     return this.usersService.updateUser(id, body, req.user);
   }
@@ -104,6 +109,7 @@ export class UsersController {
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Пользователь не найден' })
   @UseGuards(AuthGuard, RolesGuard)
   @Delete(':id')
+  @Roles(ROLES.admin)
   archiveUser(@Param('id') id: number, @Req() req: RequestWithCookies) {
     return this.usersService.archiveUser(id, req.user);
   }
@@ -115,6 +121,7 @@ export class UsersController {
   @ApiResponse({ status: HttpStatus.NOT_FOUND, description: 'Пользователь не найден' })
   @UseGuards(AuthGuard, RolesGuard)
   @Patch(':id/restore')
+  @Roles(ROLES.admin)
   restoreUser(@Param('id') id: number, @Req() req: RequestWithCookies) {
     return this.usersService.restoreUser(id, req.user);
   }

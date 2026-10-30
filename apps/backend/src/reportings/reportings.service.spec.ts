@@ -7,6 +7,8 @@ import { Tasks } from '../tasks/entities/task.entity';
 import { ReportingsService } from './reportings.service';
 import { FixedRevenue } from './entities/fixed-revenue.entity';
 import { MonthlyRevenueTarget } from './entities/monthly-revenue-target.entity';
+import * as fs from 'node:fs';
+import * as XLSX from 'xlsx';
 
 describe('ReportingsService', () => {
   let service: ReportingsService;
@@ -33,6 +35,29 @@ describe('ReportingsService', () => {
 
     service = module.get(ReportingsService);
     jest.clearAllMocks();
+  });
+
+  it('возвращает XLSX задач без записи в общую файловую систему', async () => {
+    tasksRepository.find.mockResolvedValue([
+      {
+        title: 'Тестовая задача',
+        description: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Описание' }] }] },
+      },
+    ]);
+    const write = jest.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw new Error('Read-only filesystem');
+    });
+    try {
+      const buffer = await service.syncProjectTasksToTable(3);
+      expect(Buffer.isBuffer(buffer)).toBe(true);
+      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      expect(XLSX.utils.sheet_to_json(workbook.Sheets['Задачи'])).toEqual([
+        { 'Название задачи': 'Тестовая задача', 'Описание задачи': 'Описание' },
+      ]);
+      expect(write).not.toHaveBeenCalled();
+    } finally {
+      write.mockRestore();
+    }
   });
 
   it.each([BillingReviewStatus.PENDING, BillingReviewStatus.APPROVED, BillingReviewStatus.REJECTED])(

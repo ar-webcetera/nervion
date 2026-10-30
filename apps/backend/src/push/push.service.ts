@@ -5,6 +5,7 @@ import * as webpush from 'web-push';
 import { ConfigService } from '@nestjs/config';
 import { PushSubscription } from './entities/push-subscription.entity';
 import { SaveSubscriptionDto } from './dto/save-subscription.dto';
+import { requireTenantContext } from '../tenancy/tenant-context.service';
 
 export interface PushPayload {
   title: string;
@@ -23,7 +24,16 @@ export class PushService implements OnModuleInit {
     private readonly configService: ConfigService,
   ) {}
 
+  private isEnabled(): boolean {
+    return this.configService.get<string>('PUSH_ENABLED') !== 'false';
+  }
+
+  private assertEnabled(): void {
+    if (!this.isEnabled()) throw new ServiceUnavailableException('Push-уведомления отключены на этом сервере');
+  }
+
   onModuleInit() {
+    if (!this.isEnabled()) return;
     const subject = `https://${this.configService.get<string>('APP_DOMAIN') ?? 'localhost'}`;
     const publicKey = this.configService.get<string>('VAPID_PUBLIC_KEY') ?? '';
     const privateKey = this.configService.get<string>('VAPID_PRIVATE_KEY') ?? '';
@@ -31,10 +41,24 @@ export class PushService implements OnModuleInit {
   }
 
   getVapidPublicKey(): string {
+    if (!this.isEnabled()) return '';
     return this.configService.get<string>('VAPID_PUBLIC_KEY') ?? '';
   }
 
   async saveSubscription(userId: number, dto: SaveSubscriptionDto): Promise<void> {
+    this.assertEnabled();
+    if (this.configService.get<string>('TENANCY_ENABLED') === 'true') {
+      await this.subscriptionRepo.query(
+        `
+        INSERT INTO push_subscriptions (tenant_id, user_id, endpoint, p256dh, auth)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (tenant_id, endpoint) DO UPDATE SET
+          user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth
+      `,
+        [requireTenantContext().tenant.id, userId, dto.endpoint, dto.keys.p256dh, dto.keys.auth],
+      );
+      return;
+    }
     await this.subscriptionRepo.upsert(
       { user_id: userId, endpoint: dto.endpoint, p256dh: dto.keys.p256dh, auth: dto.keys.auth },
       ['endpoint'],
@@ -46,17 +70,20 @@ export class PushService implements OnModuleInit {
   }
 
   async sendToUser(userId: number, payload: PushPayload): Promise<void> {
+    if (!this.isEnabled()) return;
     const subs = await this.subscriptionRepo.findBy({ user_id: userId });
     await Promise.all(subs.map((s) => this.send(s, payload)));
   }
 
   async sendToUsers(userIds: number[], payload: PushPayload): Promise<void> {
+    if (!this.isEnabled()) return;
     if (!userIds.length) return;
     const subs = await this.subscriptionRepo.find({ where: { user_id: In(userIds) } });
     await Promise.all(subs.map((s) => this.send(s, payload)));
   }
 
   async sendTest(userId: number, endpoint: string): Promise<void> {
+    this.assertEnabled();
     const subscription = await this.subscriptionRepo.findOneBy({ user_id: userId, endpoint });
     if (!subscription) throw new NotFoundException('Подписка не найдена. Включите уведомления повторно.');
     await this.send(
@@ -72,6 +99,10 @@ export class PushService implements OnModuleInit {
   }
 
   private async send(sub: PushSubscription, payload: PushPayload, reportFailure = false): Promise<void> {
+    if (!this.isEnabled()) {
+      if (reportFailure) this.assertEnabled();
+      return;
+    }
     try {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },

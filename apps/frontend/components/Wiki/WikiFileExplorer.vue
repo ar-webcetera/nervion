@@ -61,7 +61,7 @@ const currentPrefix = computed(() => {
   return basePrefix.value + (parts.length ? parts.join('/') + '/' : '');
 });
 
-const fileUrl = (key: string) => buildAwsObjectUrl(key, AWS_ENDPOINT) ?? key;
+const fileUrl = (key: string) => buildAwsObjectUrl(key, AWS_ENDPOINT, String(config.public.tenancyEnabled) === 'true') ?? key;
 
 const openFolder = (name: string) => {
   currentPath.value = [...currentPath.value, name];

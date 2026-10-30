@@ -8,5 +8,8 @@
 .env
 .env.*
 !.env.example
+**/.env
+**/.env.*
+!**/.env.example
 **/coverage
 **/.DS_Store

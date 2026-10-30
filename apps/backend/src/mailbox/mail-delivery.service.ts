@@ -16,6 +16,8 @@ import { MailMessages, MAIL_DIRECTIONS, MAIL_MESSAGE_STATUSES } from './entities
 import { MailAccounts } from './entities/mail-account.entity';
 import type { PostboxEventPayload, PostboxEventsIngestBody, PostboxKinesisRecord } from './postbox-events.types';
 import { NERVION_MESSAGE_TAG } from './postbox.service';
+import { createHash } from 'node:crypto';
+import { requireTenantContext } from '../tenancy/tenant-context.service';
 
 const STATUS_RANK: Record<MailDeliveryStatus, number> = {
   [MailDeliveryStatus.SENT]: 1,
@@ -147,7 +149,7 @@ export class MailDeliveryService {
       return false;
     }
 
-    const message = await this.findMessageForEvent(event);
+    let message = await this.findMessageForEvent(event);
     if (!message) {
       this.logger.warn(
         `Событие Postbox ${eventType} без письма: provider=${event.mail.messageId ?? '—'}, eventId=${event.eventId ?? '—'}`,
@@ -155,7 +157,13 @@ export class MailDeliveryService {
       return false;
     }
 
-    const providerEventId = event.eventId?.trim() || null;
+    const tenantMode = this.configService.get<string>('TENANCY_ENABLED') === 'true';
+    if (tenantMode) {
+      await requireTenantContext().manager.query('SELECT id FROM mail_messages WHERE id = $1 FOR UPDATE', [message.id]);
+      message = await this.messagesRepository.findOneBy({ id: message.id });
+      if (!message) return false;
+    }
+    const providerEventId = event.eventId?.trim() || (tenantMode ? `sha256:${createHash('sha256').update(JSON.stringify(event)).digest('hex')}` : null);
     if (providerEventId) {
       const existing = await this.eventsRepository.findOne({ where: { provider_event_id: providerEventId } });
       if (existing) {
@@ -177,12 +185,18 @@ export class MailDeliveryService {
         }),
       );
     } catch (error) {
+      if (tenantMode) throw error;
       // Гонка по unique provider_event_id
       this.logger.debug(`Пропуск дубля события ${providerEventId}: ${String(error)}`);
       return false;
     }
 
     await this.updateMessageSnapshot(message, eventType, occurredAt);
+    if (tenantMode && this.asDeliveryEventType(eventType)) {
+      await this.messagesRepository.update(message.id, { status: MAIL_MESSAGE_STATUSES.sent,
+        ...(event.mail?.messageId ? { provider_message_id: event.mail.messageId } : {}) });
+      await requireTenantContext().manager.query("UPDATE mail_outbox SET status = 'sent', last_error = NULL WHERE message_id = $1", [message.id]);
+    }
     return true;
   }
 
@@ -522,8 +536,8 @@ export class MailDeliveryService {
 
   async attachDeliverySummaries(
     threadIds: number[],
-  ): Promise<Map<number, { delivery_status: MailDeliveryStatus | null; open_count: number; click_count: number }>> {
-    const result = new Map<number, { delivery_status: MailDeliveryStatus | null; open_count: number; click_count: number }>();
+  ): Promise<Map<number, { delivery_status: MailDeliveryStatus | null; message_status: MAIL_MESSAGE_STATUSES; open_count: number; click_count: number }>> {
+    const result = new Map<number, { delivery_status: MailDeliveryStatus | null; message_status: MAIL_MESSAGE_STATUSES; open_count: number; click_count: number }>();
     if (threadIds.length === 0) return result;
 
     const latestMessageOrder = 'message.created_at DESC, message.id DESC';
@@ -532,16 +546,18 @@ export class MailDeliveryService {
       .createQueryBuilder('message')
       .select('message.thread_id', 'thread_id')
       .addSelect(`(ARRAY_AGG(message.delivery_status ORDER BY ${latestMessageOrder}))[1]`, 'delivery_status')
+      .addSelect(`(ARRAY_AGG(message.status ORDER BY ${latestMessageOrder}))[1]`, 'message_status')
       .addSelect(`(ARRAY_AGG(message.open_count ORDER BY ${latestMessageOrder}))[1]`, 'open_count')
       .addSelect(`(ARRAY_AGG(message.click_count ORDER BY ${latestMessageOrder}))[1]`, 'click_count')
       .where('message.thread_id IN (:...threadIds)', { threadIds })
       .andWhere('message.direction = :outbound', { outbound: MAIL_DIRECTIONS.outbound })
-      .andWhere('message.status = :sentStatus', { sentStatus: MAIL_MESSAGE_STATUSES.sent })
+      .andWhere('message.status != :draftStatus', { draftStatus: MAIL_MESSAGE_STATUSES.draft })
       .andWhere('message.deleted_at IS NULL')
       .groupBy('message.thread_id')
       .getRawMany<{
         thread_id: string;
         delivery_status: MailDeliveryStatus | null;
+        message_status: MAIL_MESSAGE_STATUSES;
         open_count: string;
         click_count: string;
       }>();
@@ -549,6 +565,7 @@ export class MailDeliveryService {
     for (const row of rows) {
       result.set(Number(row.thread_id), {
         delivery_status: row.delivery_status,
+        message_status: row.message_status,
         open_count: Number(row.open_count) || 0,
         click_count: Number(row.click_count) || 0,
       });

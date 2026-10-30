@@ -18,6 +18,7 @@ import { AuditContextService } from './audit-context.service';
 import { GetAuditLogsDto } from './dto/get-audit-logs.dto';
 import { AuditLog } from './entities/audit-log.entity';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
+import { tenantStorage, trackTenantPromise } from '../tenancy/tenant-context.service';
 
 type AuditPayload = JsonObject | null | undefined;
 
@@ -59,7 +60,12 @@ export class AuditLogsService {
     private readonly auditContextService: AuditContextService,
   ) {}
 
-  async record(params: RecordAuditLogParams): Promise<void> {
+  record(params: RecordAuditLogParams): Promise<void> {
+    return trackTenantPromise(this.recordInternal(params));
+  }
+
+  private async recordInternal(params: RecordAuditLogParams): Promise<void> {
+    if (process.env.TENANCY_ENABLED === 'true' && tenantStorage.getStore()?.tenant.readOnly) return;
     try {
       const context = this.auditContextService.getState();
       const actor = this.resolveActor(params.actor, context?.actor ?? null);

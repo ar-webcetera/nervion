@@ -42,6 +42,8 @@ const setup = ({ disabled, permission = 'granted', failDelete = false, failUnsub
     console,
     ref: (value) => ({ value }),
     useRuntimeConfig: () => ({ public: { API_URL: '' } }),
+    useApiBaseUrl: () => '',
+    useTenantFetch: () => context.$fetch,
     useUserStore: () => ({ user: { id: 7 } }),
     window: { isSecureContext: true, Notification: notification, PushManager: {} },
     Notification: notification,
@@ -226,4 +228,32 @@ test('Sentry final filter strips automatically attached private context only for
   assert.equal(event.contexts.push.online, true);
   const unrelated = { message: 'other', breadcrumbs: ['keep'] };
   assert.equal(options.beforeSend(unrelated).breadcrumbs[0], 'keep');
+});
+
+test('Sentry final filter strips private context for every SaaS event', () => {
+  let options;
+  runInNewContext(compile(new URL('../sentry.client.config.ts', import.meta.url)), {
+    exports: {},
+    require: (name) =>
+      name === '#imports'
+        ? { useRuntimeConfig: () => ({ public: { SENTRY_DSN: 'configured', tenancyEnabled: true } }) }
+        : {
+            init: (value) => {
+              options = value;
+            },
+          },
+  });
+  const event = {
+    message: 'Request failed',
+    tags: { feature: 'git' },
+    breadcrumbs: ['secret'],
+    request: { data: { token: 'secret' } },
+    user: { email: 'secret' },
+    extra: { password: 'secret' },
+  };
+  const filtered = options.beforeSend(event);
+  assert.doesNotMatch(JSON.stringify(filtered), /secret/);
+  assert.equal(filtered.message, 'Request failed');
+  assert.equal(filtered.tags.feature, 'git');
+  assert.equal(options.sendDefaultPii, false);
 });

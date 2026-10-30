@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import type { CalendarEvent, CalendarUser, CreateCalendarEventRequest } from '@tracker/contracts';
 import { format } from 'date-fns';
 import { Bell, Link2, Mail, Trash2 } from '@lucide/vue';
@@ -238,7 +239,7 @@ defineExpose({ setSaving, setError });
               @change="toggleParticipant(user.id)"
             />
             <span class="event-form__avatar" aria-hidden="true">
-              <img v-if="user.photo_url" :src="user.photo_url" alt="" />
+              <img v-if="user.photo_url" :src="resolveAwsUrl(user.photo_url)" alt="" />
               <span v-else>{{ user.first_name[0] }}{{ user.last_name[0] }}</span>
             </span>
             <span class="event-form__participant-info">

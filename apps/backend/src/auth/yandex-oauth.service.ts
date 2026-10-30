@@ -32,7 +32,7 @@ export class YandexOauthService {
     return Boolean(this.clientId && this.clientSecret);
   }
 
-  buildAuthorizeUrl(state: string, redirectUri: string): string {
+  buildAuthorizeUrl(state: string, redirectUri: string, codeChallenge?: string): string {
     this.ensureConfigured();
     const params = new URLSearchParams({
       response_type: 'code',
@@ -42,10 +42,14 @@ export class YandexOauthService {
       state,
       force_confirm: 'yes',
     });
+    if (codeChallenge) {
+      params.set('code_challenge', codeChallenge);
+      params.set('code_challenge_method', 'S256');
+    }
     return `${YANDEX_AUTHORIZE_URL}?${params.toString()}`;
   }
 
-  async exchangeCode(code: string, redirectUri: string): Promise<string> {
+  async exchangeCode(code: string, redirectUri: string, codeVerifier?: string): Promise<string> {
     this.ensureConfigured();
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -54,6 +58,7 @@ export class YandexOauthService {
       client_secret: this.clientSecret,
       redirect_uri: redirectUri,
     });
+    if (codeVerifier) body.set('code_verifier', codeVerifier);
 
     const response = await fetchDirect(YANDEX_TOKEN_URL, {
       method: 'POST',

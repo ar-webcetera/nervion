@@ -7,7 +7,7 @@ const emit = defineEmits<{
   (e: 'close'): void;
 }>();
 
-const config = useRuntimeConfig();
+const tenantApiBaseUrl = useApiBaseUrl();
 const { $toast } = useNuxtApp();
 
 const isLoading = ref(false);
@@ -20,7 +20,7 @@ const resetPassword = async () => {
 
     const response = await $fetch<{ newPassword: string }>('/api/auth/password', {
       method: 'PATCH',
-      baseURL: config.public.API_URL,
+      baseURL: tenantApiBaseUrl,
       credentials: 'include',
       body: {
         userId: props.userId,

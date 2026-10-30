@@ -5,8 +5,9 @@ import { useUserStore } from '~/stores/userStore';
 import { PROJECT_STATUSES } from '~/constants/project.constants';
 
 export const useProjectStore = defineStore('project', () => {
+  const tenantFetch = useTenantFetch();
   const apiBaseUrl = useApiBaseUrl();
-  const requestHeaders = useRequestHeaders(['cookie']);
+  const requestHeaders = useApiRequestHeaders();
   const projects = ref<Project[]>([]);
   const revision = ref(0);
   const projectsWithArchived = ref<Project[]>([]);
@@ -50,7 +51,7 @@ export const useProjectStore = defineStore('project', () => {
 
   const fetchProjectList = async (endpoint: string): Promise<Project[]> => {
     const cookies = requestHeaders;
-    const response = await $fetch<Project[]>(endpoint, {
+    const response = await tenantFetch<Project[]>(endpoint, {
       baseURL: apiBaseUrl,
       credentials: 'include',
       method: 'GET',
@@ -78,8 +79,8 @@ export const useProjectStore = defineStore('project', () => {
   };
 
   const createProject = async (projectData: CreateProjectPayload) => {
-    const headers = useRequestHeaders(['cookie']);
-    const response = await $fetch<Project>('/api/projects', {
+    const headers = useApiRequestHeaders();
+    const response = await tenantFetch<Project>('/api/projects', {
       baseURL: apiBaseUrl,
       credentials: 'include',
       method: 'POST',
@@ -94,8 +95,8 @@ export const useProjectStore = defineStore('project', () => {
   };
 
   const updateProject = async (projectId: number, data: Partial<Project>) => {
-    const headers = useRequestHeaders(['cookie']);
-    const updatedProject = await $fetch<Project>(`/api/projects/${projectId}`, {
+    const headers = useApiRequestHeaders();
+    const updatedProject = await tenantFetch<Project>(`/api/projects/${projectId}`, {
       baseURL: apiBaseUrl,
       credentials: 'include',
       method: 'PATCH',
@@ -112,8 +113,8 @@ export const useProjectStore = defineStore('project', () => {
   };
 
   const deleteProject = async (projectId: number) => {
-    const headers = useRequestHeaders(['cookie']);
-    await $fetch(`/api/projects/${projectId}`, {
+    const headers = useApiRequestHeaders();
+    await tenantFetch(`/api/projects/${projectId}`, {
       baseURL: apiBaseUrl,
       credentials: 'include',
       method: 'DELETE',

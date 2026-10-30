@@ -8,10 +8,11 @@ import { VoiceRoomEntity } from './entities/voice-room.entity';
 import { VoiceRoomMember } from './entities/voice-room-member.entity';
 import { VoiceRoomsController } from './voice-rooms.controller';
 import { VoiceRoomsService } from './voice-rooms.service';
+import { VoiceClusterService } from './voice-cluster.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([Users, VoiceRoomEntity, VoiceRoomMember]), WebsocketModule],
   controllers: [VoiceRoomsController],
-  providers: [VoiceService, VoiceRoomsService, VoiceGateway],
+  providers: [VoiceService, VoiceClusterService, VoiceRoomsService, VoiceGateway],
 })
 export class VoiceModule {}

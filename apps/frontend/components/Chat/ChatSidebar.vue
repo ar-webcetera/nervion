@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import { ChatType, type ChatListItem } from '~/stores/chatStore';
 import IconClose from '~/components/Icons/IconClose.vue';
 import IconTrash from '~/components/Icons/IconTrash.vue';
@@ -18,6 +19,7 @@ interface User {
 }
 
 const chatStore = useChatStore();
+const tenantStore = useTenantStore();
 const fileStore = useFilesStore();
 const userStore = useUserStore();
 const { onlineUserIds } = storeToRefs(userStore);
@@ -318,7 +320,7 @@ const vImgReveal = {
       </ul>
     </div>
 
-    <VoiceRoomSection />
+    <VoiceRoomSection v-if="tenantStore.canUse('voice')" />
 
     <template v-if="chatMenu">
       <div class="chat-ctx__backdrop" @click="closeChatMenu" @touchstart.passive="closeChatMenu"></div>
@@ -354,7 +356,7 @@ const vImgReveal = {
               <img
                 v-if="user.photo_url"
                 v-img-reveal
-                :src="user.photo_url"
+                :src="resolveAwsUrl(user.photo_url)"
                 :alt="user.first_name"
                 loading="lazy"
                 decoding="async"
@@ -393,7 +395,7 @@ const vImgReveal = {
                 <img
                   v-if="user.photo_url"
                   v-img-reveal
-                  :src="user.photo_url"
+                  :src="resolveAwsUrl(user.photo_url)"
                   :alt="user.first_name"
                   loading="lazy"
                   decoding="async"

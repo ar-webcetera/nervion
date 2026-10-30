@@ -1,19 +1,9 @@
-import { Inject, Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { UnloadFileDto } from './dto/unload-file.dto';
 import { CreateFolderDto } from './dto/create-folder.dto';
-import {
-  DeleteObjectCommand,
-  DeleteObjectsCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  ListObjectsV2Command,
-  PutObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3';
 import { GetFilesDto } from './dto/get-files.dto';
-import { ConfigService } from '@nestjs/config';
 import type { RawFileResponse } from './files.types';
-import { S3_CLIENT } from '../storage/storage.constants';
+import { StorageService } from '../storage/storage.service';
 import { DataSource } from 'typeorm';
 import { AuthenticatedUser } from '../auth/types/authenticated-user';
 import { Projects } from '../projects/entities/project.entity';
@@ -31,11 +21,18 @@ export interface FileMetadata {
 @Injectable()
 export class FilesService {
   private assertCrmAccess(key: string, allowCrm: boolean) {
+    if (
+      key.startsWith('tenants/') ||
+      key.startsWith('/') ||
+      key.includes('\\') ||
+      key.split('/').some((part) => part === '..' || part === '.')
+    ) {
+      throw new ForbiddenException('Некорректный путь файла');
+    }
     if (key.startsWith('crm/') && !allowCrm) throw new ForbiddenException('Файлы CRM доступны только администраторам');
   }
   constructor(
-    @Inject(S3_CLIENT) private readonly s3Client: S3Client,
-    private readonly configService: ConfigService,
+    private readonly storage: StorageService,
     private readonly dataSource?: DataSource,
   ) {}
 
@@ -96,17 +93,8 @@ export class FilesService {
     return `${safeName}.${safeExtension}`;
   }
 
-  async checkExistFile(bucketId: string, key: string) {
-    try {
-      const headCommand = new HeadObjectCommand({
-        Bucket: bucketId,
-        Key: key,
-      });
-      await this.s3Client.send(headCommand);
-      return true;
-    } catch {
-      return false;
-    }
+  async checkExistFile(key: string) {
+    return this.storage.objectExists(key);
   }
   private buildUniqueKey(prefix: string, filename: string, counter: number): string {
     if (counter === 0) return `${prefix}${filename}`;
@@ -118,7 +106,6 @@ export class FilesService {
   }
 
   async unloadFile(file: Express.Multer.File, unloadFileDto: UnloadFileDto, user: AuthenticatedUser | boolean = false) {
-    const bucketId = this.configService.get('AWS_BUCKET_ID') as string;
     const { prefix } = unloadFileDto;
     this.assertCrmAccess(prefix, this.isAdmin(user));
     const isPrivate = await this.assertProjectFileAccess(prefix, user);
@@ -128,21 +115,13 @@ export class FilesService {
 
     let counter = 0;
     let key = this.buildUniqueKey(prefix, filename, counter);
-    while (await this.checkExistFile(bucketId, key)) {
+    while (await this.checkExistFile(key)) {
       counter++;
       key = this.buildUniqueKey(prefix, filename, counter);
     }
 
-    await this.s3Client.send(
-      new PutObjectCommand({
-        Bucket: bucketId,
-        Key: key,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-        ACL: prefix.startsWith('crm/') || isPrivate ? 'private' : 'public-read',
-      }),
-    );
-    const head = await this.s3Client.send(new HeadObjectCommand({ Bucket: bucketId, Key: key }));
+    await this.storage.uploadObject(key, file.buffer, file.mimetype, !prefix.startsWith('crm/') && !isPrivate);
+    const head = await this.storage.headObject(key);
 
     const metadata: FileMetadata = {
       Key: key,
@@ -156,21 +135,12 @@ export class FilesService {
   }
 
   async createFolder(createFolderDto: CreateFolderDto, user: AuthenticatedUser | boolean = false) {
-    const bucketId = this.configService.get('AWS_BUCKET_ID') as string;
     const { prefix, folderName } = createFolderDto;
     const safeFolderName = this.sanitizeStorageName(folderName, 'folder');
     const key = `${prefix}${safeFolderName}/`;
     this.assertCrmAccess(key, this.isAdmin(user));
-    const isPrivate = await this.assertProjectFileAccess(key, user);
-
-    await this.s3Client.send(
-      new PutObjectCommand({
-        Bucket: bucketId,
-        Key: key,
-        Body: '',
-        ACL: key.startsWith('crm/') || isPrivate ? 'private' : 'public-read',
-      }),
-    );
+    await this.assertProjectFileAccess(key, user);
+    await this.storage.createFolderPlaceholder(key);
 
     return { key };
   }
@@ -178,52 +148,43 @@ export class FilesService {
   async getFileContent(key: string, user: AuthenticatedUser | boolean = false): Promise<string> {
     this.assertCrmAccess(key, this.isAdmin(user));
     await this.assertProjectFileAccess(key, user);
-    const bucketId = this.configService.get('AWS_BUCKET_ID') as string;
-    const response = await this.s3Client.send(new GetObjectCommand({ Bucket: bucketId, Key: key }));
-    if (!response.Body) throw new NotFoundException('Файл не найден');
-    return response.Body.transformToString('utf-8');
+    return this.storage.getObjectText(key);
   }
 
   async getRawFile(key: string, user: AuthenticatedUser | boolean = false): Promise<RawFileResponse> {
     this.assertCrmAccess(key, this.isAdmin(user));
     const isPrivate = await this.assertProjectFileAccess(key, user);
-    const bucketId = this.configService.get('AWS_BUCKET_ID') as string;
-    const response = await this.s3Client.send(new GetObjectCommand({ Bucket: bucketId, Key: key }));
-
-    if (!response.Body) {
-      throw new NotFoundException('Файл не найден');
+    const response = await this.storage.getObjectStream(key);
+    const chunks: Buffer[] = [];
+    for await (const chunk of response.body as AsyncIterable<Buffer | Uint8Array | string>) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
 
     return {
-      body: await response.Body.transformToByteArray(),
-      contentType: response.ContentType ?? 'application/octet-stream',
-      contentLength: response.ContentLength,
-      etag: response.ETag?.replace(/"/g, ''),
-      lastModified: response.LastModified,
-      isPrivate: key.startsWith('crm/') || isPrivate,
+      body: Buffer.concat(chunks),
+      contentType: response.contentType,
+      contentLength: response.contentLength,
+      etag: response.etag ?? undefined,
+      lastModified: response.lastModified ?? undefined,
+      isPrivate: this.storage.isTenantStorage() || key.startsWith('crm/') || isPrivate,
     };
   }
 
   async putFileContent(key: string, content: string, user: AuthenticatedUser | boolean = false): Promise<void> {
     this.assertCrmAccess(key, this.isAdmin(user));
     const isPrivate = await this.assertProjectFileAccess(key, user);
-    const bucketId = this.configService.get('AWS_BUCKET_ID') as string;
-    await this.s3Client.send(
-      new PutObjectCommand({
-        Bucket: bucketId,
-        Key: key,
-        Body: content,
-        ContentType: 'text/markdown; charset=utf-8',
-        ACL: key.startsWith('crm/') || isPrivate ? 'private' : 'public-read',
-      }),
+    await this.storage.uploadObject(
+      key,
+      Buffer.from(content),
+      'text/markdown; charset=utf-8',
+      !key.startsWith('crm/') && !isPrivate,
     );
   }
 
   async deleteFile(key: string, user: AuthenticatedUser | boolean = false): Promise<void> {
     this.assertCrmAccess(key, this.isAdmin(user));
     await this.assertProjectFileAccess(key, user);
-    const bucketId = this.configService.get('AWS_BUCKET_ID') as string;
-    await this.s3Client.send(new DeleteObjectCommand({ Bucket: bucketId, Key: key }));
+    await this.storage.deleteObject(key);
   }
 
   async deleteFolder(prefix: string, user: AuthenticatedUser | boolean = false): Promise<void> {
@@ -231,31 +192,14 @@ export class FilesService {
     this.assertCrmAccess(prefix, allowCrm);
     await this.assertProjectFileAccess(prefix, user);
     if (!allowCrm && 'crm/'.startsWith(prefix)) throw new ForbiddenException('Нельзя удалить папку с файлами CRM');
-    const bucketId = this.configService.get('AWS_BUCKET_ID') as string;
-    let continuationToken: string | undefined;
-    do {
-      const list = await this.s3Client.send(
-        new ListObjectsV2Command({ Bucket: bucketId, Prefix: prefix, ContinuationToken: continuationToken }),
-      );
-      const objects = list.Contents?.map((o) => ({ Key: o.Key! })) ?? [];
-      if (objects.length) {
-        await this.s3Client.send(new DeleteObjectsCommand({ Bucket: bucketId, Delete: { Objects: objects } }));
-      }
-      continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
-    } while (continuationToken);
+    await this.storage.deleteObjectsByPrefix(prefix);
   }
 
   async getFiles(getFilesDto: GetFilesDto, user: AuthenticatedUser | boolean = false) {
     const allowCrm = this.isAdmin(user);
     this.assertCrmAccess(getFilesDto.prefix, allowCrm);
     await this.assertProjectFileAccess(getFilesDto.prefix, user);
-    const bucketId = this.configService.get('AWS_BUCKET_ID') as string;
-    const command = new ListObjectsV2Command({
-      Bucket: bucketId,
-      Prefix: getFilesDto.prefix,
-    });
-
-    const response = await this.s3Client.send(command);
+    const response = await this.storage.listObjects(getFilesDto.prefix);
     if (!response.Contents?.length) throw new NotFoundException('Файлов нет');
     return allowCrm ? response.Contents : response.Contents.filter((item) => !item.Key?.startsWith('crm/'));
   }

@@ -2,6 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { MailboxCoreModule } from './mailbox/mailbox-core.module';
+import { DataSource } from 'typeorm';
+import { PlatformModule } from './platform/platform.module';
+import { TenancyModule } from './tenancy/tenancy.module';
+import { tenantDataSource } from './tenancy/tenant-data-source';
 
 @Module({
   imports: [
@@ -25,7 +29,14 @@ import { MailboxCoreModule } from './mailbox/mailbox-core.module';
           connectionTimeoutMillis: 10000,
         },
       }),
+      dataSourceFactory: async (options) => {
+        if (!options) throw new Error('Database configuration is required');
+        const source = await new DataSource(options).initialize();
+        return process.env.TENANCY_ENABLED === 'true' ? tenantDataSource(source) : source;
+      },
     }),
+    PlatformModule,
+    TenancyModule,
     MailboxCoreModule,
   ],
 })

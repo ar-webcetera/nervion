@@ -1,13 +1,7 @@
 import * as path from 'path';
+import { GitRepositoryAvailability, GitRepositoryMode, type GitRepoListItem } from '@tracker/contracts';
 
-/** Публичное представление репозитория для API (без gitdir на диске). */
-export interface GitRepoListItem {
-  id: number;
-  projectId: number | null;
-  name: string;
-  defaultBranch: string;
-  cloneUrl: string | null;
-}
+export type { GitRepoListItem } from '@tracker/contracts';
 
 export const buildGitCloneUrl = (gitdir: string, baseUrl = process.env.GIT_CLONE_BASE_URL): string | null => {
   const base = baseUrl?.trim();
@@ -32,4 +26,7 @@ export const toGitRepoListItem = (repo: {
   name: repo.name,
   defaultBranch: repo.defaultBranch,
   cloneUrl: buildGitCloneUrl(repo.gitdir),
+  mode: GitRepositoryMode.SELF_HOSTED,
+  availability: GitRepositoryAvailability.AVAILABLE,
+  capabilities: { canRead: true, canFetch: false, canDelete: true },
 });

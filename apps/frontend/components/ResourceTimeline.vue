@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import { format, eachDayOfInterval, isSameDay, parseISO } from 'date-fns';
 import { ru } from 'date-fns/locale';
 import type { Allocation } from '~/types/allocation';
@@ -164,7 +165,7 @@ const getRowHeight = (userId: number) => {
       <div v-for="user in users" :key="user.id" class="resource-timeline__row" :style="{ minHeight: getRowHeight(user.id) }">
         <div class="resource-timeline__user">
           <div class="resource-timeline__user-avatar">
-            <img v-if="user.photo_url" :src="user.photo_url" :alt="user.first_name" @error="($event.target as HTMLImageElement).style.display='none'" />
+            <img v-if="user.photo_url" :src="resolveAwsUrl(user.photo_url)" :alt="user.first_name" @error="($event.target as HTMLImageElement).style.display='none'" />
             <span v-else>{{ user.first_name[0] }}{{ user.last_name[0] }}</span>
           </div>
           <div class="resource-timeline__user-info">

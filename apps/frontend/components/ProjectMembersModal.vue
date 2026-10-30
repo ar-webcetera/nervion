@@ -1,4 +1,5 @@
 <script setup lang="ts">
+const { resolveAwsUrl } = useResolveUrl();
 import { ref, computed } from 'vue';
 import type { Project, ProjectMember } from '~/types/project';
 import { useUserStore } from '~/stores/userStore';
@@ -109,7 +110,7 @@ const memberName = computed(() => {
         <div class="members-modal__member-info">
           <img
             v-if="member.photo_url"
-            :src="member.photo_url"
+            :src="resolveAwsUrl(member.photo_url)"
             :alt="`${member.first_name} ${member.last_name}`"
             class="members-modal__avatar"
           />

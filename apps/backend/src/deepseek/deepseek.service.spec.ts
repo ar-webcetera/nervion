@@ -1,5 +1,6 @@
 import type { GoogleGenerativeAI } from '@google/generative-ai';
 import type { ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { DeepseekService } from './deepseek.service';
 
 const parsedTask = {
@@ -13,17 +14,47 @@ const parsedTask = {
 describe('DeepseekService', () => {
   const originalOpenAiKey = process.env.OPENAI_API_KEY;
   const originalOpenRouterKey = process.env.OPENROUTER_API_KEY;
+  const originalEnabled = process.env.AI_ENABLED;
 
-  beforeAll(() => {
+  beforeEach(() => {
+    delete process.env.AI_ENABLED;
     process.env.OPENAI_API_KEY = 'test-openai-key';
     process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
   });
 
-  afterAll(() => {
+  afterEach(() => {
+    if (originalEnabled === undefined) delete process.env.AI_ENABLED;
+    else process.env.AI_ENABLED = originalEnabled;
     if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = originalOpenAiKey;
     if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
     else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
+    jest.restoreAllMocks();
+  });
+
+  it.each([undefined, 'configured-test-key'])('отключает все AI-операции без сети, ключ: %s', async (key) => {
+    process.env.AI_ENABLED = 'false';
+    if (key === undefined) {
+      delete process.env.OPENAI_API_KEY;
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = key;
+      process.env.OPENROUTER_API_KEY = key;
+    }
+    const fetch = jest.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Unexpected network request'));
+    const getGenerativeModel = jest.fn();
+    const service = new DeepseekService({ getGenerativeModel } as object as GoogleGenerativeAI, 'gemini-test');
+
+    const operations = [
+      service.formulateTask('Тестовая задача'),
+      service.transcribeAudio(Buffer.from('audio'), 'voice.webm', 'audio/webm'),
+      service.parseTextToTaskFromGemini('Тестовая задача'),
+      service.parseTextToTaskGpt('Тестовая задача'),
+      service.parseMailToDealGpt('Тестовое письмо'),
+    ];
+    await Promise.all(operations.map((operation) => expect(operation).rejects.toBeInstanceOf(ServiceUnavailableException)));
+    expect(fetch).not.toHaveBeenCalled();
+    expect(getGenerativeModel).not.toHaveBeenCalled();
   });
 
   it('передаёт текст и скриншоты модели как мультимодальный запрос', async () => {

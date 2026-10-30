@@ -18,6 +18,7 @@ export class InitialAdminService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    if (this.configService.get<string>('TENANCY_ENABLED') === 'true') return;
     if ((await this.userRepository.count()) > 0) {
       return;
     }
