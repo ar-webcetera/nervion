@@ -43,8 +43,12 @@ Primary запускается с `shared_preload_libraries=pg_stat_statements`,
 `wal_level=replica`, `archive_mode=on`, `archive_timeout=60s` и командой:
 
 ```text
-/usr/local/bin/nervion-archive-push "%p"
+/usr/local/bin/nervion-pgbackrest-archive-push "%p"
 ```
+
+Имя wrapper содержит `pgbackrest`: команда `check` проверяет это в
+`archive_command`. После установки проверяйте `check` на реальном контуре,
+даже если изолированный backup fixture прошёл успешно.
 
 Wrapper допускает только WAL внутри фиксированного `PGDATA/pg_wal`, проверяет
 имя и realpath, исключает ссылки и передаёт абсолютный путь. pgBackRest не

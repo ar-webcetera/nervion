@@ -67,6 +67,22 @@ def directory(path, *, private=False):
         raise SyncError("UNSAFE_DIRECTORY")
 
 
+def source_storage_root(path):
+    info = path.lstat()
+    if not info.st_mode & 0o022:
+        directory(path)
+        return
+    # Caddy may create only its storage root as 01777. Sticky ownership keeps
+    # unprivileged writers from replacing an existing root-owned certificates
+    # entry. Never extend this exception to certificate or destination paths.
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or not info.st_mode & stat.S_ISVTX or path.resolve() != path:
+        raise SyncError("UNSAFE_DIRECTORY")
+    certificates = path / "certificates"
+    directory(certificates)
+    if certificates.lstat().st_uid != 0:
+        raise SyncError("UNSAFE_DIRECTORY")
+
+
 def read_file(path, *, secret=False, limit=262144):
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
@@ -121,7 +137,7 @@ def load_config(path):
     minimum = values.get("minimumValiditySeconds", 14 * 86400)
     if type(minimum) is not int or not 86400 <= minimum <= 30 * 86400:
         raise SyncError("INVALID_VALIDITY_THRESHOLD")
-    directory(source)
+    source_storage_root(source)
     directory(bundle.parent)
     if bundle.exists() or bundle.is_symlink():
         directory(bundle, private=True)
@@ -183,6 +199,7 @@ def validate_material(cert, key, config, run=command, *, now=None):
 
 
 def prepare_release(config, run):
+    source_storage_root(config.caddy_root)
     certificates = config.caddy_root / "certificates"
     directory(certificates)
     candidates = []

@@ -20,9 +20,9 @@ RUN test "$(dpkg --print-architecture)" = amd64 \
  && rm -rf /var/lib/apt/lists/*
 
 COPY deploy/production/postgres/pgbackrest-common.sh /usr/local/lib/nervion/pgbackrest-common.sh
-COPY deploy/production/postgres/archive-push.sh /usr/local/bin/nervion-archive-push
+COPY deploy/production/postgres/archive-push.sh /usr/local/bin/nervion-pgbackrest-archive-push
 COPY deploy/production/postgres/backup.sh /usr/local/bin/nervion-backup
-RUN chmod 0755 /usr/local/bin/nervion-archive-push /usr/local/bin/nervion-backup \
+RUN chmod 0755 /usr/local/bin/nervion-pgbackrest-archive-push /usr/local/bin/nervion-backup \
  && chmod 0644 /usr/local/lib/nervion/pgbackrest-common.sh \
  && install -d -o postgres -g postgres -m 0700 \
       /var/run/pgbackrest/archive /var/run/pgbackrest/backup \

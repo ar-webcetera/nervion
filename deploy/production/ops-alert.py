@@ -29,6 +29,7 @@ CHECKS = {
         "OPS_BACKUP_FRESHNESS_FAILED", "backup", "Nervion encrypted backup freshness check failed"
     ),
     "smtp-cert-sync.service": ("OPS_SMTP_CERT_SYNC_FAILED", "smtp-tls", "Nervion SMTP certificate synchronization failed"),
+    "nervion-infra-monitor.service": ("OPS_INFRA_HEALTH_FAILED", "infra", "Nervion infrastructure health check failed"),
 }
 
 
@@ -100,7 +101,9 @@ def build_event(unit):
         "environment": "production",
         "logger": "nervion.operations",
         "message": message,
-        "fingerprint": ["nervion-ops", code],
+        # GlitchTip's project rules notify once per issue. A new unit failure
+        # must create a new issue; retries of this delivery reuse this event.
+        "fingerprint": ["nervion-ops", code, event_id],
         "tags": {"component": component, "check": code},
     }
     payload = json.dumps(event, separators=(",", ":")).encode("utf8")

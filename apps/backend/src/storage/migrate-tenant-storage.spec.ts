@@ -64,6 +64,94 @@ describe('rewriteStorageUrls', () => {
     );
   });
 
+  it('rewrites whole scalar URLs with literal spaces only for exact decoded manifest keys', () => {
+    const key = 'tracker-tasks/1/Фото + отчет (1).pdf';
+    const url = `https://files.example.com/bucket/${key}`;
+    const target = `/api/files/raw?key=${encodeURIComponent(key)}`;
+    expect(rewriteStorageUrls({ attrs: { href: url } }, bases, new Set([key]))).toEqual({ attrs: { href: target } });
+    expect(rewriteStorageUrls(`${url}?download=1&amp;name=a b#page 2`, bases, new Set([key]))).toBe(
+      `${target}&amp;download=1&amp;name=a%20b#page%202`,
+    );
+    expect(rewriteStorageUrls(target, bases, new Set([key]))).toBe(target);
+  });
+
+  it('preserves trailing filename spaces instead of normalizing them to another object', () => {
+    const key = 'tracker-tasks/1/report.pdf ';
+    const url = `https://files.example.com/bucket/${key}`;
+    expect(rewriteStorageUrls(url, bases, copied)).toBe(url);
+    expect(rewriteStorageUrls(url, bases, new Set([key]))).toBe(`/api/files/raw?key=${encodeURIComponent(key)}`);
+  });
+
+  it('preserves Unicode spacing characters in complete filename URLs', () => {
+    for (const space of ['\u00a0', '\u202f', '\u2007']) {
+      const key = `tracker-tasks/1/screenshot 10${space}AM.png`;
+      expect(rewriteStorageUrls(`https://files.example.com/bucket/${key}`, bases, new Set([key]))).toBe(
+        `/api/files/raw?key=${encodeURIComponent(key)}`,
+      );
+    }
+  });
+
+  it('does not partially rewrite absent whitespace-bearing scalar URLs or normalize control characters', () => {
+    const values = [
+      'https://files.example.com/bucket/tracker-tasks/1/report.pdf missing',
+      'https://files.example.com/bucket/tracker-tasks/1/report.pdf\t',
+      'https://files.example.com/bucket/tracker-tasks/1/report.pdf\n',
+      'https://files.example.com/bucket/tracker-tasks/1/report.pdf\r',
+    ];
+    expect(rewriteStorageUrls(values, bases, copied)).toEqual(values);
+  });
+
+  it('retains origin, prefix, credentials and key-query guards for scalar URLs with spaces', () => {
+    const key = 'tracker-tasks/1/my report.pdf';
+    const values = [
+      `https://external.example.com/bucket/${key}`,
+      `https://files.example.com/bucket-other/${key}`,
+      `https://files.example.com.evil.test/bucket/${key}`,
+      `https://user:password@files.example.com/bucket/${key}`,
+      `https://files.example.com/bucket/${key}?key=other-client/secret`,
+      `https://files.example.com/bucket/${key.replace(' ', '%2520')}`,
+    ];
+    expect(rewriteStorageUrls(values, bases, new Set([key]))).toEqual(values);
+  });
+
+  it('rewrites quoted HTML URL attributes with spaces while preserving markup and other attributes', () => {
+    const key = 'tracker-tasks/1/my report.pdf';
+    const url = `https://files.example.com/bucket/${key}`;
+    const target = `/api/files/raw?key=${encodeURIComponent(key)}`;
+    const source = `<a class="file" HREF = '${url}?a=1&amp;b=2' title="Report > PDF">file</a><img src="${url}"><video poster='${url}'></video>`;
+    expect(rewriteStorageUrls(source, bases, new Set([key]))).toBe(
+      `<a class="file" HREF = '${target}&amp;a=1&amp;b=2' title="Report > PDF">file</a><img src="${target}"><video poster='${target}'></video>`,
+    );
+    expect(rewriteStorageUrls('<img src=https://files.example.com/bucket/tracker-avatars/a.png>', bases, copied)).toBe(
+      '<img src=/api/files/raw?key=tracker-avatars%2Fa.png>',
+    );
+  });
+
+  it('does not expand raw-space URLs in prose, non-URL attributes, comments or raw-text elements', () => {
+    const key = 'tracker-tasks/1/my report.pdf';
+    const url = `https://files.example.com/bucket/${key}`;
+    const values = [
+      `Файл: ${url}, конец.`,
+      `<span data-note="href='${url}'">keep</span>`,
+      `<!-- <a href="${url}">keep</a> -->`,
+      `<script>const html = '<a href="${url}">keep</a>';</script>`,
+      `<style>/* <a href="${url}">keep</a> */</style>`,
+      `<textarea><a href="${url}">keep</a></textarea>`,
+      `<title><a href="${url}">keep</a></title>`,
+    ];
+    expect(rewriteStorageUrls(values, bases, new Set([key]))).toEqual(values);
+    const absent = `<a href="https://files.example.com/bucket/tracker-tasks/1/report.pdf missing">keep</a>`;
+    expect(rewriteStorageUrls(absent, bases, copied)).toBe(absent);
+  });
+
+  it('preserves JSON formatting and large numbers when rewriting scalar URLs with spaces', () => {
+    const key = 'tracker-tasks/1/my report.pdf';
+    const source = `{ "large": 9007199254740993123, "href": "https://files.example.com/bucket/${key}" }`;
+    expect(rewriteJsonDocumentText(source, bases, new Set([key]))).toBe(
+      `{ "large": 9007199254740993123, "href": "/api/files/raw?key=${encodeURIComponent(key)}" }`,
+    );
+  });
+
   it('does not decode twice or rewrite a URL nested inside a foreign URL query', () => {
     const values = [
       'https://files.example.com/bucket/tracker-avatars%252Fa.png',

@@ -1,0 +1,4 @@
+# Replace git-release with the existing account receiving this repository.
+# No Docker group membership, secret-file permission change or wildcard grant.
+Defaults!/usr/local/sbin/nervion-release-received env_reset, !setenv, secure_path="/usr/sbin:/usr/bin:/sbin:/bin"
+git-release ALL=(root) NOPASSWD: NOSETENV: /usr/local/sbin/nervion-release-received ""

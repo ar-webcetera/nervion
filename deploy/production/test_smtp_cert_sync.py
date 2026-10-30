@@ -139,6 +139,19 @@ class CertificateSyncTests(unittest.TestCase):
         return [(file.stat().st_mtime_ns, file.stat().st_mode, hashlib.sha256(file.read_bytes()).hexdigest())
                 for file in (self.cert, self.key)]
 
+    def mock_owners(self, owners):
+        actual_lstat = pathlib.Path.lstat
+
+        def lstat(path, *args, **kwargs):
+            info = actual_lstat(path, *args, **kwargs)
+            if path in owners:
+                fields = list(info)
+                fields[4] = owners[path]
+                return os.stat_result(fields)
+            return info
+
+        return mock.patch.object(pathlib.Path, "lstat", lstat)
+
     def test_copy_only_is_private_atomic_idempotent_and_does_not_touch_source_or_docker(self):
         before = self.source_snapshot()
         first = self.sync()
@@ -169,6 +182,79 @@ class CertificateSyncTests(unittest.TestCase):
         private_write(path, '{"hostname":"mail.example.com","hostname":"other.example.com"}')
         with self.assertRaisesRegex(SYNC.SyncError, "DUPLICATE_CONFIG_KEY"):
             SYNC.load_config(path)
+
+    def test_root_owned_sticky_source_root_allows_copy_only_without_source_mutation(self):
+        self.storage.chmod(0o1777)
+        before = self.source_snapshot()
+        owners = {self.storage: 0, self.storage / "certificates": 0}
+        # Ownership alone is mocked, so this remains an unprivileged offline
+        # fixture. Filesystem permissions, key/chain validation and copy are real.
+        with self.mock_owners(owners):
+            config = SYNC.load_config(self.write_config())
+            result = SYNC.synchronize(config, run=self.runner)
+        self.assertTrue(result["changed"])
+        self.assertEqual(before, self.source_snapshot())
+        self.assertEqual(stat.S_IMODE(self.storage.stat().st_mode), 0o1777)
+        self.assertFalse(any(call[0] == "docker" for call in self.runner.calls))
+
+    def test_writable_source_root_requires_both_root_owner_and_sticky_bit(self):
+        for mode, owner in ((0o777, 0), (0o775, 0), (0o1777, 12345), (0o1775, 12345)):
+            with self.subTest(mode=oct(mode), owner=owner):
+                self.storage.chmod(mode)
+                with self.mock_owners({self.storage: owner}), self.assertRaisesRegex(SYNC.SyncError, "UNSAFE_DIRECTORY"):
+                    SYNC.load_config(self.write_config())
+                self.assertFalse(self.bundle.exists())
+
+    def test_sticky_root_requires_existing_root_owned_certificates_directory(self):
+        self.storage.chmod(0o1777)
+        certificates = self.storage / "certificates"
+        nonroot = os.geteuid() or 12345
+        with self.mock_owners({self.storage: 0, certificates: nonroot}), self.assertRaisesRegex(SYNC.SyncError, "UNSAFE_DIRECTORY"):
+            SYNC.load_config(self.write_config())
+        actual = self.storage / "actual-certificates"
+        certificates.rename(actual)
+        with self.mock_owners({self.storage: 0}), self.assertRaises(OSError):
+            SYNC.load_config(self.write_config())
+        certificates.symlink_to(actual)
+        with self.mock_owners({self.storage: 0}), self.assertRaisesRegex(SYNC.SyncError, "UNSAFE_DIRECTORY"):
+            SYNC.load_config(self.write_config())
+        self.assertFalse(self.bundle.exists())
+
+    def test_sticky_root_exception_does_not_apply_to_certificate_tree(self):
+        self.storage.chmod(0o1777)
+        certificates = self.storage / "certificates"
+        owners = {self.storage: 0, certificates: 0, self.source.parent: 0, self.source: 0}
+        for path in (certificates, self.source.parent, self.source):
+            with self.subTest(path=path.name), self.mock_owners(owners):
+                path.chmod(0o1777)
+                try:
+                    with self.assertRaisesRegex(SYNC.SyncError, "UNSAFE_DIRECTORY"):
+                        self.sync()
+                    self.assertFalse((self.bundle / "current").exists())
+                finally:
+                    path.chmod(0o700)
+
+    def test_sticky_root_exception_does_not_apply_to_bundle(self):
+        self.bundle.mkdir(mode=0o700)
+        self.bundle.chmod(0o1777)
+        with self.mock_owners({self.bundle: 0}), self.assertRaisesRegex(SYNC.SyncError, "UNSAFE_DIRECTORY"):
+            SYNC.load_config(self.write_config())
+        self.assertFalse((self.bundle / "current").exists())
+
+    def test_sticky_source_root_cannot_be_a_symlink(self):
+        actual = self.storage.with_name("actual-caddy")
+        self.storage.rename(actual)
+        actual.chmod(0o1777)
+        self.storage.symlink_to(actual)
+        with self.mock_owners({self.storage: 0}), self.assertRaisesRegex(SYNC.SyncError, "UNSAFE_DIRECTORY"):
+            SYNC.load_config(self.write_config())
+
+    def test_source_root_permissions_are_rechecked_before_read(self):
+        config = SYNC.load_config(self.write_config())
+        self.storage.chmod(0o777)
+        with self.mock_owners({self.storage: 0}), self.assertRaisesRegex(SYNC.SyncError, "UNSAFE_DIRECTORY"):
+            SYNC.synchronize(config, run=self.runner)
+        self.assertFalse((self.bundle / "current").exists())
 
     def test_wrong_or_multiple_or_wildcard_san_is_rejected(self):
         for san in ("DNS:other.example.com", "DNS:*.example.com", "DNS:mail.example.com,DNS:other.example.com"):

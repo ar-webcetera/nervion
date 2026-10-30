@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
@@ -87,7 +87,8 @@ process.exit(94);
 `;
 
 function fixture(t, options = {}) {
-  const root = mkdtempSync(join(tmpdir(), 'nervion-release-test-'));
+  // Root execution intentionally rejects inputs beneath writable /tmp.
+  const root = mkdtempSync(join(process.getuid?.() === 0 ? homedir() : tmpdir(), 'nervion-release-test-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const bin = join(root, 'bin');
   mkdirSync(bin, { mode: 0o700 });
@@ -135,6 +136,30 @@ function productionFixture(f) {
   f.write('manifest.json', f.manifest);
   return { config, evidence };
 }
+
+test('selected secrets preserve their kind and name in receipts and are rehashed before deploy', t => {
+  const f = fixture(t);
+  f.write('database-password', 'fixture-password');
+  const config = JSON.parse(readFileSync(join(f.root, 'compose.json')));
+  config.secrets = { data_password: { file: join(f.root, 'database-password') } };
+  config.services.backend.secrets = [{ source: 'data_password', target: 'data_password' }];
+  f.write('compose.json', config);
+  f.success('prepare'); f.success('migrate');
+  const head = JSON.parse(readFileSync(join(f.root, 'state', f.manifest.project, 'prepared-head.json')));
+  const receipt = JSON.parse(readFileSync(join(head.release, 'prepared.json')));
+  assert.ok(receipt.inputs.some(input => input.path === join(f.root, 'database-password') && input.kind === 'secret' && input.secretName === 'data_password'));
+  f.write('database-password', 'changed-password');
+  f.failure('deploy');
+  assert.equal(f.commands().some(c => c.includes('up')), false);
+});
+
+test('a selected secret cannot silently be skipped as a mutable data directory', t => {
+  const f = fixture(t);
+  const config = JSON.parse(readFileSync(join(f.root, 'compose.json')));
+  config.secrets = { data_password: { file: f.root } };
+  config.services.backend.secrets = ['data_password']; f.write('compose.json', config);
+  f.failure('prepare');
+});
 
 test('production requires a phase-bound evidence file', t => {
   const f = fixture(t); productionFixture(f);

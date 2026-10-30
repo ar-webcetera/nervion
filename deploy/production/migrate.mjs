@@ -34,12 +34,14 @@ export function assertBaseline(applied, tables) {
   if (tables.some((row) => row.owner !== 'nervion_data_migrator')) throw new Error('Business schema ownership is not assigned to the data migrator');
 }
 
-async function preflight(client, database, user) {
+export async function checkMigrationClient(client, database, user) {
+  // shared_preload_libraries is superuser-readable. Its value is verified by
+  // the infrastructure operator, not by granting global settings access here.
   const { rows: [row] } = await client.query(`SELECT current_database() AS database, current_user AS username,
     (r.rolsuper OR r.rolbypassrls OR r.rolcreatedb OR r.rolcreaterole) AS privileged,
-    pg_get_userbyid(d.datdba) AS owner, current_setting('shared_preload_libraries') AS preload
+    pg_get_userbyid(d.datdba) AS owner
     FROM pg_roles r JOIN pg_database d ON d.datname=current_database() WHERE r.rolname=current_user`);
-  if (!row || row.database !== database || row.username !== user || row.owner !== user || row.privileged || !row.preload.split(',').map((v) => v.trim()).includes('pg_stat_statements')) throw new Error('Migration database preflight failed');
+  if (!row || row.database !== database || row.username !== user || row.owner !== user || row.privileged) throw new Error('Migration database preflight failed');
   const { rows: [extensions] } = await client.query("SELECT count(*)::integer AS count FROM pg_extension WHERE extname='pg_stat_statements'");
   if (extensions.count !== 1) throw new Error('Required database extension is missing');
 }
@@ -69,7 +71,7 @@ async function main() {
   try {
     for (const [index, prefix] of ['', 'PLATFORM_'].entries()) {
       await clients[index].connect();
-      await preflight(clients[index], env[`${prefix}POSTGRES_DB`], env[`${prefix}MIGRATION_POSTGRES_USER`]);
+      await checkMigrationClient(clients[index], env[`${prefix}POSTGRES_DB`], env[`${prefix}MIGRATION_POSTGRES_USER`]);
     }
     const { rows: [lock] } = await clients[0].query("SELECT pg_try_advisory_lock(hashtextextended('nervion-production-tenant-migrations', 0)) AS acquired");
     if (!lock.acquired) throw new Error('Another tenant migration job is active');

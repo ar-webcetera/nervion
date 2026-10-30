@@ -1,0 +1,8 @@
+{
+  "composeProject": "nervion-production",
+  "postgresService": "postgres",
+  "diskPaths": ["/var/lib/docker"],
+  "stateDirectory": "/var/lib/nervion-ops/infra-monitor",
+  "smtpBundleDirectory": "/var/lib/nervion-production/smtp-tls",
+  "smtpHostname": "mail.example.com"
+}

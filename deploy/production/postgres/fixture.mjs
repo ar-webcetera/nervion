@@ -156,6 +156,12 @@ try {
     'install -d -o postgres -g postgres -m 0700 /repo /restore/pgdata; for file in pgbackrest_config wrong_pgbackrest_config postgres_password data_password platform_password data_migrator_password platform_migrator_password; do install -o postgres -g postgres -m 0600 "/fixture/$file" "/secrets/$file"; done']);
 
   const primary = `${id}-primary`;
+  // The fixture uses its own repository, outside the production wrapper's
+  // allowlist. Guard the actual production command separately: pgBackRest
+  // checks that archive_command contains its executable name.
+  const productionCommand = '/usr/local/bin/nervion-pgbackrest-archive-push "%p"';
+  assert.ok(readFileSync(resolve(here, '../compose.yml'), 'utf8').includes(`archive_command=${productionCommand}`));
+  assert.ok(productionCommand.includes('pgbackrest'));
   const archive = 'pgbackrest --config=/run/secrets/pgbackrest_config --config-include-path=/etc/pgbackrest/empty --stanza=nervion --lock-path=/var/run/pgbackrest/archive/lock archive-push "%p"';
   docker(['run', '--detach', '--name', primary, '--network', network, '--read-only', '--label', `io.nervion.fixture=${id}`,
     '--tmpfs', '/tmp:mode=1777', ...runtime('archive'), ...mount(volumes.primary, '/var/lib/postgresql/data'),
@@ -254,10 +260,10 @@ try {
     { name: 'command-override', config: policy + '\n[global:archive-push]\nrepo1-cipher-type=none\n' },
     { name: 'duplicate-option', config: policy.replace('archive-async=n', 'archive-async=n\narchive-async=y') },
     { name: 'wrong-permissions', config: policy, mode: '0644' },
-    { name: 'wal-traversal', config: policy, args: ['nervion-archive-push', `pg_wal/../${walName}`] },
-    { name: 'wal-outside', config: policy, args: ['nervion-archive-push', `/tmp/${walName}`] },
-    { name: 'wal-symlink', config: policy, args: ['nervion-archive-push', `pg_wal/${walName}`], symlink: true },
-    { name: 'valid-wal-failure-propagates', config: policy, args: ['nervion-archive-push', `pg_wal/${walName}`], executable: 'failed-pgbackrest', status: 23 },
+    { name: 'wal-traversal', config: policy, args: ['nervion-pgbackrest-archive-push', `pg_wal/../${walName}`] },
+    { name: 'wal-outside', config: policy, args: ['nervion-pgbackrest-archive-push', `/tmp/${walName}`] },
+    { name: 'wal-symlink', config: policy, args: ['nervion-pgbackrest-archive-push', `pg_wal/${walName}`], symlink: true },
+    { name: 'valid-wal-failure-propagates', config: policy, args: ['nervion-pgbackrest-archive-push', `pg_wal/${walName}`], executable: 'failed-pgbackrest', status: 23 },
   ];
   for (const [index, item] of cases.entries()) {
     const file = `policy-${index}.conf`; write(file, item.config);

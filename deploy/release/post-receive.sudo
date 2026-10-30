@@ -1,0 +1,5 @@
+#!/bin/sh
+# Replace only this application's post-receive; never chain a legacy deploy.
+set -eu
+if [ "$#" -ne 0 ]; then exit 1; fi
+exec /usr/bin/sudo -n -- /usr/local/sbin/nervion-release-received

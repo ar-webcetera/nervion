@@ -1,0 +1,9 @@
+#!/bin/sh
+# Install root-owned outside the Git checkout; sudo permits no arguments.
+set -eu
+if [ "$#" -ne 0 ]; then
+  printf 'Push received; deployment dispatcher does not accept arguments.\n' >&2
+  exit 1
+fi
+exec /usr/bin/env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root LANG=C \
+  /usr/bin/python3 -I /usr/local/libexec/nervion-release/receive.py

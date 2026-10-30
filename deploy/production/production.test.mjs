@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { runtimeEnvironment, port, hostname, ingressBindAddress } from './config.mjs';
-import { assertBaseline, baseline, migrationEnvironment, migrationSources } from './migrate.mjs';
+import { assertBaseline, baseline, checkMigrationClient, migrationEnvironment, migrationSources } from './migrate.mjs';
 import { assertPrecutoverSnapshot, checkPrecutoverClient } from './preflight.mjs';
 import { validateProduction } from './validate.mjs';
 
@@ -76,6 +76,19 @@ test('baseline v1 is explicit, rejects missing schema/ownership and tolerates la
   assert.throws(() => assertBaseline(applied, tables.slice(1)));
   assert.throws(() => assertBaseline(applied, [...tables, { name: 'platform_tenants', owner: 'nervion_data_migrator' }]));
   assert.throws(() => assertBaseline(applied, [{ ...tables[0], owner: 'nervion_data' }, ...tables.slice(1)]));
+});
+
+test('migration preflight needs no global settings grant and still rejects wrong roles and missing extension', async () => {
+  const row = { database: 'nervion_data_1', username: 'nervion_data_migrator', owner: 'nervion_data_migrator', privileged: false };
+  const makeClient = (value = row, count = 1) => ({ query: async (query) => {
+    assert.doesNotMatch(query, /current_setting|pg_read_all_settings/);
+    return { rows: [query.includes('pg_extension') ? { count } : value] };
+  } });
+  await checkMigrationClient(makeClient(), row.database, row.username);
+  for (const changed of [null, { ...row, privileged: true }, { ...row, owner: 'postgres' }, { ...row, database: 'other' }, { ...row, username: 'postgres' }]) {
+    await assert.rejects(checkMigrationClient(makeClient(changed), row.database, row.username));
+  }
+  await assert.rejects(checkMigrationClient(makeClient(row, 0), row.database, row.username));
 });
 
 test('precutover checks actual platform state, including bootstrap identity and all tenant flags', async () => {

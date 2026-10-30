@@ -60,6 +60,11 @@ Docker build args или tracked env. Каталог secrets закрыт от �
 Для `pgbackrest_config` нужен PostgreSQL UID 999 и права `0400`/`0600`.
 Не расширяйте доступ ко всему каталогу ради PgBouncer UID 10001.
 
+Наличие `pg_stat_statements` в `shared_preload_libraries` проверяет оператор
+инфраструктуры под PostgreSQL administrator. Migration-role проверяет свою роль,
+владельца БД и установленное расширение, но не читает привилегированные настройки.
+Не выдавайте ей `pg_read_all_settings` ради такой проверки.
+
 Bootstrap PostgreSQL выполняется как UID 999, PgBouncer как UID 10001. Поэтому
 два runtime-пароля имеют отдельные закрытые файлы с одинаковыми значениями:
 
@@ -112,6 +117,9 @@ Health проверяет этот же адрес. Backend и frontend оста
 proxy или firewall не направляет туда трафик: это отдельная операторская проверка.
 
 API health проверяет HTTP, обе БД и Redis. Frontend проверяет SSR admin page.
+Health и precutover SQL используют read-only транзакции с `SET LOCAL
+statement_timeout`. Не передавайте этот параметр в startup packet через
+PgBouncer и не отключайте его проверку через `ignore_startup_parameters`.
 SMTP health проверяет EHLO, STARTTLS, доверенную цепочку, hostname/срок сертификата
 и обе БД, не отправляя письмо. Закрытый TLS bundle монтируется целиком, чтобы
 обновление `current` не оставляло контейнер на старом inode. См. [обновление

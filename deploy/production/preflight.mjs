@@ -11,13 +11,19 @@ export async function checkPrecutoverClient(client, tenantId) {
   assertPrecutoverSnapshot(row);
 }
 
-export async function checkRuntimePrecutover(env) {
+export async function checkRuntimePrecutover(env, requireApp = createRequire('/app/package.json')) {
   if (env.NERVION_DEPLOYMENT_PHASE !== 'precutover') return;
   if (env.TENANT_JOBS_WORKER_ENABLED !== 'false') throw new Error('Precutover workers must be disabled');
-  const { Client } = createRequire('/app/package.json')('pg');
+  const { Client } = requireApp('pg');
   const client = new Client({ host: env.PLATFORM_POSTGRES_HOST, port: Number(env.PLATFORM_POSTGRES_PORT),
     user: env.PLATFORM_POSTGRES_USER, password: env.PLATFORM_POSTGRES_PASSWORD, database: env.PLATFORM_POSTGRES_DB,
-    connectionTimeoutMillis: 5_000, query_timeout: 5_000, statement_timeout: 5_000 });
-  try { await client.connect(); await checkPrecutoverClient(client, env.TENANCY_BOOTSTRAP_TENANT_ID); }
+    connectionTimeoutMillis: 5_000, query_timeout: 5_000 });
+  try {
+    await client.connect();
+    await client.query('BEGIN READ ONLY');
+    await client.query("SET LOCAL statement_timeout = '5s'");
+    await checkPrecutoverClient(client, env.TENANCY_BOOTSTRAP_TENANT_ID);
+    await client.query('COMMIT');
+  }
   finally { await client.end(); }
 }

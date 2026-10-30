@@ -7,7 +7,28 @@ import { createSecureContext, TLSSocket } from 'node:tls';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { httpProbe } from './health.mjs';
+import { databaseProbe, httpProbe } from './health.mjs';
+import { checkRuntimePrecutover } from './preflight.mjs';
+
+test('database health and precutover use transaction-local timeouts accepted by PgBouncer', async () => {
+  const clients = [];
+  class Client {
+    constructor(options) { assert.equal(options.statement_timeout, undefined); this.queries=[]; clients.push(this); }
+    async connect() {}
+    async query(query) { this.queries.push(query); return { rows: [{total:1,safe:true,bootstrap:true}] }; }
+    async end() { this.ended=true; }
+  }
+  const requireApp=()=>({Client});
+  await databaseProbe({}, requireApp, ()=>'fixture');
+  await checkRuntimePrecutover({NERVION_DEPLOYMENT_PHASE:'precutover', TENANT_JOBS_WORKER_ENABLED:'false', TENANCY_BOOTSTRAP_TENANT_ID:'fixture'}, requireApp);
+  assert.equal(clients.length,3);
+  for (const client of clients) {
+    assert.equal(client.queries[0],'BEGIN READ ONLY');
+    assert.match(client.queries[1], /^SET LOCAL statement_timeout = '[35]s'$/);
+    assert.equal(client.queries.at(-1),'COMMIT');
+    assert.equal(client.ended,true);
+  }
+});
 
 async function listen(server) {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });

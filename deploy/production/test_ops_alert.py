@@ -85,10 +85,21 @@ class OpsAlertTests(unittest.TestCase):
                 self.assertEqual(json.loads(item), {"type": "event", "length": len(payload)})
                 self.assertEqual(set(event), {"event_id", "timestamp", "platform", "level", "environment", "logger", "message", "fingerprint", "tags"})
                 self.assertEqual(event["tags"]["check"], code)
+                self.assertEqual(event["fingerprint"], ["nervion-ops", code, event_id])
                 for forbidden in (KEY, "private-marker", "injected-marker", "server_name", "extra", "contexts", "request", "user", "pid"):
                     self.assertNotIn(forbidden, envelope.decode())
         with self.assertRaisesRegex(ALERT.AlertError, "UNSUPPORTED_UNIT"):
             ALERT.build_event("other.service")
+
+    def test_each_new_unit_failure_gets_a_distinct_issue_without_suppressing_repeat_alerts(self):
+        first_id, first_code, first_envelope = ALERT.build_event(UNIT)
+        second_id, second_code, second_envelope = ALERT.build_event(UNIT)
+        first = json.loads(first_envelope.rstrip(b"\n").split(b"\n")[-1])
+        second = json.loads(second_envelope.rstrip(b"\n").split(b"\n")[-1])
+        self.assertEqual(first_code, second_code)
+        self.assertNotEqual(first_id, second_id)
+        self.assertEqual(first["fingerprint"][:2], second["fingerprint"][:2])
+        self.assertNotEqual(first["fingerprint"], second["fingerprint"])
 
     def test_submit_uses_system_ca_hostname_verification_no_proxy_and_fixed_headers(self):
         connection = mock.Mock()
@@ -125,6 +136,8 @@ class OpsAlertTests(unittest.TestCase):
             self.assertEqual(result["status"], "accepted")
             self.assertEqual(transport.call_count, 2)
             self.assertEqual(transport.call_args_list[0], transport.call_args_list[1])
+            event = json.loads(transport.call_args_list[0].args[1].rstrip(b"\n").split(b"\n")[-1])
+            self.assertEqual(event["fingerprint"][-1], result["eventId"])
             sleep.assert_called_once_with(1)
 
     def test_exhausted_network_or_http_failures_and_tls_failures_are_sanitized(self):
@@ -164,7 +177,7 @@ class OpsAlertTests(unittest.TestCase):
         self.assertEqual(set(json.loads(output.getvalue())), {"status", "check", "eventId"})
 
     @unittest.skipUnless(shutil.which("systemd-analyze"), "systemd parser is unavailable")
-    def test_systemd_template_and_all_three_onfailure_bindings_parse(self):
+    def test_systemd_template_and_all_onfailure_bindings_parse(self):
         base = pathlib.Path(__file__).parent
         units = self.root / "units"
         units.mkdir()
@@ -173,7 +186,7 @@ class OpsAlertTests(unittest.TestCase):
         shutil.copyfile(base / "nervion-ops-alert@.service.example", units / "nervion-ops-alert@.service")
         self.assertNotIn("OnFailure=", (units / "nervion-ops-alert@.service").read_text())
         for name in ALERT.CHECKS:
-            source = base / (name + ".example") if name == "smtp-cert-sync.service" else base / "postgres" / name
+            source = base / "postgres" / name if name.startswith("nervion-backup") else base / (name + ".example")
             self.assertIn("OnFailure=nervion-ops-alert@%n.service", source.read_text())
         result = subprocess.run(["systemd-analyze", "verify", "--man=no", str(units / "nervion-ops-alert@nervion-backup.service.service")],
                                 capture_output=True, timeout=10, check=False,

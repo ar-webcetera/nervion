@@ -30,13 +30,50 @@ canonical() {
 regular() {
   canonical "$1"
   [[ -f "$1" && ! -L "$1" ]] || fail 'Expected a regular file'
-  local owner mode
+  local owner mode parent parent_owner parent_mode
   owner=$(stat -c %u -- "$1"); mode=$(stat -c %a -- "$1")
   [[ "$owner" == "$EUID" || "$owner" == 0 ]] || fail 'File has an unexpected owner'
   (( (8#$mode & 0022) == 0 )) || fail 'File is writable by another account'
   if [[ "${2:-public}" == private ]]; then
     (( (8#$mode & 0077) == 0 )) || fail 'Private file permissions are too broad'
   fi
+  if [[ "$EUID" == 0 ]]; then
+    parent=$(dirname -- "$1")
+    while true; do
+      [[ -d "$parent" && ! -L "$parent" ]] || fail 'Invalid release input parent directory'
+      parent_owner=$(stat -c %u -- "$parent"); parent_mode=$(stat -c %a -- "$parent")
+      [[ "$parent_owner" == 0 ]] && (( (8#$parent_mode & 0022) == 0 )) || fail 'Root release input ancestors must be protected by root'
+      [[ "$parent" != / ]] || break
+      parent=$(dirname -- "$parent")
+    done
+  fi
+}
+secret_input() {
+  canonical "$1"
+  [[ -f "$1" && ! -L "$1" ]] || fail 'Expected a regular secret file'
+  local owner group mode links expected_owner parent parent_owner parent_mode private_ancestor=false
+  owner=$(stat -c %u -- "$1")
+  if [[ "$owner" == "$EUID" || "$owner" == 0 ]]; then regular "$1"; return; fi
+  # Only database-role secrets use service UIDs. This does not grant those
+  # owners permission to supply manifests, scripts, config files or other keys.
+  [[ "$EUID" == 0 ]] || fail 'Service-owned secrets require the root runner'
+  case "$2" in
+    data_password|platform_password) expected_owner=10001 ;;
+    data_migrator_password|platform_migrator_password) expected_owner=999 ;;
+    *) fail 'Secret does not allow a service-owned source' ;;
+  esac
+  group=$(stat -c %g -- "$1"); mode=$(stat -c %a -- "$1"); links=$(stat -c %h -- "$1")
+  [[ "$owner" == "$expected_owner" && "$group" == 0 && "$links" == 1 && ( "$mode" == 400 || "$mode" == 440 ) ]] || fail 'Invalid service-owned secret permissions'
+  parent=$(dirname -- "$1")
+  while true; do
+    [[ -d "$parent" && ! -L "$parent" ]] || fail 'Invalid secret parent directory'
+    parent_owner=$(stat -c %u -- "$parent"); parent_mode=$(stat -c %a -- "$parent")
+    [[ "$parent_owner" == 0 ]] && (( (8#$parent_mode & 0022) == 0 )) || fail 'Service-owned secret ancestors must be protected by root'
+    if (( (8#$parent_mode & 0077) == 0 )); then private_ancestor=true; fi
+    [[ "$parent" != / ]] || break
+    parent=$(dirname -- "$parent")
+  done
+  [[ "$private_ancestor" == true ]] || fail 'Service-owned secret requires a private root ancestor'
 }
 private_directory() {
   [[ "$1" == /* && "$1" != / && "$1" != "${HOME:-}" ]] || fail 'Invalid private state directory'
@@ -108,11 +145,14 @@ image_id() {
   printf '%s' "$expected"
 }
 verify_sources() {
-  local record=$1 path digest
-  while IFS=$'\t' read -r path digest; do
-    regular "$path"
+  local record=$1 input path digest kind
+  while IFS= read -r input; do
+    path=$(jq -r .path <<<"$input"); digest=$(jq -r .sha256 <<<"$input"); kind=$(jq -r '.kind // "file"' <<<"$input")
+    if [[ "$kind" == secret ]]; then secret_input "$path" "$(jq -r .secretName <<<"$input")"
+    elif [[ "$kind" == file ]]; then regular "$path"
+    else fail 'Invalid release input kind'; fi
     [[ "$(sha256sum -- "$path" | cut -d ' ' -f1)" == "$digest" ]] || fail 'Release input changed after prepare'
-  done < <(jq -r '.inputs[] | [.path,.sha256] | @tsv' "$record")
+  done < <(jq -c '.inputs[]' "$record")
 }
 compose() { docker_command compose --project-name "$project" --project-directory "$release" --env-file /dev/null -f "$release/compose.json" --profile deployment "$@"; }
 
@@ -198,23 +238,26 @@ if [[ "$action" == prepare ]]; then
   jq -S . "$work/roundtrip.json" >"$work/roundtrip.sorted.json"
   cmp -s "$work/compose.json" "$work/roundtrip.sorted.json" || fail 'Frozen Compose configuration is not stable'
   # Include mounted script/secret files, but never walk mutable data directories.
-  jq -r --arg manifest "$manifest" --arg compose "$compose_file" --arg env "$env_file" \
+  jq -c --arg manifest "$manifest" --arg compose "$compose_file" --arg env "$env_file" \
     --argjson selected "$(jq .services "$manifest")" '
     . as $config |
-    [$manifest,$compose,$env] +
+    ([$manifest,$compose,$env] +
     [($selected + ["migrate"])[] as $name | .services[$name].volumes[]? | select(.type == "bind") | .source] +
-    [($selected + ["migrate"])[] as $name | .services[$name].secrets[]? | (if type == "string" then . else .source end) as $source | $config.secrets[$source].file] +
     [($selected + ["migrate"])[] as $name | .services[$name].configs[]? | (if type == "string" then . else .source end) as $source | $config.configs[$source].file] |
-    map(select(. != null)) | unique[]
+      map(select(. != null) | {path:.,kind:"file"})) +
+    [($selected + ["migrate"])[] as $name | .services[$name].secrets[]? | (if type == "string" then . else .source end) as $source |
+      {path:$config.secrets[$source].file,kind:"secret",secretName:$source}] |
+    unique_by([.path,.kind,.secretName])[]
   ' "$work/compose.json" >"$work/input-paths"
-  jq -r '.dataState.evidenceFile // empty' "$manifest" >>"$work/input-paths"
+  jq -c '.dataState.evidenceFile // empty | {path:.,kind:"file"}' "$manifest" >>"$work/input-paths"
   : >"$work/inputs.jsonl"
-  while IFS= read -r path; do
+  while IFS= read -r input; do
+    path=$(jq -r .path <<<"$input"); kind=$(jq -r .kind <<<"$input")
     canonical "$path"
-    [[ -d "$path" ]] && continue
-    regular "$path"
+    if [[ "$kind" == secret ]]; then secret_input "$path" "$(jq -r .secretName <<<"$input")"
+    else [[ -d "$path" ]] && continue; regular "$path"; fi
     digest=$(sha256sum -- "$path" | cut -d ' ' -f1)
-    jq -cn --arg path "$path" --arg digest "$digest" '{path:$path,sha256:$digest}' >>"$work/inputs.jsonl"
+    jq -c --arg digest "$digest" '. + {sha256:$digest}' <<<"$input" >>"$work/inputs.jsonl"
   done <"$work/input-paths"
   config_hash=$(sha256sum "$work/compose.json" | cut -d ' ' -f1)
   jq -sS --arg commit "$commit" --arg project "$project" --arg manifest "$manifest" \

@@ -68,7 +68,7 @@ services:
       - -c
       - archive_mode=on
       - -c
-      - archive_command=/usr/local/bin/nervion-archive-push "%p"
+      - archive_command=/usr/local/bin/nervion-pgbackrest-archive-push "%p"
       - -c
       - archive_timeout=60s
       - -c

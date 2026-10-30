@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Nervion infrastructure every five minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+AccuracySec=15s
+Unit=nervion-infra-monitor.service
+
+[Install]
+WantedBy=timers.target

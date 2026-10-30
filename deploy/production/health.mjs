@@ -47,13 +47,19 @@ export function smtpProbe(port, servername) {
   });
 }
 
-export async function databaseProbe(env, requireApp = createRequire('/app/package.json')) {
+export async function databaseProbe(env, requireApp = createRequire('/app/package.json'), readSecret = secret) {
   const { Client } = requireApp('pg');
   for (const [prefix, passwordFile] of [['', 'data_password'], ['PLATFORM_', 'platform_password']]) {
     const client = new Client({ host: env[`${prefix}POSTGRES_HOST`], port: Number(env[`${prefix}POSTGRES_PORT`]),
-      user: env[`${prefix}POSTGRES_USER`], database: env[`${prefix}POSTGRES_DB`], password: secret(passwordFile),
-      connectionTimeoutMillis: 3_000, query_timeout: 3_000, statement_timeout: 3_000 });
-    try { await client.connect(); await client.query('SELECT 1'); } finally { await client.end(); }
+      user: env[`${prefix}POSTGRES_USER`], database: env[`${prefix}POSTGRES_DB`], password: readSecret(passwordFile),
+      connectionTimeoutMillis: 3_000, query_timeout: 3_000 });
+    try {
+      await client.connect();
+      await client.query('BEGIN READ ONLY');
+      await client.query("SET LOCAL statement_timeout = '3s'");
+      await client.query('SELECT 1');
+      await client.query('COMMIT');
+    } finally { await client.end(); }
   }
 }
 

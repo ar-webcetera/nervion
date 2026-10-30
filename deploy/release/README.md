@@ -25,7 +25,23 @@ revision label, фиксирует config image ID и сверяет его с �
 Manifest, env, secrets, журналы и state находятся вне репозитория. Manifest и
 env имеют права `0600`, каталог state принадлежит runner и имеет права `0700`.
 Символические ссылки, неканонические пути и файлы, доступные другим на запись,
-отклоняются. Пример формы manifest, значения SHA/digest заменяются реальными:
+отклоняются.
+При запуске от root каждый родительский каталог файловых inputs также должен
+принадлежать root и не допускать запись группой или остальными. Одного root-owned
+файла внутри доступного Git-пользователю checkout недостаточно.
+
+Исключение по владельцу применяется только к четырем Compose secrets:
+`data_password`/`platform_password` с UID 10001 и
+`data_migrator_password`/`platform_migrator_password` с UID 999. Их может читать
+только root runner при GID 0, точных правах `0400` или `0440` и единственной
+жесткой ссылке. Все каталоги пути должны принадлежать root и не допускать запись
+группой или остальными; хотя бы один родитель обязан быть закрыт правами `0700`
+или строже. Принадлежность к secret и его имя входят в receipt и повторно
+проверяются вместе с hash. Это исключение не действует для scripts, manifest,
+Compose, env или других секретов. Root-owned и runner-owned файлы сохраняют
+прежний контракт.
+
+Пример формы manifest, значения SHA/digest заменяются реальными:
 
 ```json
 {
@@ -157,18 +173,44 @@ runner потребует новый `prepare` и `migrate`. State содерж�
 При установке hook должен получить executable bit (`0755`); его владелец и
 родительский каталог не должны позволять посторонним менять исполняемый код.
 Учетная запись Git-hook должна иметь тот же разрешенный доступ к Docker и
-закрытым release-файлам, что и runner. Автоматическое повышение прав не добавляется.
+закрытым release-файлам, что и runner, если используется прямой `post-receive`.
+Не открывайте production secrets обычному Git-пользователю ради этого варианта.
 
-Конфигурация `/etc/nervion-release/hook.json` закрыта правами `0600`:
+Для root-owned production-контура предусмотрен отдельный фиксированный dispatch:
+
+- `dispatch` устанавливается root-owned `0755` как
+  `/usr/local/sbin/nervion-release-received`; аргументы запрещены.
+- `receive.py` и `run.sh` устанавливаются root-owned в
+  `/usr/local/libexec/nervion-release/`. Все родители исполняемых файлов должны
+  принадлежать root и не допускать чужую запись.
+- `post-receive.sudo` заменяет только hook собственного приложения. Он синхронно
+  вызывает единственный dispatcher. Другие репозитории и SSH не изменяются.
+- `sudoers.example` адаптируется к существующей учетной записи Git. Разрешение
+  содержит точный путь и пустой argv `""`, без wildcard и `SETENV`. Перед установкой
+  обязательна проверка `visudo -cf`. Docker group и права secrets не меняются.
+
+Dispatcher очищает окружение и запускает Python 3 в isolated mode. Receiver
+ограничивает stdin 64 KiB и пятью секундами, принимает максимум одно обновление
+`master`, запрещает удаление и проверяет фактический текущий commit перед каждым
+шагом. `git rev-parse` выполняется под UID/GID владельца репозитория, не под root;
+Git hooks, системная и пользовательская Git-конфигурация отключены. Весь pipeline
+защищен дополнительной блокировкой, root config/runner/manifest повторно хешируются.
+Необходимый host runtime: Python 3, Git, Bash, jq, coreutils и Docker Compose.
+Node на хосте для dispatch не нужен.
+
+Root receiver использует `/etc/nervion-release/hook.json` с владельцем root,
+правами `0600` и закрытыми root-owned manifest/state directories:
 
 ```json
 {
   "schemaVersion": 1,
   "branch": "master",
   "project": "example-saas-production",
-  "runner": "/private/release-tools/run.sh",
+  "runner": "/usr/local/libexec/nervion-release/run.sh",
   "manifestDirectory": "/private/release-manifests",
-  "stateDirectory": "/private/release-state"
+  "stateDirectory": "/private/release-state",
+  "repository": "/private/git/application.git",
+  "repositoryUser": "git-release"
 }
 ```
 
@@ -178,6 +220,12 @@ SHA. Отсутствующий manifest или провал проверки я
 failure. `post-receive` не может отклонить уже принятый Git ref: успешный push
 и успешный релиз являются отдельными результатами. Другие ветки и tags не
 разворачиваются; удаление `master` не является релизом.
+Пустой manifest directory означает закрытый deploy, не fallback на старый script.
+До замены hook оператор сохраняет его точный hash и private backup. Установка
+выполняется с проверкой прежнего hash, без запуска старого hook или тестового push.
+После установки проверяют отказ при missing manifest и лишнем argv, отсутствие
+изменений контейнеров и доступность обычного Git чтения. Возврат legacy hook
+после SaaS cutover не считается безопасным rollback и не выполняется автоматически.
 
 ## Откат
 
@@ -191,4 +239,6 @@ Runner не выполняет `down`, `prune`, удаление volumes или 
 
 ```sh
 node --test deploy/release/run.test.mjs
+node --test deploy/release/secret-input.test.mjs
+python3 -m unittest discover -s deploy/release -p 'test_receive.py'
 ```

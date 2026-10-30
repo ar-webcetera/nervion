@@ -16,12 +16,20 @@ export function parseStoragePublicBases(raw: string): URL[] {
   });
 }
 
-function rewriteUrl(value: string, bases: URL[], copiedKeys: ReadonlySet<string>): string | null {
-  if (!/^https?:\/\//i.test(value) || /[\s<>"\\]/.test(value)) return null;
+function rewriteUrl(value: string, bases: URL[], copiedKeys: ReadonlySet<string>, allowSpaces = false): string | null {
+  // Encode literal spaces before URL parsing so trailing filename spaces cannot
+  // be trimmed into a different, otherwise valid manifest key.
+  const candidate = allowSpaces ? value.replace(/\p{Zs}/gu, (space: string) => encodeURIComponent(space)) : value;
+  if (
+    !/^https?:\/\//i.test(candidate) ||
+    /[\s<>"\\]/.test(candidate) ||
+    [...value].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
+  )
+    return null;
   const htmlEscaped = value.includes('&amp;');
   let url: URL;
   try {
-    url = new URL(htmlEscaped ? value.replaceAll('&amp;', '&') : value);
+    url = new URL(htmlEscaped ? candidate.replaceAll('&amp;', '&') : candidate);
   } catch {
     return null;
   }
@@ -57,10 +65,7 @@ function stripUnbalancedClosingDelimiters(value: string): string {
   }
 }
 
-/** Only complete URL tokens whose decoded keys are in the copy manifest change. */
-export function rewriteStorageText(value: string, bases: URL[], copiedKeys: ReadonlySet<string>): string {
-  const exact = rewriteUrl(value, bases, copiedKeys);
-  if (exact !== null) return exact;
+function rewriteTextTokens(value: string, bases: URL[], copiedKeys: ReadonlySet<string>): string {
   return value.replace(/https?:\/\/[^\s<>"'`\\]+/gi, (token: string) => {
     let candidate = stripUnbalancedClosingDelimiters(token);
     for (;;) {
@@ -72,6 +77,44 @@ export function rewriteStorageText(value: string, bases: URL[], copiedKeys: Read
       candidate = candidate.slice(0, -1);
     }
   });
+}
+
+/** Only complete scalar URLs, quoted HTML URL attributes and known text tokens change. */
+export function rewriteStorageText(value: string, bases: URL[], copiedKeys: ReadonlySet<string>): string {
+  const exact = rewriteUrl(value, bases, copiedKeys, true);
+  if (exact !== null) return exact;
+  // A whitespace-bearing scalar URL without an exact manifest match must not
+  // accidentally rewrite a shorter existing filename before its first space.
+  if (/^https?:\/\//i.test(value) && /\s/.test(value)) return value;
+
+  // Preserve markup byte-for-byte. Quotes delimit URL attributes, not arbitrary
+  // prose; comments and raw-text elements must not be treated as nested tags.
+  const markup =
+    /<!--[\s\S]*?(?:-->|$)|<(script|style|textarea|title)\b(?:"[^"]*"|'[^']*'|[^'"<>])*>[\s\S]*?(?:<\/\1\s*>|$)|<[a-z][a-z0-9:-]*(?:"[^"]*"|'[^']*'|[^'"<>])*>/gi;
+  let cursor = 0;
+  let result = '';
+  for (const match of value.matchAll(markup)) {
+    result += rewriteTextTokens(value.slice(cursor, match.index), bases, copiedKeys);
+    const tag = match[0];
+    result +=
+      tag.startsWith('<!--') || match[1]
+        ? tag
+        : tag.replace(
+            /(\s+([^\s"'<>/=]+)\s*=\s*)("[^"]*"|'[^']*'|[^\s"'=<>`]+)/g,
+            (attribute: string, prefix: string, name: string, serialized: string) => {
+              if (!/^(href|src|poster)$/i.test(name)) return attribute;
+              const quote = serialized[0];
+              if (quote !== '"' && quote !== "'") {
+                const rewritten = rewriteUrl(serialized, bases, copiedKeys);
+                return rewritten === null ? attribute : `${prefix}${rewritten}`;
+              }
+              const rewritten = rewriteUrl(serialized.slice(1, -1), bases, copiedKeys, true);
+              return rewritten === null ? attribute : `${prefix}${quote}${rewritten}${quote}`;
+            },
+          );
+    cursor = match.index + tag.length;
+  }
+  return result + rewriteTextTokens(value.slice(cursor), bases, copiedKeys);
 }
 
 export function rewriteStorageUrls(
