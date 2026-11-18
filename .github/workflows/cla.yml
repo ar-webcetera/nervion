@@ -39,10 +39,10 @@ jobs:
           PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         with:
           # Текст, которым контрибьютор подписывает соглашение в комментарии PR:
-          custom-notsigned-prcomment: 'Спасибо за вклад! Перед тем как мы сможем принять PR, прочитайте [CLA](../blob/main/CLA.md) и подпишите его, оставив комментарий ровно с таким текстом:'
+          custom-notsigned-prcomment: 'Спасибо за вклад! Перед тем как мы сможем принять PR, прочитайте [CLA](https://github.com/ar-webcetera/nervion/blob/master/CLA.md) и подпишите его, оставив комментарий ровно с таким текстом:'
           custom-pr-sign-comment: 'I have read the CLA Document and I hereby sign the CLA'
           custom-allsigned-prcomment: 'Все контрибьюторы подписали CLA. Спасибо!'
           path-to-signatures: 'signatures/version1/cla.json'
-          path-to-document: 'https://github.com/CHANGE-ME/REPO/blob/main/CLA.md'
-          branch: 'main'
+          path-to-document: 'https://github.com/ar-webcetera/nervion/blob/master/CLA.md'
+          branch: 'master'
           allowlist: 'dependabot[bot],renovate[bot]'
