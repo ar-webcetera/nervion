@@ -4,7 +4,7 @@
 # Как работает:
 #   - При открытии PR бот проверяет, подписал ли автор CLA.
 #   - Если нет, бот просит оставить комментарий с фразой согласия.
-#   - Подписи хранятся в этом же репозитории в файле
+#   - Подписи хранятся в ветке cla-signatures в файле
 #     signatures/version1/cla.json (создаётся автоматически).
 #
 # Перед включением нужно один раз:
@@ -44,5 +44,5 @@ jobs:
           custom-allsigned-prcomment: 'Все контрибьюторы подписали CLA. Спасибо!'
           path-to-signatures: 'signatures/version1/cla.json'
           path-to-document: 'https://github.com/ar-webcetera/nervion/blob/master/CLA.md'
-          branch: 'master'
+          branch: 'cla-signatures'
           allowlist: 'dependabot[bot],renovate[bot]'
