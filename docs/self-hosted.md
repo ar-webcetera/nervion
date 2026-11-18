@@ -42,7 +42,7 @@ INITIAL_ADMIN_LAST_NAME=Нервион
 web-push пока не используется:
 
 ```bash
-docker run --rm node:22-bookworm-slim sh -lc \
+docker run --rm -w /tmp node:22-bookworm-slim sh -lc \
   'npm install --silent web-push@3.6.7 && node -e '\''console.log(require("web-push").generateVAPIDKeys())'\'''
 ```
 
@@ -94,27 +94,10 @@ docker compose build
 
 ## 5. Учесть занятый порт PostgreSQL
 
-При свободном `5432` используйте основной compose-файл. Если порт занят,
-добавьте локальный override, отключающий только публикацию БД на хост:
-
-```yaml
-# docker-compose.local.yml
-services:
-  postgres:
-    ports: !reset []
-```
-
-Далее в командах добавляйте:
-
-```bash
--f docker-compose.yml -f docker-compose.local.yml
-```
-
-Например:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres
-```
+Если локальный PostgreSQL уже использует порт `5432`, добавляйте к командам
+Compose параметры `-f docker-compose.yml -f docker-compose.local.yml`.
+Файл `docker-compose.local.yml` отключает публикацию порта БД на хост.
+Backend по-прежнему подключается к PostgreSQL внутри сети Compose.
 
 ## 6. Запустить и проверить
 
@@ -207,13 +190,11 @@ Docker не обязателен. На сервере с Node.js 22, pnpm 8 и P
 pnpm install --frozen-lockfile
 pnpm --filter backend... build
 pnpm --filter frontend... build
-
-node apps/backend/dist/main.js
-node apps/frontend/.output/server/index.mjs
 ```
 
-Backend при старте применяет те же TypeORM-миграции и создаёт первого
-администратора независимо от способа запуска. Для Nuxt задайте два адреса API:
+Перед запуском заполните `apps/backend/.env`. Укажите параметры PostgreSQL,
+данные первого администратора и VAPID-ключи. Для Nuxt передайте два адреса API
+через переменные окружения процесса:
 
 ```dotenv
 NUXT_PUBLIC_API_URL=https://api.example.com
@@ -235,3 +216,13 @@ MEDIASOUP_WORKER_BIN=/opt/nervion/apps/backend/vendor/mediasoup-worker
 
 Файл должен быть исполняемым (`chmod 755`) и совпадать по версии с зависимостью
 `mediasoup` в `apps/backend/package.json`.
+
+Запускайте процессы из корня репозитория в отдельных терминалах:
+
+```bash
+(cd apps/backend && node dist/main.js)
+node apps/frontend/.output/server/index.mjs
+```
+
+Backend прочитает `apps/backend/.env`, применит миграции и при первом запуске
+создаст администратора.

@@ -8,39 +8,40 @@
 
 ## Быстрый старт через Docker
 
-Полный комплект (PostgreSQL + backend + frontend) одной командой:
-
-```bash
-cp apps/backend/.env.example apps/backend/.env   # заполнить JWT_SECRET
-docker compose up --build
-```
-
-Фронтенд — http://localhost:3000, API — http://localhost:3026. Миграции накатываются автоматически. Конфигурация compose — в `docker-compose.yml` (корень). Голосовые комнаты (WebRTC) требуют доп. настройки, см. ниже.
+Для запуска PostgreSQL, API и веб-приложения используйте
+[инструкцию по Docker Compose](./self-hosted.md). В ней описаны настройка первого
+администратора и генерация VAPID-ключей.
 
 ## Установка для локальной разработки (без Docker)
 
+Установите Node.js 22 и pnpm 8.15.6. Из корня репозитория установите зависимости:
+
 ```bash
-pnpm i
+pnpm install --frozen-lockfile
 ```
 
-Скопируйте примеры конфигурации и заполните значения:
+Скопируйте примеры конфигурации:
 
 ```bash
 cp apps/backend/.env.example apps/backend/.env
 cp apps/frontend/.env.example apps/frontend/.env
 ```
 
-Описание всех переменных — в этих `.env.example` (секреты помечены `[secret]`).
+Запустите PostgreSQL и укажите параметры подключения в `apps/backend/.env`.
+Там же задайте данные первого администратора и VAPID-ключи. Для локального запуска
+подготовьте [mediasoup-worker](./self-hosted.md#3-подготовить-mediasoup-worker)
+и укажите абсолютный путь к нему в `MEDIASOUP_WORKER_BIN`.
 
 ## Запуск в dev
 
+Из корня репозитория запустите оба приложения:
+
 ```bash
-pnpm --filter backend dev
-pnpm --filter frontend dev
-# либо через turbo
-pnpm turbo run dev --filter=backend
-pnpm turbo run dev --filter=frontend
+pnpm dev:main
 ```
+
+Веб-приложение доступно на <http://localhost:3000>, Swagger на
+<http://localhost:3026/api/docs>.
 
 ## Сборка
 
@@ -58,9 +59,9 @@ Dockerfile используют BuildKit-кэш для pnpm и Vite. При из
 Холодная сборка после изменения lockfile остаётся дольше, потому что кэш нужно
 создать заново.
 
-В Docker-сборке frontend отключена повторная проверка типов. Перед публикацией
-она обязательно выполняется командой `pnpm verify:push` вместе с тестами и
-обычной сборкой.
+Команда `pnpm verify:push` запускает линтер, проверку типов и тесты backend,
+затем сборку backend и frontend. Отдельная проверка типов frontend запускается
+командой `pnpm typecheck:frontend`.
 
 ## База данных и миграции
 
@@ -68,7 +69,7 @@ Dockerfile используют BuildKit-кэш для pnpm и Vite. При из
 
 ```bash
 cd apps/backend
-pnpm migration:generate src/migrations/<NAME>   # сгенерировать по изменению entity
+pnpm typeorm migration:generate src/migrations/add-example-field
 pnpm migration:run                              # применить
 pnpm migration:revert                           # откатить последнюю
 ```
@@ -78,6 +79,25 @@ pnpm migration:revert                           # откатить послед�
 ## Аутентификация
 
 Web-авторизация хранится в httpOnly-cookie. Срок жизни JWT и cookie берётся из `JWT_EXPIRES_IN` (секунды или суффиксы `s`/`m`/`h`/`d`); по умолчанию `30d`.
+
+## Push-уведомления на Android
+
+Откройте приложение по HTTPS, войдите в аккаунт и нажмите "Разрешить" в баннере.
+Сообщение "Уведомления включены" появляется после сохранения подписки на сервере.
+Управлять подпиской и отправить тестовое уведомление можно в настройках профиля.
+
+Если подписка есть, а уведомления не приходят, проверьте разрешения браузера и
+Android, ошибки `Push failed` в логах backend и доступность push-сервиса.
+При настроенном `NUXT_PUBLIC_SENTRY_DSN` события подключения, отключения и
+тестовой отправки доступны в GlitchTip с тегом `feature:web_push`.
+Тег `push_stage` показывает этап сбоя.
+
+Проверки подписок запускаются из корня репозитория на Node.js 22.6+.
+
+```bash
+node --experimental-strip-types --test apps/frontend/tests/push-subscription.test.mjs
+node apps/frontend/tests/push-store.test.mjs
+```
 
 ## Почта (модуль mailbox)
 
@@ -95,6 +115,14 @@ Web-авторизация хранится в httpOnly-cookie. Срок жиз�
 
 Статистика по доступным ящикам: `GET /api/mailbox/stats?account_id=&from=&to=`. В UI почты — папка «Статистика» и бейджи статусов в «Отправленных».
 
+### Контроль доставки
+
+При заданных `SENTRY_DSN` и `POSTBOX_CONFIGURATION_SET` backend каждые пять минут
+проверяет письма, отправленные через Postbox за последние сутки. Если письмо
+старше 15 минут и по нему нет событий, backend отправляет
+`mail-delivery-events-missing`. Ошибка самой проверки отмечается событием
+`mail-delivery-monitor-failed`. Для доставки этих оповещений настройте правила
+в GlitchTip или Sentry.
 
 ## WebRTC (звонки/голосовые комнаты)
 
@@ -102,4 +130,4 @@ Web-авторизация хранится в httpOnly-cookie. Срок жиз�
 
 ## Деплой
 
-Деплой — через push ветки: CI/CD сам собирает и доставляет изменения. Вручную prod/preprod-процессы не перезапускаются без явного запроса (см. `AGENTS.md`).
+[Запуск на своём сервере и требования к production](./self-hosted.md#продакшен).
